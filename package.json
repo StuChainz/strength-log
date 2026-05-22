@@ -1,0 +1,37 @@
+{
+  "name": "strength-log",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "dev": "expo start",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
+    "test": "jest --watchAll=false",
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json}\" --ignore-path .gitignore"
+  },
+  "dependencies": {
+    "expo": "~56.0.3",
+    "expo-status-bar": "~56.0.4",
+    "react": "19.2.3",
+    "react-native": "0.85.3"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@react-native/jest-preset": "^0.85.0",
+    "@testing-library/react-native": "^13.3.3",
+    "@types/jest": "^29.5.12",
+    "@types/react": "~19.2.2",
+    "babel-plugin-module-resolver": "^5.0.2",
+    "eslint": "^9.9.0",
+    "eslint-config-expo": "~56.0.0",
+    "jest": "^29.7.0",
+    "jest-expo": "~56.0.0",
+    "prettier": "^3.4.0",
+    "typescript": "~6.0.3"
+  },
+  "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": ["msgpackr-extract", "unrs-resolver"]
+  }
+}
