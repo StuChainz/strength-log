@@ -30,8 +30,5 @@
     "prettier": "^3.4.0",
     "typescript": "~6.0.3"
   },
-  "private": true,
-  "pnpm": {
-    "onlyBuiltDependencies": ["msgpackr-extract", "unrs-resolver"]
-  }
+  "private": true
 }
