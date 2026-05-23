@@ -161,6 +161,28 @@ export async function searchExercises(db: SQLiteDatabase, query: string): Promis
   );
 }
 
+export async function getSubstitutionCandidates(
+  db: SQLiteDatabase,
+  exerciseId: string,
+): Promise<ExerciseWithMetadata[]> {
+  const row = await db.getFirstAsync<{ substitution_group: string | null }>(
+    `SELECT substitution_group
+     FROM exercise_metadata
+     WHERE exercise_id = ?`,
+    [exerciseId],
+  );
+
+  if (!row?.substitution_group) {
+    return [];
+  }
+
+  const candidates = await getExercisesWithMetadata(db, {
+    substitution_group: row.substitution_group,
+  });
+
+  return candidates.filter((exercise) => exercise.id !== exerciseId);
+}
+
 export async function createExercise(
   db: SQLiteDatabase,
   input: CreateExerciseInput,

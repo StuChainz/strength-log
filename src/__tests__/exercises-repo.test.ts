@@ -1,32 +1,41 @@
 import {
   createExercise,
   getExercisesWithMetadata,
+  getSubstitutionCandidates,
   searchExercises,
 } from '@/db/repositories/exercises.repo';
 
-function createMockDb(rows: unknown[] = []) {
+function createMockDb(
+  rows: unknown[] = [],
+  firstRow: unknown = {
+    id: 'custom-1',
+    name: 'Custom Press',
+    normalized_name: 'custom press',
+    category: 'barbell',
+    primary_muscle: 'chest',
+    default_unit: 'kg',
+    is_custom: 1,
+    archived_at: null,
+    created_at: 1,
+    updated_at: 1,
+  },
+) {
   const runCalls: { sql: string; params: unknown[] }[] = [];
   const allCalls: { sql: string; params: unknown[] }[] = [];
+  const firstCalls: { sql: string; params: unknown[] }[] = [];
 
   return {
     runCalls,
     allCalls,
+    firstCalls,
     runAsync: jest.fn(async (sql: string, params: unknown[] = []) => {
       runCalls.push({ sql, params });
       return { lastInsertRowId: 1, changes: 1 };
     }),
-    getFirstAsync: jest.fn(async () => ({
-      id: 'custom-1',
-      name: 'Custom Press',
-      normalized_name: 'custom press',
-      category: 'barbell',
-      primary_muscle: 'chest',
-      default_unit: 'kg',
-      is_custom: 1,
-      archived_at: null,
-      created_at: 1,
-      updated_at: 1,
-    })),
+    getFirstAsync: jest.fn(async (sql: string, params: unknown[] = []) => {
+      firstCalls.push({ sql, params });
+      return firstRow;
+    }),
     getAllAsync: jest.fn(async (sql: string, params: unknown[] = []) => {
       allCalls.push({ sql, params });
       return rows;
@@ -155,5 +164,84 @@ describe('exercises repository metadata', () => {
     expect(db.allCalls[0].sql).toContain('e.normalized_name LIKE ?');
     expect(db.allCalls[0].sql).toContain('alias_match.alias LIKE ?');
     expect(db.allCalls[0].params).toEqual(['%flat bench%', '%flat bench%']);
+  });
+
+  it('returns substitution candidates from the same group', async () => {
+    const db = createMockDb(
+      [
+        {
+          id: 'ex-1',
+          name: 'Bench Press',
+          normalized_name: 'bench press',
+          aliases_concat: null,
+          category: 'barbell',
+          primary_muscle: 'chest',
+          default_unit: 'kg',
+          is_custom: 0,
+          archived_at: null,
+          created_at: 1,
+          updated_at: 1,
+          metadata_exercise_id: 'ex-1',
+          movement_pattern: 'horizontal_push',
+          force_type: 'push',
+          body_region: 'upper_body',
+          primary_muscles_json: '["chest"]',
+          secondary_muscles_json: '["triceps"]',
+          equipment_json: '["barbell"]',
+          mechanics: 'compound',
+          laterality: 'bilateral',
+          difficulty: 3,
+          substitution_group: 'horizontal_press',
+          source: 'curated_seed',
+          source_id: 'curated_seed:bench_press',
+          metadata_updated_at: 1,
+        },
+        {
+          id: 'ex-2',
+          name: 'Push Up',
+          normalized_name: 'push up',
+          aliases_concat: 'pushup',
+          category: 'bodyweight',
+          primary_muscle: 'chest',
+          default_unit: null,
+          is_custom: 0,
+          archived_at: null,
+          created_at: 1,
+          updated_at: 1,
+          metadata_exercise_id: 'ex-2',
+          movement_pattern: 'horizontal_push',
+          force_type: 'push',
+          body_region: 'upper_body',
+          primary_muscles_json: '["chest"]',
+          secondary_muscles_json: '["triceps"]',
+          equipment_json: '["bodyweight"]',
+          mechanics: 'compound',
+          laterality: 'bilateral',
+          difficulty: 2,
+          substitution_group: 'horizontal_press',
+          source: 'curated_seed',
+          source_id: 'curated_seed:push_up',
+          metadata_updated_at: 1,
+        },
+      ],
+      { substitution_group: 'horizontal_press' },
+    );
+
+    const candidates = await getSubstitutionCandidates(db as never, 'ex-1');
+
+    expect(db.firstCalls[0].sql).toContain('FROM exercise_metadata');
+    expect(db.firstCalls[0].params).toEqual(['ex-1']);
+    expect(db.allCalls[0].sql).toContain('m.substitution_group = ?');
+    expect(db.allCalls[0].params).toEqual(['horizontal_press']);
+    expect(candidates.map((exercise) => exercise.id)).toEqual(['ex-2']);
+  });
+
+  it('returns no substitution candidates when metadata is missing', async () => {
+    const db = createMockDb([], null);
+
+    const candidates = await getSubstitutionCandidates(db as never, 'custom-1');
+
+    expect(candidates).toEqual([]);
+    expect(db.allCalls).toHaveLength(0);
   });
 });
