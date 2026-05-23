@@ -58,15 +58,16 @@ function createMockDb() {
       }
       if (/INSERT INTO exercise_metadata/.test(sql) && params[0] != null) {
         ensureTable('exercise_metadata');
+        const source = params[11] as string;
         const existing = tables['exercise_metadata'].find((r) => r.exercise_id === params[0]);
         if (!existing) {
           tables['exercise_metadata'].push({
             exercise_id: params[0] as string,
             movement_pattern: params[1] as string,
             force_type: params[2] as string,
-            source: 'curated_seed',
+            source,
           });
-        } else if (existing.source === 'curated_seed') {
+        } else if (existing.source === source) {
           existing.movement_pattern = params[1] as string;
           existing.force_type = params[2] as string;
         }
@@ -225,7 +226,7 @@ describe('Seed idempotency', () => {
     );
 
     expect(metadataWrites[0].sql).toContain('ON CONFLICT(exercise_id) DO UPDATE');
-    expect(metadataWrites[0].sql).toContain("exercise_metadata.source = 'curated_seed'");
+    expect(metadataWrites[0].sql).toContain('exercise_metadata.source = excluded.source');
     expect(metadataWrites[0].sql).toContain('updated_at = excluded.updated_at');
   });
 });

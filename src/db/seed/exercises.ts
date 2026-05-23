@@ -1,4 +1,5 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
+import { serializeExerciseMetadataInput } from '@/domain/exerciseMetadataInput';
 import { newId, normalizeName } from '@/domain/ids';
 import {
   type BodyRegion,
@@ -630,9 +631,14 @@ async function seedExerciseMetadata(db: SQLiteDatabase): Promise<void> {
 
   await db.withTransactionAsync(async () => {
     for (const seed of SEED_EXERCISE_METADATA) {
+      const { exerciseName, ...metadataInput } = seed;
+      const metadata = serializeExerciseMetadataInput({
+        ...metadataInput,
+        source: 'curated_seed',
+      });
       const exercise = await db.getFirstAsync<{ id: string }>(
         'SELECT id FROM exercises WHERE normalized_name = ? AND is_custom = 0',
-        [normalizeName(seed.exerciseName)],
+        [normalizeName(exerciseName)],
       );
       if (!exercise) continue;
 
@@ -642,7 +648,7 @@ async function seedExerciseMetadata(db: SQLiteDatabase): Promise<void> {
             primary_muscles_json, secondary_muscles_json, equipment_json,
             mechanics, laterality, difficulty, substitution_group, source,
             source_id, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'curated_seed', ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(exercise_id) DO UPDATE SET
            movement_pattern = excluded.movement_pattern,
            force_type = excluded.force_type,
@@ -654,9 +660,10 @@ async function seedExerciseMetadata(db: SQLiteDatabase): Promise<void> {
            laterality = excluded.laterality,
            difficulty = excluded.difficulty,
            substitution_group = excluded.substitution_group,
+           source = excluded.source,
            source_id = excluded.source_id,
            updated_at = excluded.updated_at
-         WHERE exercise_metadata.source = 'curated_seed'
+         WHERE exercise_metadata.source = excluded.source
            AND (
              exercise_metadata.movement_pattern IS NOT excluded.movement_pattern OR
              exercise_metadata.force_type IS NOT excluded.force_type OR
@@ -668,21 +675,23 @@ async function seedExerciseMetadata(db: SQLiteDatabase): Promise<void> {
              exercise_metadata.laterality IS NOT excluded.laterality OR
              exercise_metadata.difficulty IS NOT excluded.difficulty OR
              exercise_metadata.substitution_group IS NOT excluded.substitution_group OR
+             exercise_metadata.source IS NOT excluded.source OR
              exercise_metadata.source_id IS NOT excluded.source_id
            )`,
         [
           exercise.id,
-          seed.movement_pattern,
-          seed.force_type,
-          seed.body_region,
-          JSON.stringify(seed.primary_muscles),
-          JSON.stringify(seed.secondary_muscles),
-          JSON.stringify(seed.equipment),
-          seed.mechanics,
-          seed.laterality,
-          seed.difficulty,
-          seed.substitution_group,
-          seed.source_id,
+          metadata.movement_pattern,
+          metadata.force_type,
+          metadata.body_region,
+          metadata.primary_muscles_json,
+          metadata.secondary_muscles_json,
+          metadata.equipment_json,
+          metadata.mechanics,
+          metadata.laterality,
+          metadata.difficulty,
+          metadata.substitution_group,
+          metadata.source,
+          metadata.source_id,
           now,
         ],
       );
