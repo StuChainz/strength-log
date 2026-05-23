@@ -1,5 +1,6 @@
 import {
   createExercise,
+  getExerciseMetadataFacets,
   getExercisesWithMetadata,
   getSubstitutionCandidates,
   searchExercises,
@@ -164,6 +165,63 @@ describe('exercises repository metadata', () => {
     expect(db.allCalls[0].sql).toContain('m.primary_muscles_json LIKE ?');
     expect(db.allCalls[0].sql).toContain('m.secondary_muscles_json LIKE ?');
     expect(db.allCalls[0].params).toEqual(['%"chest"%', '%"triceps"%']);
+  });
+
+  it('returns available metadata facets from active exercises', async () => {
+    const db = createMockDb([
+      {
+        movement_pattern: 'vertical_pull',
+        force_type: 'pull',
+        body_region: 'upper_body',
+        primary_muscles_json: '["back"]',
+        secondary_muscles_json: '["biceps","core"]',
+        equipment_json: '["bodyweight","pull_up_bar"]',
+        mechanics: 'compound',
+        laterality: 'bilateral',
+        substitution_group: 'vertical_pull',
+        source: 'curated_seed',
+      },
+      {
+        movement_pattern: 'horizontal_push',
+        force_type: 'push',
+        body_region: 'upper_body',
+        primary_muscles_json: '["chest"]',
+        secondary_muscles_json: '["triceps"]',
+        equipment_json: '["barbell","bench"]',
+        mechanics: 'compound',
+        laterality: 'bilateral',
+        substitution_group: 'horizontal_press',
+        source: 'curated_seed',
+      },
+      {
+        movement_pattern: null,
+        force_type: null,
+        body_region: null,
+        primary_muscles_json: 'not json',
+        secondary_muscles_json: null,
+        equipment_json: '[]',
+        mechanics: null,
+        laterality: null,
+        substitution_group: null,
+        source: null,
+      },
+    ]);
+
+    const facets = await getExerciseMetadataFacets(db as never);
+
+    expect(db.allCalls[0].sql).toContain('INNER JOIN exercises e ON e.id = m.exercise_id');
+    expect(db.allCalls[0].sql).toContain('e.archived_at IS NULL');
+    expect(facets.force_types).toEqual(['push', 'pull']);
+    expect(facets.movement_patterns).toEqual(['horizontal_push', 'vertical_pull']);
+    expect(facets.body_regions).toEqual(['upper_body']);
+    expect(facets.mechanics).toEqual(['compound']);
+    expect(facets.lateralities).toEqual(['bilateral']);
+    expect(facets.primary_muscles).toEqual(['chest', 'back']);
+    expect(facets.secondary_muscles).toEqual(['biceps', 'triceps', 'core']);
+    expect(facets.muscles).toEqual(['chest', 'back', 'biceps', 'triceps', 'core']);
+    expect(facets.equipment).toEqual(['barbell', 'bodyweight', 'bench', 'pull_up_bar']);
+    expect(facets.substitution_groups).toEqual(['horizontal_press', 'vertical_pull']);
+    expect(facets.sources).toEqual(['curated_seed']);
   });
 
   it('still creates custom exercises without requiring metadata', async () => {

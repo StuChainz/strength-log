@@ -1,5 +1,12 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import {
+  BODY_REGIONS,
+  EQUIPMENT,
+  FORCE_TYPES,
+  LATERALITY_TYPES,
+  MECHANICS_TYPES,
+  MOVEMENT_PATTERNS,
+  MUSCLE_GROUPS,
   type BodyRegion,
   type Equipment,
   type Exercise,
@@ -34,6 +41,20 @@ export interface ExerciseMetadataFilters {
   source_id?: string;
 }
 
+export interface ExerciseMetadataFacets {
+  force_types: ForceType[];
+  movement_patterns: MovementPattern[];
+  body_regions: BodyRegion[];
+  mechanics: Mechanics[];
+  lateralities: Laterality[];
+  primary_muscles: MuscleGroup[];
+  secondary_muscles: MuscleGroup[];
+  muscles: MuscleGroup[];
+  equipment: Equipment[];
+  substitution_groups: string[];
+  sources: string[];
+}
+
 type ExerciseWithMetadataRow = Exercise & {
   aliases_concat: string | null;
   metadata_exercise_id: string | null;
@@ -50,6 +71,19 @@ type ExerciseWithMetadataRow = Exercise & {
   source: string | null;
   source_id: string | null;
   metadata_updated_at: number | null;
+};
+
+type ExerciseMetadataFacetRow = {
+  movement_pattern: ExerciseMetadata['movement_pattern'] | null;
+  force_type: ExerciseMetadata['force_type'] | null;
+  body_region: ExerciseMetadata['body_region'] | null;
+  primary_muscles_json: string | null;
+  secondary_muscles_json: string | null;
+  equipment_json: string | null;
+  mechanics: ExerciseMetadata['mechanics'] | null;
+  laterality: ExerciseMetadata['laterality'] | null;
+  substitution_group: string | null;
+  source: string | null;
 };
 
 export async function getExerciseCount(db: SQLiteDatabase): Promise<number> {
@@ -171,6 +205,72 @@ export async function getExercisesWithMetadata(
   );
 
   return rows.map(rowToExerciseWithMetadata);
+}
+
+export async function getExerciseMetadataFacets(
+  db: SQLiteDatabase,
+): Promise<ExerciseMetadataFacets> {
+  const rows = await db.getAllAsync<ExerciseMetadataFacetRow>(
+    `SELECT
+       m.movement_pattern,
+       m.force_type,
+       m.body_region,
+       m.primary_muscles_json,
+       m.secondary_muscles_json,
+       m.equipment_json,
+       m.mechanics,
+       m.laterality,
+       m.substitution_group,
+       m.source
+     FROM exercise_metadata m
+     INNER JOIN exercises e ON e.id = m.exercise_id
+     WHERE e.archived_at IS NULL`,
+  );
+
+  const forceTypes = new Set<ForceType>();
+  const movementPatterns = new Set<MovementPattern>();
+  const bodyRegions = new Set<BodyRegion>();
+  const mechanics = new Set<Mechanics>();
+  const lateralities = new Set<Laterality>();
+  const primaryMuscles = new Set<MuscleGroup>();
+  const secondaryMuscles = new Set<MuscleGroup>();
+  const equipment = new Set<Equipment>();
+  const substitutionGroups = new Set<string>();
+  const sources = new Set<string>();
+
+  rows.forEach((row) => {
+    addIfPresent(forceTypes, row.force_type);
+    addIfPresent(movementPatterns, row.movement_pattern);
+    addIfPresent(bodyRegions, row.body_region);
+    addIfPresent(mechanics, row.mechanics);
+    addIfPresent(lateralities, row.laterality);
+    addIfPresent(substitutionGroups, row.substitution_group);
+    addIfPresent(sources, row.source);
+    parseStringArray<MuscleGroup>(row.primary_muscles_json).forEach((value) =>
+      primaryMuscles.add(value),
+    );
+    parseStringArray<MuscleGroup>(row.secondary_muscles_json).forEach((value) =>
+      secondaryMuscles.add(value),
+    );
+    parseStringArray<Equipment>(row.equipment_json).forEach((value) => equipment.add(value));
+  });
+
+  return {
+    force_types: sortByKnownOrder([...forceTypes], FORCE_TYPES),
+    movement_patterns: sortByKnownOrder([...movementPatterns], MOVEMENT_PATTERNS),
+    body_regions: sortByKnownOrder([...bodyRegions], BODY_REGIONS),
+    mechanics: sortByKnownOrder([...mechanics], MECHANICS_TYPES),
+    lateralities: sortByKnownOrder([...lateralities], LATERALITY_TYPES),
+    primary_muscles: sortByKnownOrder([...primaryMuscles], MUSCLE_GROUPS),
+    secondary_muscles: sortByKnownOrder([...secondaryMuscles], MUSCLE_GROUPS),
+    muscles: sortByKnownOrder(
+      [...new Set([...primaryMuscles, ...secondaryMuscles])],
+      MUSCLE_GROUPS,
+    ),
+    equipment: sortByKnownOrder([...equipment], EQUIPMENT),
+    substitution_groups: [...substitutionGroups].sort(),
+    sources: [...sources].sort(),
+  };
 }
 
 export async function getExerciseById(db: SQLiteDatabase, id: string): Promise<Exercise | null> {
@@ -335,4 +435,20 @@ function jsonArrayContainsNeedle(value: string): string {
 function parseAliasList(value: string | null): string[] {
   if (!value) return [];
   return value.split('\u001f').filter(Boolean);
+}
+
+function addIfPresent<T extends string>(set: Set<T>, value: T | null): void {
+  if (value) set.add(value);
+}
+
+function sortByKnownOrder<T extends string>(values: T[], order: readonly T[]): T[] {
+  return values.sort((a, b) => {
+    const aIndex = order.indexOf(a);
+    const bIndex = order.indexOf(b);
+
+    if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+    if (aIndex === -1) return 1;
+    if (bIndex === -1) return -1;
+    return aIndex - bIndex;
+  });
 }
