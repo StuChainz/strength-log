@@ -1,6 +1,15 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import { newId, normalizeName } from '@/domain/ids';
-import { type ExerciseCategory, type Unit } from '@/domain/types';
+import {
+  type Equipment,
+  type ExerciseCategory,
+  type ForceType,
+  type Laterality,
+  type Mechanics,
+  type MovementPattern,
+  type MuscleGroup,
+  type Unit,
+} from '@/domain/types';
 
 interface SeedExercise {
   name: string;
@@ -8,6 +17,21 @@ interface SeedExercise {
   primary_muscle: string | null;
   default_unit: Unit | null;
   aliases: string[];
+}
+
+interface SeedExerciseMetadata {
+  exerciseName: string;
+  movement_pattern: MovementPattern;
+  force_type: ForceType;
+  body_region: string;
+  primary_muscles: MuscleGroup[];
+  secondary_muscles: MuscleGroup[];
+  equipment: Equipment[];
+  mechanics: Mechanics;
+  laterality: Laterality;
+  difficulty: number;
+  substitution_group: string;
+  source_id: string;
 }
 
 // 35 seed exercises: 10 barbell, 9 dumbbell, 8 bodyweight, 5 machine, 3 cable.
@@ -269,6 +293,289 @@ export const SEED_EXERCISES: SeedExercise[] = [
   },
 ];
 
+export const SEED_EXERCISE_METADATA: SeedExerciseMetadata[] = [
+  {
+    exerciseName: 'Barbell Back Squat',
+    movement_pattern: 'squat',
+    force_type: 'legs',
+    body_region: 'lower_body',
+    primary_muscles: ['quadriceps', 'glutes'],
+    secondary_muscles: ['hamstrings', 'core'],
+    equipment: ['barbell'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 3,
+    substitution_group: 'squat_barbell',
+    source_id: 'curated_seed:barbell_back_squat',
+  },
+  {
+    exerciseName: 'Barbell Front Squat',
+    movement_pattern: 'squat',
+    force_type: 'legs',
+    body_region: 'lower_body',
+    primary_muscles: ['quadriceps'],
+    secondary_muscles: ['glutes', 'core'],
+    equipment: ['barbell'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 4,
+    substitution_group: 'squat_barbell',
+    source_id: 'curated_seed:barbell_front_squat',
+  },
+  {
+    exerciseName: 'Barbell Deadlift',
+    movement_pattern: 'hinge',
+    force_type: 'hinge',
+    body_region: 'full_body',
+    primary_muscles: ['hamstrings', 'glutes'],
+    secondary_muscles: ['back', 'core'],
+    equipment: ['barbell'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 4,
+    substitution_group: 'deadlift',
+    source_id: 'curated_seed:barbell_deadlift',
+  },
+  {
+    exerciseName: 'Romanian Deadlift',
+    movement_pattern: 'hinge',
+    force_type: 'hinge',
+    body_region: 'lower_body',
+    primary_muscles: ['hamstrings', 'glutes'],
+    secondary_muscles: ['back', 'core'],
+    equipment: ['barbell'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 3,
+    substitution_group: 'romanian_deadlift',
+    source_id: 'curated_seed:romanian_deadlift',
+  },
+  {
+    exerciseName: 'Barbell Bench Press',
+    movement_pattern: 'horizontal_push',
+    force_type: 'push',
+    body_region: 'upper_body',
+    primary_muscles: ['chest'],
+    secondary_muscles: ['triceps', 'shoulders'],
+    equipment: ['barbell', 'bench'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 3,
+    substitution_group: 'horizontal_press',
+    source_id: 'curated_seed:barbell_bench_press',
+  },
+  {
+    exerciseName: 'Incline Barbell Bench Press',
+    movement_pattern: 'horizontal_push',
+    force_type: 'push',
+    body_region: 'upper_body',
+    primary_muscles: ['chest'],
+    secondary_muscles: ['shoulders', 'triceps'],
+    equipment: ['barbell', 'bench'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 3,
+    substitution_group: 'incline_press',
+    source_id: 'curated_seed:incline_barbell_bench_press',
+  },
+  {
+    exerciseName: 'Overhead Press',
+    movement_pattern: 'vertical_push',
+    force_type: 'push',
+    body_region: 'upper_body',
+    primary_muscles: ['shoulders'],
+    secondary_muscles: ['triceps', 'core'],
+    equipment: ['barbell'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 3,
+    substitution_group: 'vertical_press',
+    source_id: 'curated_seed:overhead_press',
+  },
+  {
+    exerciseName: 'Barbell Row',
+    movement_pattern: 'horizontal_pull',
+    force_type: 'pull',
+    body_region: 'upper_body',
+    primary_muscles: ['back'],
+    secondary_muscles: ['biceps', 'hamstrings'],
+    equipment: ['barbell'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 3,
+    substitution_group: 'horizontal_row',
+    source_id: 'curated_seed:barbell_row',
+  },
+  {
+    exerciseName: 'Barbell Hip Thrust',
+    movement_pattern: 'hip_extension',
+    force_type: 'hinge',
+    body_region: 'lower_body',
+    primary_muscles: ['glutes'],
+    secondary_muscles: ['hamstrings', 'core'],
+    equipment: ['barbell', 'bench'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 2,
+    substitution_group: 'hip_extension',
+    source_id: 'curated_seed:barbell_hip_thrust',
+  },
+  {
+    exerciseName: 'Dumbbell Bench Press',
+    movement_pattern: 'horizontal_push',
+    force_type: 'push',
+    body_region: 'upper_body',
+    primary_muscles: ['chest'],
+    secondary_muscles: ['triceps', 'shoulders'],
+    equipment: ['dumbbell', 'bench'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 2,
+    substitution_group: 'horizontal_press',
+    source_id: 'curated_seed:dumbbell_bench_press',
+  },
+  {
+    exerciseName: 'Dumbbell Shoulder Press',
+    movement_pattern: 'vertical_push',
+    force_type: 'push',
+    body_region: 'upper_body',
+    primary_muscles: ['shoulders'],
+    secondary_muscles: ['triceps'],
+    equipment: ['dumbbell'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 2,
+    substitution_group: 'vertical_press',
+    source_id: 'curated_seed:dumbbell_shoulder_press',
+  },
+  {
+    exerciseName: 'Single-Arm Dumbbell Row',
+    movement_pattern: 'horizontal_pull',
+    force_type: 'pull',
+    body_region: 'upper_body',
+    primary_muscles: ['back'],
+    secondary_muscles: ['biceps', 'core'],
+    equipment: ['dumbbell', 'bench'],
+    mechanics: 'compound',
+    laterality: 'single_side',
+    difficulty: 2,
+    substitution_group: 'horizontal_row',
+    source_id: 'curated_seed:single_arm_dumbbell_row',
+  },
+  {
+    exerciseName: 'Dumbbell Bicep Curl',
+    movement_pattern: 'elbow_flexion',
+    force_type: 'pull',
+    body_region: 'upper_body',
+    primary_muscles: ['biceps'],
+    secondary_muscles: ['forearms'],
+    equipment: ['dumbbell'],
+    mechanics: 'isolation',
+    laterality: 'bilateral',
+    difficulty: 1,
+    substitution_group: 'elbow_flexion',
+    source_id: 'curated_seed:dumbbell_bicep_curl',
+  },
+  {
+    exerciseName: 'Dumbbell Lateral Raise',
+    movement_pattern: 'shoulder_abduction',
+    force_type: 'push',
+    body_region: 'upper_body',
+    primary_muscles: ['shoulders'],
+    secondary_muscles: [],
+    equipment: ['dumbbell'],
+    mechanics: 'isolation',
+    laterality: 'bilateral',
+    difficulty: 1,
+    substitution_group: 'shoulder_abduction',
+    source_id: 'curated_seed:dumbbell_lateral_raise',
+  },
+  {
+    exerciseName: 'Dumbbell Lunge',
+    movement_pattern: 'lunge',
+    force_type: 'legs',
+    body_region: 'lower_body',
+    primary_muscles: ['quadriceps', 'glutes'],
+    secondary_muscles: ['hamstrings', 'core'],
+    equipment: ['dumbbell'],
+    mechanics: 'compound',
+    laterality: 'alternating',
+    difficulty: 2,
+    substitution_group: 'lunge',
+    source_id: 'curated_seed:dumbbell_lunge',
+  },
+  {
+    exerciseName: 'Dumbbell Tricep Extension',
+    movement_pattern: 'elbow_extension',
+    force_type: 'push',
+    body_region: 'upper_body',
+    primary_muscles: ['triceps'],
+    secondary_muscles: [],
+    equipment: ['dumbbell'],
+    mechanics: 'isolation',
+    laterality: 'bilateral',
+    difficulty: 1,
+    substitution_group: 'elbow_extension',
+    source_id: 'curated_seed:dumbbell_tricep_extension',
+  },
+  {
+    exerciseName: 'Pull Up',
+    movement_pattern: 'vertical_pull',
+    force_type: 'pull',
+    body_region: 'upper_body',
+    primary_muscles: ['back'],
+    secondary_muscles: ['biceps', 'core'],
+    equipment: ['bodyweight', 'pull_up_bar'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 3,
+    substitution_group: 'vertical_pull',
+    source_id: 'curated_seed:pull_up',
+  },
+  {
+    exerciseName: 'Push Up',
+    movement_pattern: 'horizontal_push',
+    force_type: 'push',
+    body_region: 'upper_body',
+    primary_muscles: ['chest'],
+    secondary_muscles: ['triceps', 'shoulders', 'core'],
+    equipment: ['bodyweight'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 1,
+    substitution_group: 'horizontal_press',
+    source_id: 'curated_seed:push_up',
+  },
+  {
+    exerciseName: 'Plank',
+    movement_pattern: 'core',
+    force_type: 'core',
+    body_region: 'core',
+    primary_muscles: ['core'],
+    secondary_muscles: ['shoulders', 'glutes'],
+    equipment: ['bodyweight'],
+    mechanics: 'isolation',
+    laterality: 'bilateral',
+    difficulty: 1,
+    substitution_group: 'core_anti_extension',
+    source_id: 'curated_seed:plank',
+  },
+  {
+    exerciseName: 'Lat Pulldown',
+    movement_pattern: 'vertical_pull',
+    force_type: 'pull',
+    body_region: 'upper_body',
+    primary_muscles: ['back'],
+    secondary_muscles: ['biceps'],
+    equipment: ['machine'],
+    mechanics: 'compound',
+    laterality: 'bilateral',
+    difficulty: 1,
+    substitution_group: 'vertical_pull',
+    source_id: 'curated_seed:lat_pulldown',
+  },
+];
+
 /**
  * Seed the exercises table. Idempotent: skips entirely if any seed exercises
  * already exist (is_custom = 0). Safe to call on every app launch.
@@ -277,40 +584,80 @@ export async function seedExercises(db: SQLiteDatabase): Promise<void> {
   const row = await db.getFirstAsync<{ count: number }>(
     'SELECT COUNT(*) AS count FROM exercises WHERE is_custom = 0',
   );
-  if (row && row.count > 0) return; // already seeded
+  if (!row || row.count === 0) {
+    const now = Date.now();
 
+    await db.withTransactionAsync(async () => {
+      for (const seed of SEED_EXERCISES) {
+        const exerciseId = newId();
+        const normalised = normalizeName(seed.name);
+
+        await db.runAsync(
+          `INSERT INTO exercises
+             (id, name, normalized_name, category, primary_muscle, default_unit,
+              is_custom, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+          [
+            exerciseId,
+            seed.name,
+            normalised,
+            seed.category,
+            seed.primary_muscle,
+            seed.default_unit,
+            now,
+            now,
+          ],
+        );
+
+        for (const alias of seed.aliases) {
+          await db.runAsync(
+            `INSERT INTO exercise_aliases
+               (id, exercise_id, alias, source, created_at)
+             VALUES (?, ?, ?, 'seed', ?)`,
+            [newId(), exerciseId, normalizeName(alias), now],
+          );
+        }
+      }
+    });
+  }
+
+  await seedExerciseMetadata(db);
+}
+
+async function seedExerciseMetadata(db: SQLiteDatabase): Promise<void> {
   const now = Date.now();
 
   await db.withTransactionAsync(async () => {
-    for (const seed of SEED_EXERCISES) {
-      const exerciseId = newId();
-      const normalised = normalizeName(seed.name);
+    for (const seed of SEED_EXERCISE_METADATA) {
+      const exercise = await db.getFirstAsync<{ id: string }>(
+        'SELECT id FROM exercises WHERE normalized_name = ? AND is_custom = 0',
+        [normalizeName(seed.exerciseName)],
+      );
+      if (!exercise) continue;
 
       await db.runAsync(
-        `INSERT INTO exercises
-           (id, name, normalized_name, category, primary_muscle, default_unit,
-            is_custom, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        `INSERT OR IGNORE INTO exercise_metadata
+           (exercise_id, movement_pattern, force_type, body_region,
+            primary_muscles_json, secondary_muscles_json, equipment_json,
+            mechanics, laterality, difficulty, substitution_group, source,
+            source_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'curated_seed', ?, ?)`,
         [
-          exerciseId,
-          seed.name,
-          normalised,
-          seed.category,
-          seed.primary_muscle,
-          seed.default_unit,
-          now,
+          exercise.id,
+          seed.movement_pattern,
+          seed.force_type,
+          seed.body_region,
+          JSON.stringify(seed.primary_muscles),
+          JSON.stringify(seed.secondary_muscles),
+          JSON.stringify(seed.equipment),
+          seed.mechanics,
+          seed.laterality,
+          seed.difficulty,
+          seed.substitution_group,
+          seed.source_id,
           now,
         ],
       );
-
-      for (const alias of seed.aliases) {
-        await db.runAsync(
-          `INSERT INTO exercise_aliases
-             (id, exercise_id, alias, source, created_at)
-           VALUES (?, ?, ?, 'seed', ?)`,
-          [newId(), exerciseId, normalizeName(alias), now],
-        );
-      }
     }
   });
 }

@@ -1,4 +1,4 @@
-import { SEED_EXERCISES } from '@/db/seed/exercises';
+import { SEED_EXERCISES, SEED_EXERCISE_METADATA } from '@/db/seed/exercises';
 import { normalizeName } from '@/domain/ids';
 
 describe('SEED_EXERCISES', () => {
@@ -49,5 +49,49 @@ describe('SEED_EXERCISES', () => {
     expect(categories.has('bodyweight')).toBe(true);
     expect(categories.has('machine')).toBe(true);
     expect(categories.has('cable')).toBe(true);
+  });
+});
+
+describe('SEED_EXERCISE_METADATA', () => {
+  it('contains a small curated fixture of around 20 exercises', () => {
+    expect(SEED_EXERCISE_METADATA.length).toBeGreaterThanOrEqual(18);
+    expect(SEED_EXERCISE_METADATA.length).toBeLessThanOrEqual(24);
+  });
+
+  it('only references existing seed exercises by name', () => {
+    const exerciseNames = new Set(SEED_EXERCISES.map((e) => e.name));
+
+    SEED_EXERCISE_METADATA.forEach((metadata) => {
+      expect(exerciseNames.has(metadata.exerciseName)).toBe(true);
+    });
+  });
+
+  it('covers the required movement patterns', () => {
+    const patterns = new Set(SEED_EXERCISE_METADATA.map((m) => m.movement_pattern));
+
+    [
+      'horizontal_push',
+      'vertical_push',
+      'horizontal_pull',
+      'vertical_pull',
+      'squat',
+      'hinge',
+      'lunge',
+      'hip_extension',
+      'elbow_flexion',
+      'elbow_extension',
+      'shoulder_abduction',
+      'core',
+    ].forEach((pattern) => {
+      expect(patterns.has(pattern)).toBe(true);
+    });
+  });
+
+  it('covers Push, Pull, Legs, Hinge, and Core filters', () => {
+    const forceTypes = new Set(SEED_EXERCISE_METADATA.map((m) => m.force_type));
+
+    ['push', 'pull', 'legs', 'hinge', 'core'].forEach((forceType) => {
+      expect(forceTypes.has(forceType)).toBe(true);
+    });
   });
 });

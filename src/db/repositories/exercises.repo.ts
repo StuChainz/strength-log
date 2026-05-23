@@ -1,7 +1,42 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
-import { type Exercise } from '@/domain/types';
+import {
+  type Equipment,
+  type Exercise,
+  type ExerciseCategory,
+  type ExerciseMetadata,
+  type ExerciseMetadataView,
+  type ExerciseWithMetadata,
+  type ForceType,
+  type MuscleGroup,
+} from '@/domain/types';
 import { newId, normalizeName } from '@/domain/ids';
 import { type CreateExerciseInput, type UpdateExerciseInput } from '@/domain/validation';
+
+export interface ExerciseMetadataFilters {
+  query?: string;
+  category?: ExerciseCategory;
+  custom?: boolean;
+  force_type?: ForceType;
+  muscle?: MuscleGroup | string;
+  equipment?: Equipment | string;
+}
+
+type ExerciseWithMetadataRow = Exercise & {
+  metadata_exercise_id: string | null;
+  movement_pattern: ExerciseMetadata['movement_pattern'] | null;
+  force_type: ExerciseMetadata['force_type'] | null;
+  body_region: string | null;
+  primary_muscles_json: string | null;
+  secondary_muscles_json: string | null;
+  equipment_json: string | null;
+  mechanics: ExerciseMetadata['mechanics'] | null;
+  laterality: ExerciseMetadata['laterality'] | null;
+  difficulty: number | null;
+  substitution_group: string | null;
+  source: string | null;
+  source_id: string | null;
+  metadata_updated_at: number | null;
+};
 
 export async function getExerciseCount(db: SQLiteDatabase): Promise<number> {
   const row = await db.getFirstAsync<{ count: number }>(
@@ -16,17 +51,71 @@ export async function getAllExercises(db: SQLiteDatabase): Promise<Exercise[]> {
   );
 }
 
-export async function getExerciseById(
+export async function getExercisesWithMetadata(
   db: SQLiteDatabase,
-  id: string,
-): Promise<Exercise | null> {
+  filters: ExerciseMetadataFilters = {},
+): Promise<ExerciseWithMetadata[]> {
+  const where = ['e.archived_at IS NULL'];
+  const params: (string | number)[] = [];
+
+  if (filters.category) {
+    where.push('e.category = ?');
+    params.push(filters.category);
+  }
+  if (filters.custom !== undefined) {
+    where.push('e.is_custom = ?');
+    params.push(filters.custom ? 1 : 0);
+  }
+  if (filters.force_type) {
+    where.push('m.force_type = ?');
+    params.push(filters.force_type);
+  }
+  if (filters.muscle) {
+    where.push('(m.primary_muscles_json LIKE ? OR m.secondary_muscles_json LIKE ?)');
+    const needle = jsonArrayContainsNeedle(filters.muscle);
+    params.push(needle, needle);
+  }
+  if (filters.equipment) {
+    where.push('m.equipment_json LIKE ?');
+    params.push(jsonArrayContainsNeedle(filters.equipment));
+  }
+  if (filters.query?.trim()) {
+    where.push('e.normalized_name LIKE ?');
+    params.push(`%${normalizeName(filters.query)}%`);
+  }
+
+  const rows = await db.getAllAsync<ExerciseWithMetadataRow>(
+    `SELECT
+       e.*,
+       m.exercise_id AS metadata_exercise_id,
+       m.movement_pattern,
+       m.force_type,
+       m.body_region,
+       m.primary_muscles_json,
+       m.secondary_muscles_json,
+       m.equipment_json,
+       m.mechanics,
+       m.laterality,
+       m.difficulty,
+       m.substitution_group,
+       m.source,
+       m.source_id,
+       m.updated_at AS metadata_updated_at
+     FROM exercises e
+     LEFT JOIN exercise_metadata m ON m.exercise_id = e.id
+     WHERE ${where.join(' AND ')}
+     ORDER BY e.name ASC`,
+    params,
+  );
+
+  return rows.map(rowToExerciseWithMetadata);
+}
+
+export async function getExerciseById(db: SQLiteDatabase, id: string): Promise<Exercise | null> {
   return db.getFirstAsync<Exercise>('SELECT * FROM exercises WHERE id = ?', [id]);
 }
 
-export async function searchExercises(
-  db: SQLiteDatabase,
-  query: string,
-): Promise<Exercise[]> {
+export async function searchExercises(db: SQLiteDatabase, query: string): Promise<Exercise[]> {
   const needle = normalizeName(query);
   return db.getAllAsync<Exercise>(
     `SELECT * FROM exercises
@@ -96,4 +185,58 @@ export async function updateExercise(
 
 export async function archiveExercise(db: SQLiteDatabase, id: string): Promise<void> {
   await db.runAsync('UPDATE exercises SET archived_at = ? WHERE id = ?', [Date.now(), id]);
+}
+
+function rowToExerciseWithMetadata(row: ExerciseWithMetadataRow): ExerciseWithMetadata {
+  const exercise: Exercise = {
+    id: row.id,
+    name: row.name,
+    normalized_name: row.normalized_name,
+    category: row.category,
+    primary_muscle: row.primary_muscle,
+    default_unit: row.default_unit,
+    is_custom: row.is_custom,
+    archived_at: row.archived_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+
+  if (!row.metadata_exercise_id) {
+    return { ...exercise, metadata: null };
+  }
+
+  const metadata: ExerciseMetadataView = {
+    exercise_id: row.metadata_exercise_id,
+    movement_pattern: row.movement_pattern,
+    force_type: row.force_type,
+    body_region: row.body_region,
+    primary_muscles: parseStringArray<MuscleGroup>(row.primary_muscles_json),
+    secondary_muscles: parseStringArray<MuscleGroup>(row.secondary_muscles_json),
+    equipment: parseStringArray<Equipment>(row.equipment_json),
+    mechanics: row.mechanics,
+    laterality: row.laterality,
+    difficulty: row.difficulty,
+    substitution_group: row.substitution_group,
+    source: row.source ?? 'curated_seed',
+    source_id: row.source_id,
+    updated_at: row.metadata_updated_at ?? 0,
+  };
+
+  return { ...exercise, metadata };
+}
+
+function parseStringArray<T extends string>(json: string | null): T[] {
+  if (!json) return [];
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is T => typeof value === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function jsonArrayContainsNeedle(value: string): string {
+  return `%"${value}"%`;
 }

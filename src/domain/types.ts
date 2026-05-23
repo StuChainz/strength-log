@@ -8,6 +8,47 @@ export type ExerciseCategory =
   | 'bodyweight'
   | 'cable'
   | 'other';
+export type ForceType = 'push' | 'pull' | 'legs' | 'hinge' | 'core' | 'carry' | 'mixed' | 'other';
+export type MovementPattern =
+  | 'horizontal_push'
+  | 'vertical_push'
+  | 'horizontal_pull'
+  | 'vertical_pull'
+  | 'squat'
+  | 'hinge'
+  | 'lunge'
+  | 'hip_extension'
+  | 'elbow_flexion'
+  | 'elbow_extension'
+  | 'shoulder_abduction'
+  | 'core'
+  | 'carry'
+  | 'other';
+export type MuscleGroup =
+  | 'chest'
+  | 'back'
+  | 'shoulders'
+  | 'biceps'
+  | 'triceps'
+  | 'quadriceps'
+  | 'hamstrings'
+  | 'glutes'
+  | 'calves'
+  | 'core'
+  | 'forearms'
+  | 'full_body'
+  | 'other';
+export type Equipment =
+  | 'barbell'
+  | 'dumbbell'
+  | 'machine'
+  | 'bodyweight'
+  | 'cable'
+  | 'bench'
+  | 'pull_up_bar'
+  | 'other';
+export type Mechanics = 'compound' | 'isolation' | 'other';
+export type Laterality = 'bilateral' | 'unilateral' | 'alternating' | 'single_side' | 'other';
 export type SessionStatus = 'in_progress' | 'completed' | 'discarded';
 export type EventType =
   | 'session_started'
@@ -49,6 +90,44 @@ export interface ExerciseAlias {
   alias: string;
   source: AliasSrc;
   created_at: number;
+}
+
+export interface ExerciseMetadata {
+  exercise_id: string;
+  movement_pattern: MovementPattern | null;
+  force_type: ForceType | null;
+  body_region: string | null;
+  primary_muscles_json: string;
+  secondary_muscles_json: string;
+  equipment_json: string;
+  mechanics: Mechanics | null;
+  laterality: Laterality | null;
+  difficulty: number | null;
+  substitution_group: string | null;
+  source: string;
+  source_id: string | null;
+  updated_at: number;
+}
+
+export interface ExerciseMetadataView {
+  exercise_id: string;
+  movement_pattern: MovementPattern | null;
+  force_type: ForceType | null;
+  body_region: string | null;
+  primary_muscles: MuscleGroup[];
+  secondary_muscles: MuscleGroup[];
+  equipment: Equipment[];
+  mechanics: Mechanics | null;
+  laterality: Laterality | null;
+  difficulty: number | null;
+  substitution_group: string | null;
+  source: string;
+  source_id: string | null;
+  updated_at: number;
+}
+
+export interface ExerciseWithMetadata extends Exercise {
+  metadata: ExerciseMetadataView | null;
 }
 
 export interface Template {

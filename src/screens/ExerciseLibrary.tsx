@@ -12,17 +12,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
-import { getAllExercises } from '@/db/repositories/exercises.repo';
+import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
 import { normalizeName } from '@/domain/ids';
 import ExerciseHistorySheet from '@/screens/ExerciseHistorySheet';
 import { T } from '@/theme/tokens';
-import type { Exercise, ExerciseCategory } from '@/domain/types';
+import type { Exercise, ExerciseCategory, ExerciseWithMetadata, ForceType } from '@/domain/types';
 import type { ExerciseLibraryNavigationProp } from '@/navigation/types';
 
-type FilterOption = ExerciseCategory | 'all' | 'custom';
+type ForceFilterOption = Extract<ForceType, 'push' | 'pull' | 'legs' | 'hinge' | 'core'>;
+type FilterOption = ExerciseCategory | ForceFilterOption | 'all' | 'custom';
 
 const FILTER_CHIPS: { label: string; value: FilterOption }[] = [
   { label: 'All', value: 'all' },
+  { label: 'Push', value: 'push' },
+  { label: 'Pull', value: 'pull' },
+  { label: 'Legs', value: 'legs' },
+  { label: 'Hinge', value: 'hinge' },
+  { label: 'Core', value: 'core' },
   { label: 'Barbell', value: 'barbell' },
   { label: 'Dumbbell', value: 'dumbbell' },
   { label: 'Machine', value: 'machine' },
@@ -40,9 +46,22 @@ const CATEGORY_LABEL: Record<ExerciseCategory, string> = {
   other: 'Other',
 };
 
+const FORCE_TYPE_LABEL: Record<ForceType, string> = {
+  push: 'Push',
+  pull: 'Pull',
+  legs: 'Legs',
+  hinge: 'Hinge',
+  core: 'Core',
+  carry: 'Carry',
+  mixed: 'Mixed',
+  other: 'Other',
+};
+
+const FORCE_FILTERS = new Set<FilterOption>(['push', 'pull', 'legs', 'hinge', 'core']);
+
 export default function ExerciseLibrary() {
   const navigation = useNavigation<ExerciseLibraryNavigationProp>();
-  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [exercises, setExercises] = useState<ExerciseWithMetadata[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterOption>('all');
   const [loading, setLoading] = useState(true);
@@ -53,19 +72,25 @@ export default function ExerciseLibrary() {
     try {
       const db = dbRef.current ?? (await openDb());
       dbRef.current = db;
-      const all = await getAllExercises(db);
+      const all = await getExercisesWithMetadata(db);
       setExercises(all);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { void loadExercises(); }, [loadExercises]));
+  useFocusEffect(
+    useCallback(() => {
+      void loadExercises();
+    }, [loadExercises]),
+  );
 
   const filtered = useMemo(() => {
     let result = exercises;
     if (activeFilter === 'custom') {
       result = result.filter((e) => e.is_custom === 1);
+    } else if (FORCE_FILTERS.has(activeFilter)) {
+      result = result.filter((e) => e.metadata?.force_type === activeFilter);
     } else if (activeFilter !== 'all') {
       result = result.filter((e) => e.category === activeFilter);
     }
@@ -167,11 +192,7 @@ export default function ExerciseLibrary() {
             >
               <View style={styles.exerciseInfo}>
                 <Text style={styles.exerciseName}>{item.name}</Text>
-                <Text style={styles.exerciseMeta}>
-                  {CATEGORY_LABEL[item.category]}
-                  {item.primary_muscle ? ` · ${item.primary_muscle.toUpperCase()}` : ''}
-                  {item.is_custom ? ' · CUSTOM' : ''}
-                </Text>
+                <Text style={styles.exerciseMeta}>{formatExerciseMeta(item)}</Text>
               </View>
               <TouchableOpacity
                 style={styles.historyBtn}
@@ -322,3 +343,28 @@ const styles = StyleSheet.create({
     color: T.muted,
   },
 });
+
+function formatExerciseMeta(exercise: ExerciseWithMetadata): string {
+  const metadata = exercise.metadata;
+  const primaryMuscle = metadata?.primary_muscles[0] ?? exercise.primary_muscle;
+  const equipment = metadata?.equipment[0]
+    ? formatValue(metadata.equipment[0])
+    : CATEGORY_LABEL[exercise.category];
+  const forceType = metadata?.force_type ? FORCE_TYPE_LABEL[metadata.force_type] : null;
+
+  return [
+    equipment,
+    primaryMuscle ? formatValue(primaryMuscle) : null,
+    forceType,
+    exercise.is_custom ? 'Custom' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function formatValue(value: string): string {
+  return value
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}

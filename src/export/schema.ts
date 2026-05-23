@@ -2,6 +2,7 @@ export const EXPORT_TABLES = [
   'users',
   'exercises',
   'exercise_aliases',
+  'exercise_metadata',
   'templates',
   'template_items',
   'workout_sessions',
@@ -37,7 +38,9 @@ export const STRENGTH_LOG_EXPORT_SCHEMA = {
 } as const;
 
 export function validateExportPayload(payload: StrengthLogExport): boolean {
-  return payload.schemaVersion === 1
-    && typeof payload.exportedAt === 'string'
-    && EXPORT_TABLES.every((table) => Array.isArray(payload.tables[table]));
+  return (
+    payload.schemaVersion === 1 &&
+    typeof payload.exportedAt === 'string' &&
+    EXPORT_TABLES.every((table) => Array.isArray(payload.tables[table]))
+  );
 }

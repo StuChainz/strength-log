@@ -38,6 +38,7 @@ export async function resetLocalData(): Promise<void> {
     DROP TABLE IF EXISTS workout_sessions;
     DROP TABLE IF EXISTS template_items;
     DROP TABLE IF EXISTS templates;
+    DROP TABLE IF EXISTS exercise_metadata;
     DROP TABLE IF EXISTS exercise_aliases;
     DROP TABLE IF EXISTS exercises;
     DROP TABLE IF EXISTS users;
@@ -68,10 +69,10 @@ async function runMigrations(db: SQLiteDatabase): Promise<void> {
     // Apply the migration in a transaction so it's all-or-nothing.
     await db.withTransactionAsync(async () => {
       await db.execAsync(migration.sql);
-      await db.runAsync(
-        'INSERT INTO _migrations (name, applied_at) VALUES (?, ?)',
-        [migration.name, Date.now()],
-      );
+      await db.runAsync('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)', [
+        migration.name,
+        Date.now(),
+      ]);
     });
   }
 }

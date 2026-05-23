@@ -9,6 +9,10 @@ function emptyTables(): StrengthLogExport['tables'] {
 }
 
 describe('export schema', () => {
+  it('includes exercise metadata in v1 exports', () => {
+    expect(EXPORT_TABLES).toContain('exercise_metadata');
+  });
+
   it('requires all v1 tables', () => {
     const payload: StrengthLogExport = {
       schemaVersion: 1,

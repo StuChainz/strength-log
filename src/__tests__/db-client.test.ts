@@ -6,6 +6,7 @@
  */
 
 import { openDb, _resetDbSingleton } from '@/db/client';
+import { MIGRATIONS } from '@/db/migrations';
 
 // jest.mock is hoisted by Babel before any imports, so the factory can safely
 // reference `mockDb` (a let declared below) via closure.
@@ -48,7 +49,23 @@ function createMockDb() {
       }
       if (/INSERT INTO exercises/.test(sql) && !/INSERT OR IGNORE/.test(sql)) {
         ensureTable('exercises');
-        tables['exercises'].push({ id: params[0] as string, is_custom: 0 });
+        tables['exercises'].push({
+          id: params[0] as string,
+          name: params[1] as string,
+          normalized_name: params[2] as string,
+          is_custom: 0,
+        });
+      }
+      if (/INSERT OR IGNORE INTO exercise_metadata/.test(sql) && params[0] != null) {
+        ensureTable('exercise_metadata');
+        const exists = tables['exercise_metadata'].some((r) => r.exercise_id === params[0]);
+        if (!exists) {
+          tables['exercise_metadata'].push({
+            exercise_id: params[0] as string,
+            movement_pattern: params[1] as string,
+            force_type: params[2] as string,
+          });
+        }
       }
       return { lastInsertRowId: 1, changes: 1 };
     }),
@@ -61,6 +78,13 @@ function createMockDb() {
       if (/COUNT\(\*\)/.test(sql) && /exercises/.test(sql)) {
         ensureTable('exercises');
         return { count: tables['exercises'].filter((r) => r.is_custom === 0).length };
+      }
+      if (/SELECT id FROM exercises/.test(sql) && params[0] != null) {
+        ensureTable('exercises');
+        return (
+          tables['exercises'].find((r) => r.normalized_name === params[0] && r.is_custom === 0) ??
+          null
+        );
       }
       return null;
     }),
@@ -92,15 +116,22 @@ describe('Migration runner', () => {
     expect(mockDb._tables['_migrations']?.find((r) => r.name === '001_init')).toBeDefined();
   });
 
+  it('creates the exercise_metadata table', async () => {
+    await openDb();
+    expect(mockDb._tables.exercise_metadata).toBeDefined();
+    const metadataMigration = mockDb._tables['_migrations']?.find(
+      (r) => r.name === '003_exercise_metadata',
+    );
+    expect(metadataMigration).toBeDefined();
+  });
+
   it('does not re-apply migrations on second open', async () => {
     await openDb();
     _resetDbSingleton();
     await openDb();
 
-    const migrationInserts = mockDb._runCalls.filter((c) =>
-      /INSERT INTO _migrations/.test(c.sql),
-    );
-    expect(migrationInserts).toHaveLength(2);
+    const migrationInserts = mockDb._runCalls.filter((c) => /INSERT INTO _migrations/.test(c.sql));
+    expect(migrationInserts).toHaveLength(MIGRATIONS.length);
   });
 
   it('wraps migration SQL in a transaction', async () => {
@@ -124,6 +155,12 @@ describe('Seed idempotency', () => {
     await openDb();
     const exerciseInserts = mockDb._runCalls.filter((c) => /INSERT INTO exercises/.test(c.sql));
     expect(exerciseInserts.length).toBeGreaterThan(0);
+    expect(mockDb._tables.exercises.length).toBeGreaterThan(0);
+  });
+
+  it('inserts seed metadata on first open', async () => {
+    await openDb();
+    expect(mockDb._tables.exercise_metadata.length).toBeGreaterThan(0);
   });
 
   it('does not re-seed on second open when exercises already exist', async () => {
@@ -139,5 +176,16 @@ describe('Seed idempotency', () => {
     ).length;
 
     expect(countAfterSecond).toBe(countAfterFirst); // no new inserts
+  });
+
+  it('does not duplicate seed metadata on second open', async () => {
+    await openDb();
+    const countAfterFirst = mockDb._tables.exercise_metadata.length;
+
+    _resetDbSingleton();
+    await openDb();
+    const countAfterSecond = mockDb._tables.exercise_metadata.length;
+
+    expect(countAfterSecond).toBe(countAfterFirst);
   });
 });
