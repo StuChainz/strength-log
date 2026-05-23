@@ -1,0 +1,54 @@
+import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
+import { MIGRATIONS } from './migrations';
+import { seedExercises } from './seed/exercises';
+
+let _db: SQLiteDatabase | null = null;
+
+/**
+ * Open (or return the cached) SQLite database.
+ * Runs pending migrations and seeds on first call.
+ */
+export async function openDb(): Promise<SQLiteDatabase> {
+  if (_db) return _db;
+  const db = await openDatabaseAsync('strengthlog.db');
+  await runMigrations(db);
+  await seedExercises(db);
+  _db = db;
+  return _db;
+}
+
+/**
+ * Reset the singleton. Used in tests only.
+ */
+export function _resetDbSingleton(): void {
+  _db = null;
+}
+
+// ─── Migration runner ─────────────────────────────────────────────────────────
+
+async function runMigrations(db: SQLiteDatabase): Promise<void> {
+  // Bootstrap the migrations tracking table.
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      name       TEXT PRIMARY KEY,
+      applied_at INTEGER NOT NULL
+    );
+  `);
+
+  for (const migration of MIGRATIONS) {
+    const already = await db.getFirstAsync<{ name: string }>(
+      'SELECT name FROM _migrations WHERE name = ?',
+      [migration.name],
+    );
+    if (already) continue;
+
+    // Apply the migration in a transaction so it's all-or-nothing.
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(migration.sql);
+      await db.runAsync(
+        'INSERT INTO _migrations (name, applied_at) VALUES (?, ?)',
+        [migration.name, Date.now()],
+      );
+    });
+  }
+}

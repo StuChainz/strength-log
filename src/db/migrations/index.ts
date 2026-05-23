@@ -1,0 +1,158 @@
+// SQL strings for each migration.
+// The .sql files alongside this file are the canonical reference; these strings
+// must stay in sync with them.
+
+export interface Migration {
+  name: string;
+  sql: string;
+}
+
+const MIGRATION_001 = `
+CREATE TABLE IF NOT EXISTS users (
+  id           TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL DEFAULT '',
+  default_unit TEXT NOT NULL DEFAULT 'kg',
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS exercises (
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  normalized_name TEXT NOT NULL,
+  category        TEXT NOT NULL CHECK (category IN ('barbell','dumbbell','machine','bodyweight','cable','other')),
+  primary_muscle  TEXT,
+  default_unit    TEXT CHECK (default_unit IN ('kg','lb')),
+  is_custom       INTEGER NOT NULL DEFAULT 0,
+  archived_at     INTEGER,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_exercises_normalized_name ON exercises (normalized_name);
+CREATE INDEX IF NOT EXISTS idx_exercises_archived        ON exercises (archived_at);
+
+CREATE TABLE IF NOT EXISTS exercise_aliases (
+  id          TEXT PRIMARY KEY,
+  exercise_id TEXT NOT NULL REFERENCES exercises(id),
+  alias       TEXT NOT NULL UNIQUE,
+  source      TEXT NOT NULL DEFAULT 'seed' CHECK (source IN ('seed','user')),
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_aliases_alias    ON exercise_aliases (alias);
+CREATE INDEX IF NOT EXISTS idx_aliases_exercise ON exercise_aliases (exercise_id);
+
+CREATE TABLE IF NOT EXISTS templates (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  notes       TEXT,
+  archived_at INTEGER,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS template_items (
+  id            TEXT PRIMARY KEY,
+  template_id   TEXT NOT NULL REFERENCES templates(id),
+  exercise_id   TEXT NOT NULL REFERENCES exercises(id),
+  position      INTEGER NOT NULL,
+  target_sets   INTEGER,
+  target_reps   INTEGER,
+  target_weight REAL,
+  target_rpe    REAL,
+  UNIQUE (template_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS workout_sessions (
+  id                  TEXT PRIMARY KEY,
+  template_id         TEXT REFERENCES templates(id),
+  name                TEXT,
+  status              TEXT NOT NULL CHECK (status IN ('in_progress','completed','discarded')),
+  started_at          INTEGER NOT NULL,
+  ended_at            INTEGER,
+  total_volume_cached REAL,
+  created_at          INTEGER NOT NULL,
+  updated_at          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_status  ON workout_sessions (status);
+CREATE INDEX IF NOT EXISTS idx_sessions_started ON workout_sessions (started_at DESC);
+
+CREATE TABLE IF NOT EXISTS workout_events (
+  id              TEXT PRIMARY KEY,
+  session_id      TEXT NOT NULL REFERENCES workout_sessions(id),
+  event_type      TEXT NOT NULL,
+  payload_json    TEXT NOT NULL,
+  client_event_id TEXT NOT NULL UNIQUE,
+  created_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_events_session_created ON workout_events (session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS workout_sets (
+  id            TEXT PRIMARY KEY,
+  session_id    TEXT NOT NULL REFERENCES workout_sessions(id),
+  exercise_id   TEXT NOT NULL REFERENCES exercises(id),
+  position      INTEGER NOT NULL,
+  weight        REAL,
+  reps          INTEGER,
+  rpe           REAL,
+  unit          TEXT NOT NULL DEFAULT 'kg',
+  is_warmup     INTEGER NOT NULL DEFAULT 0,
+  logged_at     INTEGER NOT NULL,
+  source        TEXT NOT NULL DEFAULT 'tap',
+  client_set_id TEXT NOT NULL UNIQUE,
+  deleted_at    INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_sets_session         ON workout_sets (session_id, position);
+CREATE INDEX IF NOT EXISTS idx_sets_exercise_logged ON workout_sets (exercise_id, logged_at DESC);
+
+CREATE TABLE IF NOT EXISTS exercise_history_cache (
+  exercise_id          TEXT PRIMARY KEY REFERENCES exercises(id),
+  last_session_id      TEXT,
+  last_session_at      INTEGER,
+  last_top_set_weight  REAL,
+  last_top_set_reps    INTEGER,
+  last_session_volume  REAL,
+  est_1rm              REAL,
+  recent_sessions_json TEXT,
+  updated_at           INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS post_session_tags (
+  id         TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES workout_sessions(id),
+  tag        TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (session_id, tag)
+);
+
+CREATE TABLE IF NOT EXISTS session_notes (
+  session_id    TEXT PRIMARY KEY REFERENCES workout_sessions(id),
+  energy_rating INTEGER,
+  note          TEXT,
+  updated_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS metric_samples (
+  id         TEXT PRIMARY KEY,
+  metric_key TEXT NOT NULL,
+  value_num  REAL,
+  value_text TEXT,
+  sampled_at INTEGER NOT NULL,
+  source     TEXT NOT NULL DEFAULT 'workout',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_metric_key_sampled ON metric_samples (metric_key, sampled_at DESC);
+
+CREATE TABLE IF NOT EXISTS weekly_insight_cards (
+  id                       TEXT PRIMARY KEY,
+  generated_for_week_start INTEGER NOT NULL UNIQUE,
+  title                    TEXT NOT NULL,
+  body                     TEXT NOT NULL,
+  sample_size              INTEGER NOT NULL,
+  confidence_label         TEXT NOT NULL CHECK (confidence_label IN ('low','medium','high')),
+  payload_json             TEXT,
+  dismissed_at             INTEGER,
+  created_at               INTEGER NOT NULL
+);
+`;
+
+export const MIGRATIONS: Migration[] = [{ name: '001_init', sql: MIGRATION_001 }];
