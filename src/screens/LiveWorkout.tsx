@@ -6,6 +6,7 @@ import {
   Modal,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -15,19 +16,26 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { useSessionStore } from '@/state/session.store';
 import { ExercisePicker } from '@/components/ExercisePicker';
+import { MicButton } from '@/components/MicButton';
 import ExerciseHistorySheet from '@/screens/ExerciseHistorySheet';
+import VoiceConfirm from '@/screens/VoiceConfirm';
 import { getProgressionSuggestion } from '@/domain/progression';
+import { normalizeName } from '@/domain/ids';
+import { isStaleCommand } from '@/voice/confidence';
+import { parseVoiceCommand } from '@/voice/parser';
 import { T } from '@/theme/tokens';
 import type {
   LiveWorkoutNavigationProp,
   LiveWorkoutRouteProp,
 } from '@/navigation/types';
 import type { WorkoutSet } from '@/domain/types';
+import type { IntentResult, ParserContext } from '@/voice/commands';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 const DEFAULT_WEIGHT = 20;
 const DEFAULT_REPS = 5;
 const RPE_VALUES = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10];
+const ENABLE_TYPED_VOICE_DEBUG = process.env.NODE_ENV !== 'production';
 
 export default function LiveWorkout() {
   const navigation = useNavigation<LiveWorkoutNavigationProp>();
@@ -67,6 +75,9 @@ export default function LiveWorkout() {
   const [editReps, setEditReps] = useState(DEFAULT_REPS);
   const [editRpe, setEditRpe] = useState<number | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
+  const [voiceText, setVoiceText] = useState('');
+  const [voiceResult, setVoiceResult] = useState<IntentResult | null>(null);
+  const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
   const loggingRef = useRef(false);
   const completedRef = useRef(false);
 
@@ -76,6 +87,29 @@ export default function LiveWorkout() {
     (s) => s.exercise_id === activeExerciseId && s.deleted_at === null,
   );
   const hasLoggedSets = sets.some((s) => s.deleted_at === null);
+  const lastLoggedSet = useMemo(() => [...sets]
+    .filter((set) => set.deleted_at === null)
+    .sort((a, b) => b.logged_at - a.logged_at)[0] ?? null, [sets]);
+  const parserContext: ParserContext = useMemo(() => ({
+    activeExerciseId,
+    defaultUnit: activeExercise?.defaultUnit ?? 'kg',
+    exercises: exercises.map((exercise) => ({
+      id: exercise.id,
+      normalizedName: normalizeName(exercise.name),
+      aliases: [normalizeName(exercise.name.split(' ')[0] ?? exercise.name)],
+    })),
+    lastSet: lastLoggedSet
+      ? {
+          setId: lastLoggedSet.id,
+          exerciseId: lastLoggedSet.exercise_id,
+          weight: lastLoggedSet.weight,
+          reps: lastLoggedSet.reps,
+          rpe: lastLoggedSet.rpe,
+          unit: lastLoggedSet.unit,
+          loggedAt: lastLoggedSet.logged_at,
+        }
+      : null,
+  }), [activeExercise, activeExerciseId, exercises, lastLoggedSet]);
   const suggestion = useMemo(() => getProgressionSuggestion({
     category: activeExercise?.category ?? 'barbell',
     targetReps: activeExercise?.targetReps ?? null,
@@ -253,6 +287,76 @@ export default function LiveWorkout() {
       { text: 'Delete', style: 'destructive', onPress: () => void store.deleteSet(set.id) },
     ]);
   }, [store]);
+
+  const commitVoiceResult = useCallback(async (parsed: IntentResult) => {
+    if (isStaleCommand(parsed.recognisedAt)) {
+      setVoiceMessage('Tap to log instead.');
+      return;
+    }
+
+    if (parsed.intent === 'log_set' || parsed.intent === 'log_set_same' || parsed.intent === 'log_set_delta') {
+      await logSet({
+        exerciseId: parsed.args.exerciseId as string,
+        weight: parsed.args.weight as number,
+        reps: parsed.args.reps as number,
+        rpe: null,
+        unit: parsed.args.unit as 'kg' | 'lb',
+        source: 'voice',
+      });
+      setVoiceMessage('Logged from typed voice.');
+      return;
+    }
+
+    if (parsed.intent === 'set_rpe') {
+      await store.editSet(parsed.args.setId as string, { rpe: parsed.args.rpe as number });
+      setVoiceMessage('RPE updated.');
+      return;
+    }
+
+    if (parsed.intent === 'undo') {
+      await store.undoLastSet();
+      setVoiceMessage('Undone.');
+      return;
+    }
+
+    if (parsed.intent === 'next_exercise' && activeExerciseIndex < exercises.length - 1) {
+      setActiveExerciseId(exercises[activeExerciseIndex + 1].id);
+      return;
+    }
+
+    if (parsed.intent === 'prev_exercise' && activeExerciseIndex > 0) {
+      setActiveExerciseId(exercises[activeExerciseIndex - 1].id);
+      return;
+    }
+
+    if (parsed.intent === 'start_rest_timer') {
+      Alert.alert('Rest Timer', `${parsed.args.seconds as number} seconds`);
+      return;
+    }
+
+    if (parsed.intent === 'end_workout') {
+      handleEndWorkout();
+    }
+  }, [
+    activeExerciseIndex,
+    exercises,
+    handleEndWorkout,
+    logSet,
+    setActiveExerciseId,
+    store,
+  ]);
+
+  const handleVoiceDebugSubmit = useCallback(() => {
+    const parsed = parseVoiceCommand(voiceText, parserContext);
+    setVoiceResult(parsed);
+    if (!parsed) {
+      setVoiceMessage('Tap to log instead.');
+      return;
+    }
+    setVoiceMessage(null);
+    if (parsed.intent === 'end_workout' || parsed.confidence === 'medium') return;
+    void commitVoiceResult(parsed);
+  }, [commitVoiceResult, parserContext, voiceText]);
 
   const lastHintText = (() => {
     if (lastSets.length === 0) return null;
@@ -438,6 +542,37 @@ export default function LiveWorkout() {
       {/* ── Logger (pinned bottom) ───────────────────────────── */}
       {exercises.length > 0 && activeExercise && (
         <View style={styles.loggerBlock}>
+          {ENABLE_TYPED_VOICE_DEBUG && (
+            <View style={styles.voiceDebug}>
+              <View style={styles.voiceInputRow}>
+                <TextInput
+                  style={styles.voiceInput}
+                  value={voiceText}
+                  onChangeText={setVoiceText}
+                  placeholder="Typed voice debug"
+                  placeholderTextColor={T.muted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onSubmitEditing={handleVoiceDebugSubmit}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity style={styles.voiceRunBtn} onPress={handleVoiceDebugSubmit}>
+                  <Ionicons name="play" size={14} color={T.accentInk} />
+                </TouchableOpacity>
+              </View>
+              <VoiceConfirm result={voiceResult} />
+              {voiceResult?.confidence === 'medium' || voiceResult?.intent === 'end_workout' ? (
+                <TouchableOpacity
+                  style={styles.voiceConfirmBtn}
+                  onPress={() => voiceResult && void commitVoiceResult(voiceResult)}
+                >
+                  <Text style={styles.voiceConfirmText}>Confirm</Text>
+                </TouchableOpacity>
+              ) : null}
+              {voiceMessage && <Text style={styles.voiceMessage}>{voiceMessage}</Text>}
+            </View>
+          )}
+
           {/* Suggestion line */}
           <TouchableOpacity
             style={styles.suggestionRow}
@@ -520,9 +655,7 @@ export default function LiveWorkout() {
             >
               <Text style={styles.logBtnText}>{logBtnLabel}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.micBtn} disabled>
-              <Ionicons name="mic-outline" size={22} color={T.muted} />
-            </TouchableOpacity>
+            <MicButton />
           </View>
         </View>
       )}
@@ -823,10 +956,36 @@ const styles = StyleSheet.create({
   },
   logBtnPressed: { shadowOpacity: 0.15, shadowRadius: 4 },
   logBtnText: { fontSize: 16, fontWeight: '700', color: T.accentInk, letterSpacing: 0.1 },
-  micBtn: {
-    width: 56, height: 56, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
-    borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  voiceDebug: { gap: 8 },
+  voiceInputRow: { flexDirection: 'row', gap: 8 },
+  voiceInput: {
+    flex: 1,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    color: T.text,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
+  voiceRunBtn: {
+    width: 42,
+    borderRadius: 12,
+    backgroundColor: T.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceConfirmBtn: {
+    alignSelf: 'flex-start',
+    borderRadius: 10,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  voiceConfirmText: { color: T.text, fontSize: 12, fontWeight: '700' },
+  voiceMessage: { color: T.textDim, fontFamily: 'Courier New', fontSize: 11 },
 
   modalBackdrop: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.62)',

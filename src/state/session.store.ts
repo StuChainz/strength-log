@@ -41,6 +41,7 @@ export interface LogSetParams {
   reps: number | null;
   rpe: number | null;
   unit: Unit;
+  source?: 'tap' | 'voice';
 }
 
 export type StorePhase = 'loading' | 'prompt_resume' | 'active' | 'ended';
@@ -235,7 +236,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
         unit: params.unit,
         is_warmup: 0,
         position,
-        source: 'tap',
+        source: params.source ?? 'tap',
         client_set_id: clientSetId,
         logged_at: now,
       };
@@ -259,7 +260,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
           unit: params.unit,
           is_warmup: 0,
           logged_at: now,
-          source: 'tap',
+          source: params.source ?? 'tap',
           client_set_id: clientSetId,
         });
       });
@@ -275,7 +276,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
         unit: params.unit,
         is_warmup: 0,
         logged_at: now,
-        source: 'tap',
+        source: params.source ?? 'tap',
         client_set_id: clientSetId,
         deleted_at: null,
       };
