@@ -7,8 +7,10 @@ import { openDb } from '@/db/client';
 import { getAllTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
 import { getInProgressSession } from '@/db/repositories/sessions.repo';
 import { getUntaggedCompletedSession } from '@/db/repositories/tags.repo';
+import { maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
+import { InsightCard } from '@/components/InsightCard';
 import { T } from '@/theme/tokens';
-import type { WorkoutSession } from '@/domain/types';
+import type { WeeklyInsightCard, WorkoutSession } from '@/domain/types';
 import type { HomeNavigationProp } from '@/navigation/types';
 
 interface RecentSession {
@@ -25,11 +27,12 @@ export default function Home() {
   const [recents, setRecents] = useState<RecentSession[]>([]);
   const [inProgress, setInProgress] = useState<WorkoutSession | null>(null);
   const [unfinishedTagsSessionId, setUnfinishedTagsSessionId] = useState<string | null>(null);
+  const [insightCard, setInsightCard] = useState<WeeklyInsightCard | null>(null);
 
   const load = useCallback(async () => {
     try {
       const db = await openDb();
-      const [tpls, sessions, active, unfinishedTags] = await Promise.all([
+      const [tpls, sessions, active, unfinishedTags, latestInsight] = await Promise.all([
         getAllTemplatesWithCount(db),
         db.getAllAsync<RecentSession>(
           `SELECT id, name, started_at, ended_at, total_volume_cached
@@ -40,11 +43,13 @@ export default function Home() {
         ),
         getInProgressSession(db),
         getUntaggedCompletedSession(db),
+        maybeGenerateWeeklyInsight(db),
       ]);
       setTemplates(tpls);
       setRecents(sessions);
       setInProgress(active);
       setUnfinishedTagsSessionId(unfinishedTags?.id ?? null);
+      setInsightCard(latestInsight);
     } catch {
       // ignore
     }
@@ -188,6 +193,17 @@ export default function Home() {
               <Text style={styles.statUnit}>PRs</Text>
             </View>
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>WEEKLY INSIGHT</Text>
+          {insightCard ? (
+            <InsightCard card={insightCard} />
+          ) : (
+            <View style={styles.insightHint}>
+              <Text style={styles.insightHintText}>Add tags after workouts to unlock weekly patterns.</Text>
+            </View>
+          )}
         </View>
 
         {/* Recent workouts */}
@@ -366,6 +382,15 @@ const styles = StyleSheet.create({
     marginTop: 4,
     letterSpacing: 0.3,
   },
+  insightHint: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: T.border,
+    borderRadius: 14,
+    padding: 14,
+  },
+  insightHintText: { color: T.muted, fontSize: 13 },
 
   recentList: {
     backgroundColor: T.surface,
