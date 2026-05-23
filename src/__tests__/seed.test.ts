@@ -2,6 +2,7 @@ import { SEED_EXERCISES, SEED_EXERCISE_METADATA } from '@/db/seed/exercises';
 import {
   auditExerciseMetadataFixture,
   summarizeExerciseMetadataCoverage,
+  summarizeExerciseMetadataSubstitutionGroups,
 } from '@/domain/exerciseMetadataFixtureAudit';
 import { normalizeName } from '@/domain/ids';
 import { ExerciseMetadataInputSchema } from '@/domain/validation';
@@ -138,5 +139,17 @@ describe('SEED_EXERCISE_METADATA', () => {
     expect(coverage.annotatedExercises).toBe(SEED_EXERCISE_METADATA.length);
     expect(coverage.unannotatedExercises).toBeGreaterThan(0);
     expect(coverage.unannotated.map((exercise) => exercise.name)).toContain('Good Morning');
+  });
+
+  it('summarizes substitution groups for later substitution curation', () => {
+    const summary = summarizeExerciseMetadataSubstitutionGroups(SEED_EXERCISE_METADATA);
+    const multiExerciseGroupNames = summary.multiExerciseGroups.map((group) => group.group);
+    const singletonGroupNames = summary.singletonGroups.map((group) => group.group);
+
+    expect(multiExerciseGroupNames).toEqual(
+      expect.arrayContaining(['horizontal_press', 'horizontal_row', 'vertical_pull']),
+    );
+    expect(singletonGroupNames).toContain('core_anti_extension');
+    expect(summary.groups.length).toBeGreaterThan(summary.multiExerciseGroups.length);
   });
 });

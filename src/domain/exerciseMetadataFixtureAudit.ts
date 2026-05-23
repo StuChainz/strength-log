@@ -64,6 +64,18 @@ export interface ExerciseMetadataCoverageSummary {
   unannotated: ExerciseMetadataCoverageItem[];
 }
 
+export interface ExerciseMetadataSubstitutionGroupSummary {
+  group: string;
+  exerciseNames: string[];
+  count: number;
+}
+
+export interface ExerciseMetadataSubstitutionSummary {
+  groups: ExerciseMetadataSubstitutionGroupSummary[];
+  multiExerciseGroups: ExerciseMetadataSubstitutionGroupSummary[];
+  singletonGroups: ExerciseMetadataSubstitutionGroupSummary[];
+}
+
 const FixtureEntrySchema = ExerciseMetadataInputSchema.extend({
   exerciseName: z.string().min(1),
 });
@@ -242,6 +254,36 @@ export function summarizeExerciseMetadataCoverage(
     unannotatedExercises: unannotated.length,
     coverageRatio: exercises.length === 0 ? 0 : annotatedExercises / exercises.length,
     unannotated,
+  };
+}
+
+export function summarizeExerciseMetadataSubstitutionGroups(
+  metadataEntries: readonly unknown[],
+): ExerciseMetadataSubstitutionSummary {
+  const grouped = new Map<string, Set<string>>();
+
+  metadataEntries.forEach((entry) => {
+    const parsed = FixtureEntrySchema.safeParse(entry);
+    if (!parsed.success) return;
+
+    const metadata = parsed.data;
+    const exercises = grouped.get(metadata.substitution_group) ?? new Set<string>();
+    exercises.add(metadata.exerciseName);
+    grouped.set(metadata.substitution_group, exercises);
+  });
+
+  const groups = [...grouped.entries()]
+    .map(([group, exerciseNames]) => ({
+      group,
+      exerciseNames: [...exerciseNames].sort((a, b) => a.localeCompare(b)),
+      count: exerciseNames.size,
+    }))
+    .sort((a, b) => a.group.localeCompare(b.group));
+
+  return {
+    groups,
+    multiExerciseGroups: groups.filter((group) => group.count > 1),
+    singletonGroups: groups.filter((group) => group.count === 1),
   };
 }
 

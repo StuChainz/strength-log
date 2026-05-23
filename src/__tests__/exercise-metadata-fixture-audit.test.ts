@@ -1,6 +1,7 @@
 import {
   auditExerciseMetadataFixture,
   summarizeExerciseMetadataCoverage,
+  summarizeExerciseMetadataSubstitutionGroups,
 } from '@/domain/exerciseMetadataFixtureAudit';
 import type { MovementPattern } from '@/domain/types';
 
@@ -119,5 +120,46 @@ describe('exercise metadata fixture audit', () => {
         },
       ],
     });
+  });
+
+  it('summarizes substitution groups that already have alternatives', () => {
+    const summary = summarizeExerciseMetadataSubstitutionGroups([
+      VALID_METADATA,
+      {
+        ...VALID_METADATA,
+        exerciseName: 'Dumbbell Bench Press',
+        equipment: ['dumbbell', 'bench'],
+        source_id: 'curated_seed:dumbbell_bench_press',
+      },
+      {
+        ...VALID_METADATA,
+        exerciseName: 'Overhead Press',
+        movement_pattern: 'vertical_push',
+        primary_muscles: ['shoulders'],
+        substitution_group: 'vertical_press',
+        source_id: 'curated_seed:overhead_press',
+      },
+      {
+        ...VALID_METADATA,
+        exerciseName: 'Invalid',
+        movement_pattern: 'unknown',
+        substitution_group: 'ignored',
+      },
+    ]);
+
+    expect(summary.groups).toEqual([
+      {
+        group: 'horizontal_press',
+        exerciseNames: ['Bench Press', 'Dumbbell Bench Press'],
+        count: 2,
+      },
+      {
+        group: 'vertical_press',
+        exerciseNames: ['Overhead Press'],
+        count: 1,
+      },
+    ]);
+    expect(summary.multiExerciseGroups.map((group) => group.group)).toEqual(['horizontal_press']);
+    expect(summary.singletonGroups.map((group) => group.group)).toEqual(['vertical_press']);
   });
 });
