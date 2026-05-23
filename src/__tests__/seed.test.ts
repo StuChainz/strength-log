@@ -1,6 +1,25 @@
 import { SEED_EXERCISES, SEED_EXERCISE_METADATA } from '@/db/seed/exercises';
+import { auditExerciseMetadataFixture } from '@/domain/exerciseMetadataFixtureAudit';
 import { normalizeName } from '@/domain/ids';
 import { ExerciseMetadataInputSchema } from '@/domain/validation';
+import type { ForceType, MovementPattern } from '@/domain/types';
+
+const REQUIRED_METADATA_MOVEMENT_PATTERNS: MovementPattern[] = [
+  'horizontal_push',
+  'vertical_push',
+  'horizontal_pull',
+  'vertical_pull',
+  'squat',
+  'hinge',
+  'lunge',
+  'hip_extension',
+  'elbow_flexion',
+  'elbow_extension',
+  'shoulder_abduction',
+  'core',
+];
+
+const REQUIRED_METADATA_FORCE_TYPES: ForceType[] = ['push', 'pull', 'legs', 'hinge', 'core'];
 
 describe('SEED_EXERCISES', () => {
   it('contains at least 35 exercises', () => {
@@ -70,20 +89,7 @@ describe('SEED_EXERCISE_METADATA', () => {
   it('covers the required movement patterns', () => {
     const patterns = new Set(SEED_EXERCISE_METADATA.map((m) => m.movement_pattern));
 
-    [
-      'horizontal_push',
-      'vertical_push',
-      'horizontal_pull',
-      'vertical_pull',
-      'squat',
-      'hinge',
-      'lunge',
-      'hip_extension',
-      'elbow_flexion',
-      'elbow_extension',
-      'shoulder_abduction',
-      'core',
-    ].forEach((pattern) => {
+    REQUIRED_METADATA_MOVEMENT_PATTERNS.forEach((pattern) => {
       expect(patterns.has(pattern)).toBe(true);
     });
   });
@@ -91,7 +97,7 @@ describe('SEED_EXERCISE_METADATA', () => {
   it('covers Push, Pull, Legs, Hinge, and Core filters', () => {
     const forceTypes = new Set(SEED_EXERCISE_METADATA.map((m) => m.force_type));
 
-    ['push', 'pull', 'legs', 'hinge', 'core'].forEach((forceType) => {
+    REQUIRED_METADATA_FORCE_TYPES.forEach((forceType) => {
       expect(forceTypes.has(forceType)).toBe(true);
     });
   });
@@ -109,5 +115,16 @@ describe('SEED_EXERCISE_METADATA', () => {
       expect(() => ExerciseMetadataInputSchema.parse(metadata)).not.toThrow();
       expect(exerciseName.trim().length).toBeGreaterThan(0);
     });
+  });
+
+  it('passes the offline fixture audit for future import readiness', () => {
+    const audit = auditExerciseMetadataFixture(SEED_EXERCISES, SEED_EXERCISE_METADATA, {
+      requiredMovementPatterns: REQUIRED_METADATA_MOVEMENT_PATTERNS,
+      requiredForceTypes: REQUIRED_METADATA_FORCE_TYPES,
+    });
+
+    expect(audit.issues).toEqual([]);
+    expect(audit.ok).toBe(true);
+    expect(audit.counts.metadata).toBe(SEED_EXERCISE_METADATA.length);
   });
 });
