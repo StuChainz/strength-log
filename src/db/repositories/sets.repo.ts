@@ -65,8 +65,12 @@ export async function updateSet(
   await db.runAsync(`UPDATE workout_sets SET ${sets.join(', ')} WHERE id = ?`, values);
 }
 
-export async function softDeleteSet(db: SQLiteDatabase, id: string): Promise<void> {
-  await db.runAsync('UPDATE workout_sets SET deleted_at = ? WHERE id = ?', [Date.now(), id]);
+export async function softDeleteSet(
+  db: SQLiteDatabase,
+  id: string,
+  deletedAt = Date.now(),
+): Promise<void> {
+  await db.runAsync('UPDATE workout_sets SET deleted_at = ? WHERE id = ?', [deletedAt, id]);
 }
 
 export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promise<void> {
@@ -107,6 +111,7 @@ export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promis
         if (p.weight !== undefined) { setClauses.push('weight = ?'); values.push(p.weight); }
         if (p.reps !== undefined) { setClauses.push('reps = ?'); values.push(p.reps); }
         if (p.rpe !== undefined) { setClauses.push('rpe = ?'); values.push(p.rpe); }
+        if (p.unit !== undefined) { setClauses.push('unit = ?'); values.push(p.unit); }
         if (setClauses.length > 0) {
           values.push(p.set_id);
           await db.runAsync(

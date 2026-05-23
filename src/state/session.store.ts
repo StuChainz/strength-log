@@ -9,9 +9,15 @@ import {
 } from '@/db/repositories/sessions.repo';
 import { getTemplateItemsWithExercise } from '@/db/repositories/templates.repo';
 import { insertEvent } from '@/db/repositories/events.repo';
-import { insertSet, rebuildSets, getSetsBySession } from '@/db/repositories/sets.repo';
+import {
+  insertSet,
+  rebuildSets,
+  getSetsBySession,
+  updateSet,
+  softDeleteSet,
+} from '@/db/repositories/sets.repo';
 import type { WorkoutSession, WorkoutSet, ExerciseCategory, Unit } from '@/domain/types';
-import type { SetAddedPayload } from '@/domain/events';
+import type { SetAddedPayload, SetDeletedPayload, SetEditedPayload } from '@/domain/events';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export interface SessionExercise {
@@ -43,6 +49,9 @@ export interface UseSessionStoreReturn {
   activeExerciseId: string | null;
   setActiveExerciseId: (id: string) => void;
   logSet: (params: LogSetParams) => Promise<void>;
+  editSet: (setId: string, fields: Partial<Pick<WorkoutSet, 'weight' | 'reps' | 'rpe' | 'unit'>>) => Promise<void>;
+  deleteSet: (setId: string) => Promise<void>;
+  undoLastSet: () => Promise<void>;
   endWorkout: () => Promise<void>;
   discardWorkout: () => Promise<void>;
   resumeExisting: () => Promise<void>;
@@ -247,6 +256,73 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     [session, sets],
   );
 
+  const editSet = useCallback(
+    async (
+      setId: string,
+      fields: Partial<Pick<WorkoutSet, 'weight' | 'reps' | 'rpe' | 'unit'>>,
+    ) => {
+      const db = dbRef.current;
+      if (!db || !session) return;
+
+      const payload: SetEditedPayload = { set_id: setId };
+      if (fields.weight !== undefined) payload.weight = fields.weight;
+      if (fields.reps !== undefined) payload.reps = fields.reps;
+      if (fields.rpe !== undefined) payload.rpe = fields.rpe;
+      if (fields.unit !== undefined) payload.unit = fields.unit;
+      if (Object.keys(payload).length === 1) return;
+
+      await db.withTransactionAsync(async () => {
+        await insertEvent(db, {
+          id: newId(),
+          session_id: session.id,
+          event_type: 'set_edited',
+          payload_json: JSON.stringify(payload),
+          client_event_id: newId(),
+        });
+        await updateSet(db, setId, fields);
+      });
+
+      setSets((prev) =>
+        prev.map((set) => (set.id === setId ? { ...set, ...fields } : set)),
+      );
+    },
+    [session],
+  );
+
+  const deleteSet = useCallback(
+    async (setId: string) => {
+      const db = dbRef.current;
+      if (!db || !session) return;
+
+      const deletedAt = Date.now();
+      const payload: SetDeletedPayload = { set_id: setId };
+
+      await db.withTransactionAsync(async () => {
+        await insertEvent(db, {
+          id: newId(),
+          session_id: session.id,
+          event_type: 'set_deleted',
+          payload_json: JSON.stringify(payload),
+          client_event_id: newId(),
+        });
+        await softDeleteSet(db, setId, deletedAt);
+      });
+
+      setSets((prev) =>
+        prev.map((set) => (set.id === setId ? { ...set, deleted_at: deletedAt } : set)),
+      );
+    },
+    [session],
+  );
+
+  const undoLastSet = useCallback(async () => {
+    const last = [...sets]
+      .filter((set) => set.deleted_at === null)
+      .sort((a, b) => b.logged_at - a.logged_at)[0];
+    if (!last) return;
+    await deleteSet(last.id);
+  }, [deleteSet, sets]);
+
   const endWorkout = useCallback(async () => {
     const db = dbRef.current;
     if (!db || !session) return;
@@ -290,6 +366,9 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     activeExerciseId,
     setActiveExerciseId,
     logSet,
+    editSet,
+    deleteSet,
+    undoLastSet,
     endWorkout,
     discardWorkout,
     resumeExisting,

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -56,6 +57,10 @@ export default function LiveWorkout() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [lastSets, setLastSets] = useState<WorkoutSet[]>([]);
   const [elapsedSecs, setElapsedSecs] = useState(0);
+  const [editingSet, setEditingSet] = useState<WorkoutSet | null>(null);
+  const [editWeight, setEditWeight] = useState(DEFAULT_WEIGHT);
+  const [editReps, setEditReps] = useState(DEFAULT_REPS);
+  const [editRpe, setEditRpe] = useState<number | null>(null);
   const loggingRef = useRef(false);
 
   const activeExerciseIndex = exercises.findIndex((e) => e.id === activeExerciseId);
@@ -63,6 +68,7 @@ export default function LiveWorkout() {
   const activeSets = sets.filter(
     (s) => s.exercise_id === activeExerciseId && s.deleted_at === null,
   );
+  const hasLoggedSets = sets.some((s) => s.deleted_at === null);
 
   // Elapsed timer
   useEffect(() => {
@@ -176,6 +182,31 @@ export default function LiveWorkout() {
     ]);
   }, [endWorkout, discardWorkout]);
 
+  const openEditSet = useCallback((set: WorkoutSet) => {
+    setEditingSet(set);
+    setEditWeight(set.weight ?? DEFAULT_WEIGHT);
+    setEditReps(set.reps ?? DEFAULT_REPS);
+    setEditRpe(set.rpe);
+  }, []);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingSet) return;
+    await store.editSet(editingSet.id, {
+      weight: editWeight,
+      reps: editReps,
+      rpe: editRpe,
+      unit: editingSet.unit,
+    });
+    setEditingSet(null);
+  }, [editReps, editRpe, editWeight, editingSet, store]);
+
+  const handleDeleteSet = useCallback((set: WorkoutSet) => {
+    Alert.alert('Delete Set', 'Remove this set from the workout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => void store.deleteSet(set.id) },
+    ]);
+  }, [store]);
+
   const lastHintText = (() => {
     if (lastSets.length === 0) return null;
     const parts = lastSets
@@ -285,25 +316,13 @@ export default function LiveWorkout() {
               {/* Sets header */}
               <View style={styles.setsHeader}>
                 <Text style={styles.setsLabel}>SETS · {activeSets.length}</Text>
-                {activeSets.length > 0 && (
+                {hasLoggedSets && (
                   <TouchableOpacity
                     style={styles.undoBtn}
                     onPress={() => {
-                      const last = [...activeSets].sort((a, b) => b.logged_at - a.logged_at)[0];
-                      if (!last) return;
                       Alert.alert('Undo last set?', undefined, [
                         { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Undo',
-                          onPress: () =>
-                            void store.logSet({
-                              exerciseId: last.exercise_id,
-                              weight: null,
-                              reps: null,
-                              rpe: null,
-                              unit: (last.unit as 'kg' | 'lb') ?? 'kg',
-                            }),
-                        },
+                        { text: 'Undo', onPress: () => void store.undoLastSet() },
                       ]);
                     }}
                   >
@@ -323,7 +342,7 @@ export default function LiveWorkout() {
             <View style={styles.setRow} testID={`set-row-${item.id}`}>
               <Text style={styles.setIndex}>#{index + 1}</Text>
               <Text style={styles.setWeight}>
-                {item.weight ?? '—'}<Text style={styles.setUnit}> kg</Text>
+                {item.weight ?? '—'}<Text style={styles.setUnit}> {item.unit}</Text>
               </Text>
               <Text style={styles.setReps}>
                 {item.reps ?? '—'}<Text style={styles.setUnit}> reps</Text>
@@ -333,6 +352,14 @@ export default function LiveWorkout() {
               </Text>
               <View style={styles.setCheck}>
                 <Ionicons name="checkmark" size={14} color={T.success} />
+              </View>
+              <View style={styles.setActions}>
+                <TouchableOpacity style={styles.setActionBtn} onPress={() => openEditSet(item)} hitSlop={6}>
+                  <Ionicons name="create-outline" size={14} color={T.textDim} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.setActionBtn} onPress={() => handleDeleteSet(item)} hitSlop={6}>
+                  <Ionicons name="trash-outline" size={14} color={T.danger} />
+                </TouchableOpacity>
               </View>
             </View>
           )}
@@ -433,6 +460,75 @@ export default function LiveWorkout() {
         }}
         onClose={() => setPickerVisible(false)}
       />
+
+      <Modal
+        visible={editingSet !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditingSet(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.editSheet}>
+            <View style={styles.editHeader}>
+              <Text style={styles.editTitle}>Edit Set</Text>
+              <TouchableOpacity style={styles.iconBtn} onPress={() => setEditingSet(null)} hitSlop={8}>
+                <Ionicons name="close" size={16} color={T.textDim} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.steppersRow}>
+              <View style={styles.stepperWrap}>
+                <Text style={styles.stepperLabel}>WEIGHT · {editingSet?.unit.toUpperCase() ?? 'KG'}</Text>
+                <View style={styles.stepper}>
+                  <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnLeft]} onPress={() => setEditWeight((w) => Math.max(0, parseFloat((w - 2.5).toFixed(2))))}>
+                    <Text style={styles.stepperBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <View style={styles.stepperValueWrap}>
+                    <Text style={styles.stepperValue}>{editWeight % 1 === 0 ? editWeight : editWeight.toFixed(1)}</Text>
+                    <Text style={styles.stepperUnit}>{editingSet?.unit ?? 'kg'}</Text>
+                  </View>
+                  <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnRight]} onPress={() => setEditWeight((w) => parseFloat((w + 2.5).toFixed(2)))}>
+                    <Text style={styles.stepperBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.stepperWrap}>
+                <Text style={styles.stepperLabel}>REPS</Text>
+                <View style={styles.stepper}>
+                  <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnLeft]} onPress={() => setEditReps((r) => Math.max(1, r - 1))}>
+                    <Text style={styles.stepperBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <View style={styles.stepperValueWrap}>
+                    <Text style={styles.stepperValue}>{editReps}</Text>
+                    <Text style={styles.stepperUnit}>rps</Text>
+                  </View>
+                  <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnRight]} onPress={() => setEditReps((r) => r + 1)}>
+                    <Text style={styles.stepperBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.rpeRow}>
+              <Text style={styles.rpeLabel}>RPE</Text>
+              {RPE_VALUES.map((value) => (
+                <TouchableOpacity
+                  key={value}
+                  style={[styles.rpeChip, editRpe === value && styles.rpeChipActive]}
+                  onPress={() => setEditRpe(editRpe === value ? null : value)}
+                >
+                  <Text style={[styles.rpeChipText, editRpe === value && styles.rpeChipTextActive]}>{value}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity style={styles.saveEditBtn} onPress={() => void handleSaveEdit()}>
+              <Text style={styles.saveEditText}>Save Changes</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -521,11 +617,17 @@ const styles = StyleSheet.create({
     borderRadius: 12, marginBottom: 6,
   },
   setIndex: { fontFamily: 'Courier New', fontSize: 12, color: T.muted, width: 32 },
-  setWeight: { flex: 1, fontFamily: 'Courier New', fontSize: 15, fontWeight: '500', color: T.text },
-  setReps: { flex: 1, fontFamily: 'Courier New', fontSize: 15, fontWeight: '500', color: T.text },
-  setRpe: { flex: 1, fontFamily: 'Courier New', fontSize: 12, color: T.textDim },
+  setWeight: { flex: 0.9, fontFamily: 'Courier New', fontSize: 15, fontWeight: '500', color: T.text },
+  setReps: { flex: 0.9, fontFamily: 'Courier New', fontSize: 15, fontWeight: '500', color: T.text },
+  setRpe: { flex: 0.8, fontFamily: 'Courier New', fontSize: 12, color: T.textDim },
   setUnit: { fontSize: 10, color: T.muted },
   setCheck: { width: 28, alignItems: 'center' },
+  setActions: { flexDirection: 'row', gap: 4, flexShrink: 0 },
+  setActionBtn: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: T.surface2, borderWidth: 1, borderColor: T.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
 
   emptySetRow: {
     paddingVertical: 14, paddingHorizontal: 14,
@@ -617,4 +719,22 @@ const styles = StyleSheet.create({
     width: 56, height: 56, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
     borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
+
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.62)',
+    justifyContent: 'flex-end',
+  },
+  editSheet: {
+    backgroundColor: T.bg, borderTopWidth: 1, borderTopColor: T.border,
+    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 28, gap: 14,
+  },
+  editHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  editTitle: { color: T.text, fontSize: 18, fontWeight: '700' },
+  saveEditBtn: {
+    backgroundColor: T.accent, borderRadius: 14,
+    paddingVertical: 15, alignItems: 'center', justifyContent: 'center',
+  },
+  saveEditText: { color: T.accentInk, fontSize: 15, fontWeight: '700' },
 });

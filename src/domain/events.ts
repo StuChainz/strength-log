@@ -24,6 +24,7 @@ export interface SetEditedPayload {
   weight?: number | null;
   reps?: number | null;
   rpe?: number | null;
+  unit?: Unit;
 }
 
 export interface SetDeletedPayload {
