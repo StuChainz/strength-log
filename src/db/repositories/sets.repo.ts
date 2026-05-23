@@ -1,5 +1,6 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import { type Unit, type WorkoutSet } from '@/domain/types';
+import type { SetAddedPayload, SetEditedPayload, SetDeletedPayload } from '@/domain/events';
 
 export interface InsertSetInput {
   id: string;
@@ -66,6 +67,56 @@ export async function updateSet(
 
 export async function softDeleteSet(db: SQLiteDatabase, id: string): Promise<void> {
   await db.runAsync('UPDATE workout_sets SET deleted_at = ? WHERE id = ?', [Date.now(), id]);
+}
+
+export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promise<void> {
+  const events = await db.getAllAsync<{
+    event_type: string;
+    payload_json: string;
+    created_at: number;
+  }>(
+    'SELECT event_type, payload_json, created_at FROM workout_events WHERE session_id = ? ORDER BY created_at ASC',
+    [sessionId],
+  );
+
+  await db.withTransactionAsync(async () => {
+    for (const event of events) {
+      if (event.event_type === 'set_added') {
+        const p = JSON.parse(event.payload_json) as SetAddedPayload;
+        await db.runAsync(
+          `INSERT OR IGNORE INTO workout_sets
+             (id, session_id, exercise_id, position, weight, reps, rpe,
+              unit, is_warmup, logged_at, source, client_set_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            p.set_id, sessionId, p.exercise_id, p.position,
+            p.weight, p.reps, p.rpe, p.unit, p.is_warmup,
+            p.logged_at, p.source, p.client_set_id,
+          ],
+        );
+      } else if (event.event_type === 'set_deleted') {
+        const p = JSON.parse(event.payload_json) as SetDeletedPayload;
+        await db.runAsync(
+          `UPDATE workout_sets SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL`,
+          [event.created_at, p.set_id],
+        );
+      } else if (event.event_type === 'set_edited') {
+        const p = JSON.parse(event.payload_json) as SetEditedPayload;
+        const setClauses: string[] = [];
+        const values: (number | string | null)[] = [];
+        if (p.weight !== undefined) { setClauses.push('weight = ?'); values.push(p.weight); }
+        if (p.reps !== undefined) { setClauses.push('reps = ?'); values.push(p.reps); }
+        if (p.rpe !== undefined) { setClauses.push('rpe = ?'); values.push(p.rpe); }
+        if (setClauses.length > 0) {
+          values.push(p.set_id);
+          await db.runAsync(
+            `UPDATE workout_sets SET ${setClauses.join(', ')} WHERE id = ?`,
+            values,
+          );
+        }
+      }
+    }
+  });
 }
 
 export async function getSetsBySession(

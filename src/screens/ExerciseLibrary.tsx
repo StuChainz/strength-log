@@ -1,32 +1,31 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getAllExercises } from '@/db/repositories/exercises.repo';
 import { normalizeName } from '@/domain/ids';
+import { T } from '@/theme/tokens';
 import type { Exercise, ExerciseCategory } from '@/domain/types';
 import type { ExerciseLibraryNavigationProp } from '@/navigation/types';
 
 type FilterOption = ExerciseCategory | 'all' | 'custom';
 
-interface FilterChip {
-  label: string;
-  value: FilterOption;
-}
-
-const FILTER_CHIPS: FilterChip[] = [
+const FILTER_CHIPS: { label: string; value: FilterOption }[] = [
   { label: 'All', value: 'all' },
   { label: 'Barbell', value: 'barbell' },
   { label: 'Dumbbell', value: 'dumbbell' },
-  { label: 'Bodyweight', value: 'bodyweight' },
   { label: 'Machine', value: 'machine' },
+  { label: 'Bodyweight', value: 'bodyweight' },
   { label: 'Cable', value: 'cable' },
   { label: 'Custom', value: 'custom' },
 ];
@@ -59,170 +58,236 @@ export default function ExerciseLibrary() {
     }
   }, []);
 
-  // Reload list whenever screen comes into focus (after create/edit).
-  useFocusEffect(
-    useCallback(() => {
-      void loadExercises();
-    }, [loadExercises]),
-  );
-
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity
-          onPress={() => navigation.navigate('ExerciseEdit', {})}
-          testID="add-exercise-btn"
-          hitSlop={8}
-        >
-          <Text style={styles.headerBtn}>+ Add</Text>
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
+  useFocusEffect(useCallback(() => { void loadExercises(); }, [loadExercises]));
 
   const filtered = useMemo(() => {
     let result = exercises;
-
     if (activeFilter === 'custom') {
       result = result.filter((e) => e.is_custom === 1);
     } else if (activeFilter !== 'all') {
       result = result.filter((e) => e.category === activeFilter);
     }
-
     if (searchQuery.trim()) {
       const needle = normalizeName(searchQuery);
       result = result.filter((e) => e.normalized_name.includes(needle));
     }
-
     return result;
   }, [exercises, searchQuery, activeFilter]);
 
-  if (loading) {
-    return (
-      <View style={[styles.container, styles.center]}>
-        <Text style={styles.muted}>Loading…</Text>
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id}
-        keyboardShouldPersistTaps="handled"
-        ListHeaderComponent={
-          <>
-            {/* Search bar */}
-            <View style={styles.searchRow}>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search exercises…"
-                placeholderTextColor="#555"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                testID="search-input"
-                autoCorrect={false}
-                clearButtonMode="while-editing"
-              />
-            </View>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.eyebrow}>Catalogue</Text>
+          <Text style={styles.title}>Exercises</Text>
+        </View>
 
-            {/* Filter chips */}
-            <FlatList
-              data={FILTER_CHIPS}
-              keyExtractor={(c) => c.value}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chipsRow}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.chip, activeFilter === item.value && styles.chipActive]}
-                  onPress={() => setActiveFilter(item.value)}
-                  testID={`filter-${item.value}`}
-                >
-                  <Text
-                    style={[styles.chipText, activeFilter === item.value && styles.chipTextActive]}
-                  >
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              )}
+        {/* Search */}
+        <View style={styles.searchWrap}>
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={18} color={T.muted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search by name or alias…"
+              placeholderTextColor={T.muted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              testID="search-input"
+              autoCorrect={false}
             />
-          </>
-        }
-        ListEmptyComponent={
-          <View style={styles.center}>
-            <Text style={styles.muted}>
-              {searchQuery || activeFilter !== 'all' ? 'No matching exercises.' : 'No exercises.'}
-            </Text>
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+                <Ionicons name="close" size={16} color={T.muted} />
+              </TouchableOpacity>
+            )}
           </View>
-        }
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.row}
-            onPress={() => navigation.navigate('ExerciseEdit', { exerciseId: item.id })}
-            testID={`exercise-row-${item.id}`}
-          >
-            <View style={styles.rowMain}>
-              <Text style={styles.rowName}>{item.name}</Text>
-              <Text style={styles.rowMeta}>
-                {CATEGORY_LABEL[item.category]}
-                {item.primary_muscle ? ` · ${item.primary_muscle}` : ''}
-                {item.is_custom ? ' · Custom' : ''}
+        </View>
+
+        {/* Filter chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filtersRow}
+          style={styles.filtersScroll}
+        >
+          {FILTER_CHIPS.map((f) => (
+            <TouchableOpacity
+              key={f.value}
+              style={[styles.chip, activeFilter === f.value && styles.chipActive]}
+              onPress={() => setActiveFilter(f.value)}
+              testID={`filter-${f.value}`}
+            >
+              <Text style={[styles.chipText, activeFilter === f.value && styles.chipTextActive]}>
+                {f.label}
               </Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* Count + New */}
+        <View style={styles.countRow}>
+          <Text style={styles.countLabel}>
+            {loading ? '—' : `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`}
+          </Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('ExerciseEdit', {})}
+            testID="add-exercise-btn"
+            hitSlop={8}
+          >
+            <Text style={styles.newBtn}>+ NEW</Text>
           </TouchableOpacity>
-        )}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-      />
-    </View>
+        </View>
+
+        {/* Exercise list */}
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.id}
+          keyboardShouldPersistTaps="handled"
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={
+            loading ? null : (
+              <View style={styles.emptyList}>
+                <Text style={styles.emptyText}>
+                  {searchQuery || activeFilter !== 'all'
+                    ? 'No matches. Tap + to create.'
+                    : 'No exercises yet.'}
+                </Text>
+              </View>
+            )
+          }
+          renderItem={({ item, index }) => (
+            <TouchableOpacity
+              style={[styles.exerciseRow, index === 0 && styles.exerciseRowFirst]}
+              onPress={() => navigation.navigate('ExerciseEdit', { exerciseId: item.id })}
+              testID={`exercise-row-${item.id}`}
+            >
+              <View style={styles.exerciseInfo}>
+                <Text style={styles.exerciseName}>{item.name}</Text>
+                <Text style={styles.exerciseMeta}>
+                  {CATEGORY_LABEL[item.category]}
+                  {item.primary_muscle ? ` · ${item.primary_muscle.toUpperCase()}` : ''}
+                  {item.is_custom ? ' · CUSTOM' : ''}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={T.mutedDeep} />
+            </TouchableOpacity>
+          )}
+        />
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
+  safe: { flex: 1, backgroundColor: T.bg },
+  container: { flex: 1, backgroundColor: T.bg },
 
-  headerBtn: { color: '#7c5cfc', fontSize: 15, fontWeight: '600' },
-
-  searchRow: { padding: 12 },
-  searchInput: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    color: '#f5f5f5',
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
+  header: { paddingHorizontal: 22, paddingTop: 14, paddingBottom: 4 },
+  eyebrow: {
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: T.muted,
+    fontWeight: '500',
   },
+  title: { fontSize: 28, fontWeight: '600', letterSpacing: -0.5, color: T.text, marginTop: 4 },
 
-  chipsRow: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#1a1a1a',
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
-  chipActive: { backgroundColor: '#7c5cfc', borderColor: '#7c5cfc' },
-  chipText: { color: '#888', fontSize: 13, fontWeight: '500' },
-  chipTextActive: { color: '#fff' },
-
-  row: {
+  searchWrap: { paddingHorizontal: 22, paddingTop: 14 },
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#0a0a0a',
+    gap: 10,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
   },
-  rowMain: { flex: 1 },
-  rowName: { color: '#f5f5f5', fontSize: 16, fontWeight: '500', marginBottom: 2 },
-  rowMeta: { color: '#666', fontSize: 13 },
-  chevron: { color: '#444', fontSize: 20, marginLeft: 8 },
-  separator: { height: 1, backgroundColor: '#1a1a1a', marginLeft: 16 },
+  searchInput: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    color: T.text,
+    fontSize: 14,
+  },
 
-  muted: { color: '#555', fontSize: 14 },
+  filtersScroll: { marginTop: 12 },
+  filtersRow: {
+    paddingHorizontal: 22,
+    gap: 8,
+    paddingBottom: 4,
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+  },
+  chipActive: { backgroundColor: T.accent, borderColor: T.accent },
+  chipText: { fontSize: 13, fontWeight: '500', color: T.text },
+  chipTextActive: { color: T.accentInk },
+
+  countRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingHorizontal: 22,
+    paddingTop: 14,
+    paddingBottom: 8,
+  },
+  countLabel: {
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: T.muted,
+    fontWeight: '500',
+  },
+  newBtn: {
+    fontFamily: 'Courier New',
+    fontSize: 12,
+    color: T.accent,
+    letterSpacing: 0.3,
+  },
+
+  list: { flex: 1 },
+  listContent: { paddingHorizontal: 22, paddingBottom: 16 },
+
+  exerciseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 13,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    backgroundColor: T.surface,
+  },
+  exerciseRowFirst: { borderTopWidth: 0, borderTopLeftRadius: 14, borderTopRightRadius: 14 },
+  exerciseInfo: { flex: 1 },
+  exerciseName: { fontSize: 14, fontWeight: '500', color: T.text },
+  exerciseMeta: {
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    color: T.muted,
+    marginTop: 3,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+
+  emptyList: {
+    padding: 28,
+    alignItems: 'center',
+    backgroundColor: T.surface,
+    borderRadius: 14,
+  },
+  emptyText: {
+    fontFamily: 'Courier New',
+    fontSize: 13,
+    color: T.muted,
+  },
 });

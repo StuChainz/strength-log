@@ -1,31 +1,30 @@
 import { render, screen, waitFor } from '@testing-library/react-native';
 import Home from '@/screens/Home';
 
-// Mock navigation so we don't need a NavigationContainer in tests.
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
   useNavigation: () => ({ navigate: jest.fn() }),
+  useFocusEffect: (cb: () => void) => { cb(); },
 }));
 
-// Prevent native SQLite from being called in tests.
 jest.mock('@/db/client', () => ({
-  openDb: jest.fn().mockResolvedValue({}),
+  openDb: jest.fn().mockResolvedValue({
+    getAllAsync: jest.fn().mockResolvedValue([]),
+  }),
 }));
 
-jest.mock('@/db/repositories/exercises.repo', () => ({
-  getExerciseCount: jest.fn().mockResolvedValue(35),
+jest.mock('@/db/repositories/templates.repo', () => ({
+  getAllTemplatesWithCount: jest.fn().mockResolvedValue([]),
 }));
 
 describe('Home screen', () => {
   it('renders the "Strength Log" heading', async () => {
     render(<Home />);
-    // waitFor flushes pending promises (the async DB count) and wraps in act.
     await waitFor(() => expect(screen.getByText('Strength Log')).toBeTruthy());
   });
 
-  it('shows the exercise count after DB loads', async () => {
+  it('renders the hero start button', async () => {
     render(<Home />);
-    await waitFor(() => expect(screen.getByTestId('exercise-count')).toBeTruthy());
-    expect(screen.getByText('35 exercises loaded')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('start-workout-btn')).toBeTruthy());
   });
 });

@@ -11,6 +11,9 @@
     },
     "android": {
       "package": "com.strengthlog.app"
+    },
+    "web": {
+      "bundler": "metro"
     }
   }
 }

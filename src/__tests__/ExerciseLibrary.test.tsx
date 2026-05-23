@@ -125,13 +125,8 @@ describe('ExerciseLibrary', () => {
   });
 
   it('navigates to ExerciseEdit (new) when Add button is pressed', async () => {
-    render(<ExerciseLibrary />);
-    await waitFor(() => expect(mockSetOptions).toHaveBeenCalled());
-
-    // Extract the headerRight component from the last setOptions call
-    const lastCall = mockSetOptions.mock.calls[mockSetOptions.mock.calls.length - 1][0];
-    const HeaderRight = lastCall.headerRight;
-    const { getByTestId } = render(<HeaderRight />);
+    const { getByTestId } = render(<ExerciseLibrary />);
+    await waitFor(() => expect(getByTestId('exercise-row-ex-1')).toBeTruthy());
 
     fireEvent.press(getByTestId('add-exercise-btn'));
 
@@ -145,7 +140,7 @@ describe('ExerciseLibrary', () => {
     fireEvent.changeText(getByTestId('search-input'), 'xyznotfound');
 
     await waitFor(() => {
-      expect(getByText('No matching exercises.')).toBeTruthy();
+      expect(getByText('No matches. Tap + to create.')).toBeTruthy();
     });
   });
 

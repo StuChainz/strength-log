@@ -1,20 +1,50 @@
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RouteProp } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { CompositeNavigationProp, RouteProp } from '@react-navigation/native';
 
 export type RootStackParamList = {
-  Home: undefined;
-  ExerciseLibrary: undefined;
-  /** exerciseId = edit mode; omitted = create mode */
+  Main: undefined;
+  LiveWorkout: { templateId?: string } | undefined;
+  TemplateBuilder: { templateId?: string };
   ExerciseEdit: { exerciseId?: string };
 };
 
-export type HomeNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
-export type ExerciseLibraryNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  'ExerciseLibrary'
+export type MainTabParamList = {
+  Home: undefined;
+  Templates: undefined;
+  Library: undefined;
+  Insights: undefined;
+};
+
+export type HomeNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Home'>,
+  NativeStackNavigationProp<RootStackParamList>
 >;
+
+export type TemplateListNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Templates'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
+
+export type ExerciseLibraryNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Library'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
+
 export type ExerciseEditNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   'ExerciseEdit'
 >;
 export type ExerciseEditRouteProp = RouteProp<RootStackParamList, 'ExerciseEdit'>;
+
+export type TemplateBuilderNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'TemplateBuilder'
+>;
+export type TemplateBuilderRouteProp = RouteProp<RootStackParamList, 'TemplateBuilder'>;
+
+export type LiveWorkoutNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'LiveWorkout'
+>;
+export type LiveWorkoutRouteProp = RouteProp<RootStackParamList, 'LiveWorkout'>;
