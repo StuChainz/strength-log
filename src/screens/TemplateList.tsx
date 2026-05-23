@@ -4,10 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
-import {
-  getAllTemplatesWithCount,
-  type TemplateSummary,
-} from '@/db/repositories/templates.repo';
+import { getAllTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
 import { T } from '@/theme/tokens';
 import type { TemplateListNavigationProp } from '@/navigation/types';
 
@@ -15,12 +12,14 @@ export default function TemplateList() {
   const navigation = useNavigation<TemplateListNavigationProp>();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState<number>(Date.now);
 
   const loadTemplates = useCallback(async () => {
     try {
       const db = await openDb();
       const data = await getAllTemplatesWithCount(db);
       setTemplates(data);
+      setNow(Date.now());
     } finally {
       setLoading(false);
     }
@@ -33,7 +32,7 @@ export default function TemplateList() {
   );
 
   const formatLastUsed = (ts: number): string => {
-    const diff = Date.now() - ts;
+    const diff = now - ts;
     const days = Math.floor(diff / 86400000);
     if (days === 0) return 'YESTERDAY';
     if (days === 1) return 'YESTERDAY';
@@ -90,7 +89,7 @@ export default function TemplateList() {
           {!loading && templates.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>No templates yet</Text>
-              <Text style={styles.emptyHint}>Tap "New" to create your first template.</Text>
+              <Text style={styles.emptyHint}>{'Tap "New" to create your first template.'}</Text>
             </View>
           ) : (
             <>
@@ -114,9 +113,7 @@ export default function TemplateList() {
                           ? 'No exercises'
                           : `${t.item_count} exercise${t.item_count !== 1 ? 's' : ''}`}
                       </Text>
-                      <Text style={styles.templateDate}>
-                        {formatLastUsed(t.updated_at)} · —
-                      </Text>
+                      <Text style={styles.templateDate}>{formatLastUsed(t.updated_at)} · —</Text>
                     </View>
                     <TouchableOpacity
                       style={styles.playBtn}

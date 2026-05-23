@@ -25,10 +25,7 @@ import { normalizeName } from '@/domain/ids';
 import { isStaleCommand } from '@/voice/confidence';
 import { parseVoiceCommand } from '@/voice/parser';
 import { T } from '@/theme/tokens';
-import type {
-  LiveWorkoutNavigationProp,
-  LiveWorkoutRouteProp,
-} from '@/navigation/types';
+import type { LiveWorkoutNavigationProp, LiveWorkoutRouteProp } from '@/navigation/types';
 import type { WorkoutSet } from '@/domain/types';
 import type { IntentResult, ParserContext } from '@/voice/commands';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -88,49 +85,60 @@ export default function LiveWorkout() {
     (s) => s.exercise_id === activeExerciseId && s.deleted_at === null,
   );
   const hasLoggedSets = sets.some((s) => s.deleted_at === null);
-  const lastLoggedSet = useMemo(() => [...sets]
-    .filter((set) => set.deleted_at === null)
-    .sort((a, b) => b.logged_at - a.logged_at)[0] ?? null, [sets]);
-  const parserContext: ParserContext = useMemo(() => ({
-    activeExerciseId,
-    defaultUnit: activeExercise?.defaultUnit ?? 'kg',
-    exercises: exercises.map((exercise) => ({
-      id: exercise.id,
-      normalizedName: normalizeName(exercise.name),
-      aliases: [normalizeName(exercise.name.split(' ')[0] ?? exercise.name)],
-    })),
-    lastSet: lastLoggedSet
-      ? {
-          setId: lastLoggedSet.id,
-          exerciseId: lastLoggedSet.exercise_id,
-          weight: lastLoggedSet.weight,
-          reps: lastLoggedSet.reps,
-          rpe: lastLoggedSet.rpe,
-          unit: lastLoggedSet.unit,
-          loggedAt: lastLoggedSet.logged_at,
-        }
-      : null,
-  }), [activeExercise, activeExerciseId, exercises, lastLoggedSet]);
-  const suggestion = useMemo(() => getProgressionSuggestion({
-    category: activeExercise?.category ?? 'barbell',
-    targetReps: activeExercise?.targetReps ?? null,
-    lastSet: lastSets[0]
-      ? {
-          weight: lastSets[0].weight,
-          reps: lastSets[0].reps,
-          rpe: lastSets[0].rpe,
-          unit: lastSets[0].unit,
-        }
-      : null,
-    previousSet: lastSets[1]
-      ? {
-          weight: lastSets[1].weight,
-          reps: lastSets[1].reps,
-          rpe: lastSets[1].rpe,
-          unit: lastSets[1].unit,
-        }
-      : null,
-  }), [activeExercise, lastSets]);
+  const lastLoggedSet = useMemo(
+    () =>
+      [...sets]
+        .filter((set) => set.deleted_at === null)
+        .sort((a, b) => b.logged_at - a.logged_at)[0] ?? null,
+    [sets],
+  );
+  const parserContext: ParserContext = useMemo(
+    () => ({
+      activeExerciseId,
+      defaultUnit: activeExercise?.defaultUnit ?? 'kg',
+      exercises: exercises.map((exercise) => ({
+        id: exercise.id,
+        normalizedName: normalizeName(exercise.name),
+        aliases: [normalizeName(exercise.name.split(' ')[0] ?? exercise.name)],
+      })),
+      lastSet: lastLoggedSet
+        ? {
+            setId: lastLoggedSet.id,
+            exerciseId: lastLoggedSet.exercise_id,
+            weight: lastLoggedSet.weight,
+            reps: lastLoggedSet.reps,
+            rpe: lastLoggedSet.rpe,
+            unit: lastLoggedSet.unit,
+            loggedAt: lastLoggedSet.logged_at,
+          }
+        : null,
+    }),
+    [activeExercise, activeExerciseId, exercises, lastLoggedSet],
+  );
+  const suggestion = useMemo(
+    () =>
+      getProgressionSuggestion({
+        category: activeExercise?.category ?? 'barbell',
+        targetReps: activeExercise?.targetReps ?? null,
+        lastSet: lastSets[0]
+          ? {
+              weight: lastSets[0].weight,
+              reps: lastSets[0].reps,
+              rpe: lastSets[0].rpe,
+              unit: lastSets[0].unit,
+            }
+          : null,
+        previousSet: lastSets[1]
+          ? {
+              weight: lastSets[1].weight,
+              reps: lastSets[1].reps,
+              rpe: lastSets[1].rpe,
+              unit: lastSets[1].unit,
+            }
+          : null,
+      }),
+    [activeExercise, lastSets],
+  );
 
   // Elapsed timer
   useEffect(() => {
@@ -150,6 +158,7 @@ export default function LiveWorkout() {
       .sort((a, b) => b.logged_at - a.logged_at)[0];
 
     if (lastSet) {
+      /* eslint-disable react-hooks/set-state-in-effect */
       setWeight(lastSet.weight ?? DEFAULT_WEIGHT);
       setReps(lastSet.reps ?? DEFAULT_REPS);
     } else if (activeExercise.targetWeight !== null) {
@@ -160,6 +169,7 @@ export default function LiveWorkout() {
       setReps(DEFAULT_REPS);
     }
     setRpe(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [activeExerciseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load last-session hint for active exercise
@@ -180,9 +190,13 @@ export default function LiveWorkout() {
           [activeExerciseId, session.id],
         ),
       )
-      .then((rows) => { if (!cancelled) setLastSets(rows); })
+      .then((rows) => {
+        if (!cancelled) setLastSets(rows);
+      })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [activeExerciseId, session]);
 
   // Navigate away once session ends
@@ -194,7 +208,8 @@ export default function LiveWorkout() {
   useEffect(() => {
     if (phase !== 'prompt_resume' || !existingSession) return;
     const started = new Date(existingSession.started_at).toLocaleTimeString([], {
-      hour: '2-digit', minute: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
     });
     const isStale = Date.now() - existingSession.started_at > 12 * 60 * 60 * 1000;
     const buttons = isStale
@@ -284,70 +299,73 @@ export default function LiveWorkout() {
     setEditingSet(null);
   }, [editReps, editRpe, editWeight, editingSet, store]);
 
-  const handleDeleteSet = useCallback((set: WorkoutSet) => {
-    Alert.alert('Delete Set', 'Remove this set from the workout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => void store.deleteSet(set.id) },
-    ]);
-  }, [store]);
+  const handleDeleteSet = useCallback(
+    (set: WorkoutSet) => {
+      Alert.alert('Delete Set', 'Remove this set from the workout?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => void store.deleteSet(set.id) },
+      ]);
+    },
+    [store],
+  );
 
-  const commitVoiceResult = useCallback(async (parsed: IntentResult) => {
-    if (isStaleCommand(parsed.recognisedAt)) {
-      setVoiceMessage('Tap to log instead.');
-      return;
-    }
+  const commitVoiceResult = useCallback(
+    async (parsed: IntentResult) => {
+      if (isStaleCommand(parsed.recognisedAt)) {
+        setVoiceMessage('Tap to log instead.');
+        return;
+      }
 
-    if (parsed.intent === 'log_set' || parsed.intent === 'log_set_same' || parsed.intent === 'log_set_delta') {
-      await logSet({
-        exerciseId: parsed.args.exerciseId as string,
-        weight: parsed.args.weight as number,
-        reps: parsed.args.reps as number,
-        rpe: null,
-        unit: parsed.args.unit as 'kg' | 'lb',
-        source: 'voice',
-      });
-      setVoiceMessage('Logged from typed voice.');
-      return;
-    }
+      if (
+        parsed.intent === 'log_set' ||
+        parsed.intent === 'log_set_same' ||
+        parsed.intent === 'log_set_delta'
+      ) {
+        await logSet({
+          exerciseId: parsed.args.exerciseId as string,
+          weight: parsed.args.weight as number,
+          reps: parsed.args.reps as number,
+          rpe: null,
+          unit: parsed.args.unit as 'kg' | 'lb',
+          source: 'voice',
+        });
+        setVoiceMessage('Logged from typed voice.');
+        return;
+      }
 
-    if (parsed.intent === 'set_rpe') {
-      await store.editSet(parsed.args.setId as string, { rpe: parsed.args.rpe as number });
-      setVoiceMessage('RPE updated.');
-      return;
-    }
+      if (parsed.intent === 'set_rpe') {
+        await store.editSet(parsed.args.setId as string, { rpe: parsed.args.rpe as number });
+        setVoiceMessage('RPE updated.');
+        return;
+      }
 
-    if (parsed.intent === 'undo') {
-      await store.undoLastSet();
-      setVoiceMessage('Undone.');
-      return;
-    }
+      if (parsed.intent === 'undo') {
+        await store.undoLastSet();
+        setVoiceMessage('Undone.');
+        return;
+      }
 
-    if (parsed.intent === 'next_exercise' && activeExerciseIndex < exercises.length - 1) {
-      setActiveExerciseId(exercises[activeExerciseIndex + 1].id);
-      return;
-    }
+      if (parsed.intent === 'next_exercise' && activeExerciseIndex < exercises.length - 1) {
+        setActiveExerciseId(exercises[activeExerciseIndex + 1].id);
+        return;
+      }
 
-    if (parsed.intent === 'prev_exercise' && activeExerciseIndex > 0) {
-      setActiveExerciseId(exercises[activeExerciseIndex - 1].id);
-      return;
-    }
+      if (parsed.intent === 'prev_exercise' && activeExerciseIndex > 0) {
+        setActiveExerciseId(exercises[activeExerciseIndex - 1].id);
+        return;
+      }
 
-    if (parsed.intent === 'start_rest_timer') {
-      Alert.alert('Rest Timer', `${parsed.args.seconds as number} seconds`);
-      return;
-    }
+      if (parsed.intent === 'start_rest_timer') {
+        Alert.alert('Rest Timer', `${parsed.args.seconds as number} seconds`);
+        return;
+      }
 
-    if (parsed.intent === 'end_workout') {
-      handleEndWorkout();
-    }
-  }, [
-    activeExerciseIndex,
-    exercises,
-    handleEndWorkout,
-    logSet,
-    setActiveExerciseId,
-    store,
-  ]);
+      if (parsed.intent === 'end_workout') {
+        handleEndWorkout();
+      }
+    },
+    [activeExerciseIndex, exercises, handleEndWorkout, logSet, setActiveExerciseId, store],
+  );
 
   const handleVoiceDebugSubmit = useCallback(() => {
     const parsed = parseVoiceCommand(voiceText, parserContext);
@@ -389,7 +407,12 @@ export default function LiveWorkout() {
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       {/* ── Top bar ──────────────────────────────────────────── */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.iconBtn} onPress={handleEndWorkout} hitSlop={8} testID="end-workout-btn">
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={handleEndWorkout}
+          hitSlop={8}
+          testID="end-workout-btn"
+        >
           <Ionicons name="chevron-back" size={16} color={T.textDim} />
         </TouchableOpacity>
         <View style={styles.elapsedPill}>
@@ -406,7 +429,8 @@ export default function LiveWorkout() {
         <View style={styles.resumeBanner}>
           <Ionicons name="refresh" size={15} color={T.accent} />
           <Text style={styles.resumeBannerText}>
-            Resumed your workout from {new Date(resumedStartedAt).toLocaleTimeString([], {
+            Resumed your workout from{' '}
+            {new Date(resumedStartedAt).toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',
             })}
@@ -418,11 +442,17 @@ export default function LiveWorkout() {
         <View style={styles.carouselHeader}>
           <TouchableOpacity
             style={[styles.arrowBtn, activeExerciseIndex === 0 && styles.arrowBtnDisabled]}
-            onPress={() => activeExerciseIndex > 0 && setActiveExerciseId(exercises[activeExerciseIndex - 1].id)}
+            onPress={() =>
+              activeExerciseIndex > 0 && setActiveExerciseId(exercises[activeExerciseIndex - 1].id)
+            }
             disabled={activeExerciseIndex === 0}
             hitSlop={8}
           >
-            <Ionicons name="chevron-back" size={18} color={activeExerciseIndex === 0 ? T.mutedDeep : T.textDim} />
+            <Ionicons
+              name="chevron-back"
+              size={18}
+              color={activeExerciseIndex === 0 ? T.mutedDeep : T.textDim}
+            />
           </TouchableOpacity>
 
           <View style={styles.carouselCenter}>
@@ -432,7 +462,7 @@ export default function LiveWorkout() {
             <Text style={styles.carouselName} numberOfLines={1}>
               {activeExercise?.name ?? '—'}
             </Text>
-            {(activeExercise?.targetSets || activeExercise?.targetReps) ? (
+            {activeExercise?.targetSets || activeExercise?.targetReps ? (
               <Text style={styles.carouselTarget}>
                 Target · {activeExercise.targetSets ?? '?'} × {activeExercise.targetReps ?? '?'}
               </Text>
@@ -440,12 +470,22 @@ export default function LiveWorkout() {
           </View>
 
           <TouchableOpacity
-            style={[styles.arrowBtn, activeExerciseIndex >= exercises.length - 1 && styles.arrowBtnDisabled]}
-            onPress={() => activeExerciseIndex < exercises.length - 1 && setActiveExerciseId(exercises[activeExerciseIndex + 1].id)}
+            style={[
+              styles.arrowBtn,
+              activeExerciseIndex >= exercises.length - 1 && styles.arrowBtnDisabled,
+            ]}
+            onPress={() =>
+              activeExerciseIndex < exercises.length - 1 &&
+              setActiveExerciseId(exercises[activeExerciseIndex + 1].id)
+            }
             disabled={activeExerciseIndex >= exercises.length - 1}
             hitSlop={8}
           >
-            <Ionicons name="chevron-forward" size={18} color={activeExerciseIndex >= exercises.length - 1 ? T.mutedDeep : T.textDim} />
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={activeExerciseIndex >= exercises.length - 1 ? T.mutedDeep : T.textDim}
+            />
           </TouchableOpacity>
         </View>
       )}
@@ -454,7 +494,11 @@ export default function LiveWorkout() {
       {exercises.length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.mutedText}>Tap below to add an exercise</Text>
-          <TouchableOpacity style={styles.addExBtn} onPress={() => setPickerVisible(true)} testID="add-exercise-tab">
+          <TouchableOpacity
+            style={styles.addExBtn}
+            onPress={() => setPickerVisible(true)}
+            testID="add-exercise-tab"
+          >
             <Ionicons name="add" size={20} color={T.accentInk} />
             <Text style={styles.addExBtnText}>Add Exercise</Text>
           </TouchableOpacity>
@@ -475,7 +519,9 @@ export default function LiveWorkout() {
               >
                 <Ionicons name="time-outline" size={16} color={T.muted} />
                 <View style={styles.lastTimeBody}>
-                  <Text style={styles.lastTimeLabel}>{lastHintText ? 'LAST TIME' : 'NO HISTORY'}</Text>
+                  <Text style={styles.lastTimeLabel}>
+                    {lastHintText ? 'LAST TIME' : 'NO HISTORY'}
+                  </Text>
                   <Text style={styles.lastTimeData} numberOfLines={1}>
                     {lastHintText ?? 'First time logging this exercise'}
                   </Text>
@@ -505,36 +551,50 @@ export default function LiveWorkout() {
           }
           ListEmptyComponent={
             <View style={styles.emptySetRow}>
-              <Text style={styles.emptySetText}>No sets yet. Suggestion below pre-fills the logger.</Text>
+              <Text style={styles.emptySetText}>
+                No sets yet. Suggestion below pre-fills the logger.
+              </Text>
             </View>
           }
           renderItem={({ item, index }) => (
             <View style={styles.setRow} testID={`set-row-${item.id}`}>
               <Text style={styles.setIndex}>#{index + 1}</Text>
               <Text style={styles.setWeight}>
-                {item.weight ?? '—'}<Text style={styles.setUnit}> {item.unit}</Text>
+                {item.weight ?? '—'}
+                <Text style={styles.setUnit}> {item.unit}</Text>
               </Text>
               <Text style={styles.setReps}>
-                {item.reps ?? '—'}<Text style={styles.setUnit}> reps</Text>
+                {item.reps ?? '—'}
+                <Text style={styles.setUnit}> reps</Text>
               </Text>
-              <Text style={styles.setRpe}>
-                {item.rpe !== null ? `RPE ${item.rpe}` : '—'}
-              </Text>
+              <Text style={styles.setRpe}>{item.rpe !== null ? `RPE ${item.rpe}` : '—'}</Text>
               <View style={styles.setCheck}>
                 <Ionicons name="checkmark" size={14} color={T.success} />
               </View>
               <View style={styles.setActions}>
-                <TouchableOpacity style={styles.setActionBtn} onPress={() => openEditSet(item)} hitSlop={6}>
+                <TouchableOpacity
+                  style={styles.setActionBtn}
+                  onPress={() => openEditSet(item)}
+                  hitSlop={6}
+                >
                   <Ionicons name="create-outline" size={14} color={T.textDim} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.setActionBtn} onPress={() => handleDeleteSet(item)} hitSlop={6}>
+                <TouchableOpacity
+                  style={styles.setActionBtn}
+                  onPress={() => handleDeleteSet(item)}
+                  hitSlop={6}
+                >
                   <Ionicons name="trash-outline" size={14} color={T.danger} />
                 </TouchableOpacity>
               </View>
             </View>
           )}
           ListFooterComponent={
-            <TouchableOpacity style={styles.addExSmallBtn} onPress={() => setPickerVisible(true)} testID="add-exercise-tab">
+            <TouchableOpacity
+              style={styles.addExSmallBtn}
+              onPress={() => setPickerVisible(true)}
+              testID="add-exercise-tab"
+            >
               <Ionicons name="add" size={15} color={T.muted} />
               <Text style={styles.addExSmallText}>Add exercise</Text>
             </TouchableOpacity>
@@ -594,7 +654,9 @@ export default function LiveWorkout() {
                   ? `${suggestion.weight ?? '—'} × ${suggestion.reps ?? '—'}`
                   : suggestion.label}
               </Text>
-              {suggestion.weight !== null || suggestion.reps !== null ? `  ·  ${suggestion.label}` : ''}
+              {suggestion.weight !== null || suggestion.reps !== null
+                ? `  ·  ${suggestion.label}`
+                : ''}
             </Text>
           </TouchableOpacity>
 
@@ -603,14 +665,24 @@ export default function LiveWorkout() {
             <View style={styles.stepperWrap}>
               <Text style={styles.stepperLabel}>WEIGHT · KG</Text>
               <View style={styles.stepper}>
-                <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnLeft]} onPress={() => setWeight((w) => Math.max(0, parseFloat((w - 2.5).toFixed(2))))} onLongPress={() => setWeight((w) => Math.max(0, parseFloat((w - 10).toFixed(2))))} delayLongPress={400}>
+                <TouchableOpacity
+                  style={[styles.stepperBtn, styles.stepperBtnLeft]}
+                  onPress={() => setWeight((w) => Math.max(0, parseFloat((w - 2.5).toFixed(2))))}
+                  onLongPress={() => setWeight((w) => Math.max(0, parseFloat((w - 10).toFixed(2))))}
+                  delayLongPress={400}
+                >
                   <Text style={styles.stepperBtnText}>−</Text>
                 </TouchableOpacity>
                 <View style={styles.stepperValueWrap}>
                   <Text style={styles.stepperValue}>{wgt}</Text>
                   <Text style={styles.stepperUnit}>kg</Text>
                 </View>
-                <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnRight]} onPress={() => setWeight((w) => parseFloat((w + 2.5).toFixed(2)))} onLongPress={() => setWeight((w) => parseFloat((w + 10).toFixed(2)))} delayLongPress={400}>
+                <TouchableOpacity
+                  style={[styles.stepperBtn, styles.stepperBtnRight]}
+                  onPress={() => setWeight((w) => parseFloat((w + 2.5).toFixed(2)))}
+                  onLongPress={() => setWeight((w) => parseFloat((w + 10).toFixed(2)))}
+                  delayLongPress={400}
+                >
                   <Text style={styles.stepperBtnText}>+</Text>
                 </TouchableOpacity>
               </View>
@@ -619,14 +691,24 @@ export default function LiveWorkout() {
             <View style={styles.stepperWrap}>
               <Text style={styles.stepperLabel}>REPS</Text>
               <View style={styles.stepper}>
-                <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnLeft]} onPress={() => setReps((r) => Math.max(1, r - 1))} onLongPress={() => setReps((r) => Math.max(1, r - 5))} delayLongPress={400}>
+                <TouchableOpacity
+                  style={[styles.stepperBtn, styles.stepperBtnLeft]}
+                  onPress={() => setReps((r) => Math.max(1, r - 1))}
+                  onLongPress={() => setReps((r) => Math.max(1, r - 5))}
+                  delayLongPress={400}
+                >
                   <Text style={styles.stepperBtnText}>−</Text>
                 </TouchableOpacity>
                 <View style={styles.stepperValueWrap}>
                   <Text style={styles.stepperValue}>{reps}</Text>
                   <Text style={styles.stepperUnit}>rps</Text>
                 </View>
-                <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnRight]} onPress={() => setReps((r) => r + 1)} onLongPress={() => setReps((r) => r + 5)} delayLongPress={400}>
+                <TouchableOpacity
+                  style={[styles.stepperBtn, styles.stepperBtnRight]}
+                  onPress={() => setReps((r) => r + 1)}
+                  onLongPress={() => setReps((r) => r + 5)}
+                  delayLongPress={400}
+                >
                   <Text style={styles.stepperBtnText}>+</Text>
                 </TouchableOpacity>
               </View>
@@ -666,7 +748,12 @@ export default function LiveWorkout() {
       <ExercisePicker
         visible={pickerVisible}
         onSelect={(ex) => {
-          addExercise({ id: ex.id, name: ex.name, category: ex.category, default_unit: ex.default_unit });
+          addExercise({
+            id: ex.id,
+            name: ex.name,
+            category: ex.category,
+            default_unit: ex.default_unit,
+          });
           setPickerVisible(false);
         }}
         onClose={() => setPickerVisible(false)}
@@ -696,23 +783,39 @@ export default function LiveWorkout() {
           <View style={styles.editSheet}>
             <View style={styles.editHeader}>
               <Text style={styles.editTitle}>Edit Set</Text>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => setEditingSet(null)} hitSlop={8}>
+              <TouchableOpacity
+                style={styles.iconBtn}
+                onPress={() => setEditingSet(null)}
+                hitSlop={8}
+              >
                 <Ionicons name="close" size={16} color={T.textDim} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.steppersRow}>
               <View style={styles.stepperWrap}>
-                <Text style={styles.stepperLabel}>WEIGHT · {editingSet?.unit.toUpperCase() ?? 'KG'}</Text>
+                <Text style={styles.stepperLabel}>
+                  WEIGHT · {editingSet?.unit.toUpperCase() ?? 'KG'}
+                </Text>
                 <View style={styles.stepper}>
-                  <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnLeft]} onPress={() => setEditWeight((w) => Math.max(0, parseFloat((w - 2.5).toFixed(2))))}>
+                  <TouchableOpacity
+                    style={[styles.stepperBtn, styles.stepperBtnLeft]}
+                    onPress={() =>
+                      setEditWeight((w) => Math.max(0, parseFloat((w - 2.5).toFixed(2))))
+                    }
+                  >
                     <Text style={styles.stepperBtnText}>−</Text>
                   </TouchableOpacity>
                   <View style={styles.stepperValueWrap}>
-                    <Text style={styles.stepperValue}>{editWeight % 1 === 0 ? editWeight : editWeight.toFixed(1)}</Text>
+                    <Text style={styles.stepperValue}>
+                      {editWeight % 1 === 0 ? editWeight : editWeight.toFixed(1)}
+                    </Text>
                     <Text style={styles.stepperUnit}>{editingSet?.unit ?? 'kg'}</Text>
                   </View>
-                  <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnRight]} onPress={() => setEditWeight((w) => parseFloat((w + 2.5).toFixed(2)))}>
+                  <TouchableOpacity
+                    style={[styles.stepperBtn, styles.stepperBtnRight]}
+                    onPress={() => setEditWeight((w) => parseFloat((w + 2.5).toFixed(2)))}
+                  >
                     <Text style={styles.stepperBtnText}>+</Text>
                   </TouchableOpacity>
                 </View>
@@ -721,14 +824,20 @@ export default function LiveWorkout() {
               <View style={styles.stepperWrap}>
                 <Text style={styles.stepperLabel}>REPS</Text>
                 <View style={styles.stepper}>
-                  <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnLeft]} onPress={() => setEditReps((r) => Math.max(1, r - 1))}>
+                  <TouchableOpacity
+                    style={[styles.stepperBtn, styles.stepperBtnLeft]}
+                    onPress={() => setEditReps((r) => Math.max(1, r - 1))}
+                  >
                     <Text style={styles.stepperBtnText}>−</Text>
                   </TouchableOpacity>
                   <View style={styles.stepperValueWrap}>
                     <Text style={styles.stepperValue}>{editReps}</Text>
                     <Text style={styles.stepperUnit}>rps</Text>
                   </View>
-                  <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnRight]} onPress={() => setEditReps((r) => r + 1)}>
+                  <TouchableOpacity
+                    style={[styles.stepperBtn, styles.stepperBtnRight]}
+                    onPress={() => setEditReps((r) => r + 1)}
+                  >
                     <Text style={styles.stepperBtnText}>+</Text>
                   </TouchableOpacity>
                 </View>
@@ -743,7 +852,9 @@ export default function LiveWorkout() {
                   style={[styles.rpeChip, editRpe === value && styles.rpeChipActive]}
                   onPress={() => setEditRpe(editRpe === value ? null : value)}
                 >
-                  <Text style={[styles.rpeChipText, editRpe === value && styles.rpeChipTextActive]}>{value}</Text>
+                  <Text style={[styles.rpeChipText, editRpe === value && styles.rpeChipTextActive]}>
+                    {value}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -763,22 +874,40 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
 
   topBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 4,
   },
   iconBtn: {
-    width: 32, height: 32, borderRadius: 999,
-    backgroundColor: T.surface2, borderWidth: 1, borderColor: T.border,
-    alignItems: 'center', justifyContent: 'center',
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   elapsedPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: T.surface, borderRadius: 999, borderWidth: 1, borderColor: T.border,
-    paddingHorizontal: 12, paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: T.surface,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: T.border,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   liveDot: { width: 6, height: 6, borderRadius: 999, backgroundColor: T.accent },
   elapsedText: {
-    fontFamily: 'Courier New', fontSize: 13, color: T.text, letterSpacing: 0.5,
+    fontFamily: 'Courier New',
+    fontSize: 13,
+    color: T.text,
+    letterSpacing: 0.5,
   },
   resumeBanner: {
     flexDirection: 'row',
@@ -801,150 +930,278 @@ const styles = StyleSheet.create({
   },
 
   carouselHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingTop: 14, paddingBottom: 4, gap: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 4,
+    gap: 12,
   },
   arrowBtn: {
-    width: 36, height: 36, borderRadius: 999,
-    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   arrowBtnDisabled: { opacity: 0.3 },
   carouselCenter: { flex: 1, alignItems: 'center' },
   carouselEyebrow: {
-    fontFamily: 'Courier New', fontSize: 10.5, color: T.muted,
-    letterSpacing: 1, textTransform: 'uppercase',
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    color: T.muted,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   carouselName: {
-    fontSize: 19, fontWeight: '600', color: T.text, letterSpacing: -0.3,
-    marginTop: 4, textAlign: 'center',
+    fontSize: 19,
+    fontWeight: '600',
+    color: T.text,
+    letterSpacing: -0.3,
+    marginTop: 4,
+    textAlign: 'center',
   },
   carouselTarget: {
-    fontFamily: 'Courier New', fontSize: 11.5, color: T.muted, marginTop: 3, letterSpacing: 0.4,
+    fontFamily: 'Courier New',
+    fontSize: 11.5,
+    color: T.muted,
+    marginTop: 3,
+    letterSpacing: 0.4,
   },
 
   scrollArea: { flex: 1 },
   scrollContent: { paddingHorizontal: 22, paddingTop: 14, paddingBottom: 8 },
 
   lastTimeCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 16,
   },
   lastTimeBody: { flex: 1, minWidth: 0 },
   lastTimeLabel: {
-    fontFamily: 'Courier New', fontSize: 10, color: T.muted,
-    letterSpacing: 0.8, textTransform: 'uppercase',
+    fontFamily: 'Courier New',
+    fontSize: 10,
+    color: T.muted,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   lastTimeData: { fontFamily: 'Courier New', fontSize: 12, color: T.text, marginTop: 2 },
 
   setsHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   setsLabel: {
-    fontFamily: 'Courier New', fontSize: 10.5, letterSpacing: 1.2,
-    textTransform: 'uppercase', color: T.muted, fontWeight: '500',
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: T.muted,
+    fontWeight: '500',
   },
   undoBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
-    paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 999,
   },
   undoBtnText: {
-    fontFamily: 'Courier New', fontSize: 11.5, color: T.textDim, letterSpacing: 0.3,
+    fontFamily: 'Courier New',
+    fontSize: 11.5,
+    color: T.textDim,
+    letterSpacing: 0.3,
   },
 
   setRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 11,
-    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
-    borderRadius: 12, marginBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    marginBottom: 6,
   },
   setIndex: { fontFamily: 'Courier New', fontSize: 12, color: T.muted, width: 32 },
-  setWeight: { flex: 0.9, fontFamily: 'Courier New', fontSize: 15, fontWeight: '500', color: T.text },
+  setWeight: {
+    flex: 0.9,
+    fontFamily: 'Courier New',
+    fontSize: 15,
+    fontWeight: '500',
+    color: T.text,
+  },
   setReps: { flex: 0.9, fontFamily: 'Courier New', fontSize: 15, fontWeight: '500', color: T.text },
   setRpe: { flex: 0.8, fontFamily: 'Courier New', fontSize: 12, color: T.textDim },
   setUnit: { fontSize: 10, color: T.muted },
   setCheck: { width: 28, alignItems: 'center' },
   setActions: { flexDirection: 'row', gap: 4, flexShrink: 0 },
   setActionBtn: {
-    width: 28, height: 28, borderRadius: 8,
-    backgroundColor: T.surface2, borderWidth: 1, borderColor: T.border,
-    alignItems: 'center', justifyContent: 'center',
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   emptySetRow: {
-    paddingVertical: 14, paddingHorizontal: 14,
-    borderWidth: 1, borderStyle: 'dashed', borderColor: T.border,
-    borderRadius: 12, alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: T.border,
+    borderRadius: 12,
+    alignItems: 'center',
   },
   emptySetText: { fontFamily: 'Courier New', fontSize: 12, color: T.muted },
 
   addExSmallBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 7,
-    borderRadius: 999, borderWidth: 1, borderColor: T.border, backgroundColor: T.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surface,
     marginTop: 10,
   },
   addExSmallText: { fontSize: 12, color: T.muted, fontWeight: '500' },
 
   addExBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: T.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: T.accent,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
   addExBtnText: { fontSize: 15, fontWeight: '600', color: T.accentInk },
   mutedText: { color: T.muted, fontSize: 14 },
 
   loggerBlock: {
-    borderTopWidth: 1, borderTopColor: T.border,
-    backgroundColor: T.bg, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    backgroundColor: T.bg,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    gap: 10,
   },
   suggestionRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
-    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  suggestionDot: { width: 6, height: 6, borderRadius: 999, backgroundColor: T.accent, flexShrink: 0 },
+  suggestionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: T.accent,
+    flexShrink: 0,
+  },
   suggestionText: {
-    fontFamily: 'Courier New', fontSize: 11.5, color: T.textDim, letterSpacing: 0.2, flex: 1,
+    fontFamily: 'Courier New',
+    fontSize: 11.5,
+    color: T.textDim,
+    letterSpacing: 0.2,
+    flex: 1,
   },
   suggestionValue: { color: T.text },
 
   steppersRow: { flexDirection: 'row', gap: 8 },
   stepperWrap: { flex: 1, gap: 6 },
   stepperLabel: {
-    fontFamily: 'Courier New', fontSize: 10.5, letterSpacing: 1.2,
-    textTransform: 'uppercase', color: T.muted, fontWeight: '500',
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: T.muted,
+    fontWeight: '500',
   },
   stepper: {
-    flexDirection: 'row', alignItems: 'stretch',
-    backgroundColor: T.surface, borderRadius: 14, borderWidth: 1, borderColor: T.border, overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: T.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: T.border,
+    overflow: 'hidden',
   },
   stepperBtn: {
-    width: 44, flexShrink: 0, backgroundColor: T.surface2,
-    alignItems: 'center', justifyContent: 'center',
+    width: 44,
+    flexShrink: 0,
+    backgroundColor: T.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stepperBtnLeft: { borderRightWidth: 1, borderRightColor: T.border },
   stepperBtnRight: { borderLeftWidth: 1, borderLeftColor: T.border },
   stepperBtnText: { color: T.text, fontSize: 22, lineHeight: 26 },
   stepperValueWrap: {
-    flex: 1, flexDirection: 'row', alignItems: 'baseline',
-    justifyContent: 'center', paddingVertical: 12, gap: 4,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 4,
   },
   stepperValue: {
-    fontFamily: 'Courier New', fontSize: 28, fontWeight: '500',
-    color: T.text, lineHeight: 32,
+    fontFamily: 'Courier New',
+    fontSize: 28,
+    fontWeight: '500',
+    color: T.text,
+    lineHeight: 32,
   },
   stepperUnit: { fontFamily: 'Courier New', fontSize: 11, color: T.muted, letterSpacing: 0.3 },
 
   rpeRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   rpeLabel: {
-    fontFamily: 'Courier New', fontSize: 10.5, color: T.muted, letterSpacing: 0.5, marginRight: 4,
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    color: T.muted,
+    letterSpacing: 0.5,
+    marginRight: 4,
     flexShrink: 0,
   },
   rpeChip: {
-    flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: 'center',
-    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: 'center',
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
   },
   rpeChipActive: { backgroundColor: T.text, borderColor: T.text },
   rpeChipText: { fontFamily: 'Courier New', fontSize: 11, fontWeight: '500', color: T.textDim },
@@ -952,10 +1209,17 @@ const styles = StyleSheet.create({
 
   logRow: { flexDirection: 'row', gap: 8 },
   logBtn: {
-    flex: 1, backgroundColor: T.accent, borderRadius: 16,
-    paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
-    shadowColor: T.accent, shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45, shadowRadius: 16, elevation: 6,
+    flex: 1,
+    backgroundColor: T.accent,
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: T.accent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 6,
   },
   logBtnPressed: { shadowOpacity: 0.15, shadowRadius: 4 },
   logBtnText: { fontSize: 16, fontWeight: '700', color: T.accentInk, letterSpacing: 0.1 },
@@ -991,20 +1255,31 @@ const styles = StyleSheet.create({
   voiceMessage: { color: T.textDim, fontFamily: 'Courier New', fontSize: 11 },
 
   modalBackdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.62)',
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.62)',
     justifyContent: 'flex-end',
   },
   editSheet: {
-    backgroundColor: T.bg, borderTopWidth: 1, borderTopColor: T.border,
-    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 28, gap: 14,
+    backgroundColor: T.bg,
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 28,
+    gap: 14,
   },
   editHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   editTitle: { color: T.text, fontSize: 18, fontWeight: '700' },
   saveEditBtn: {
-    backgroundColor: T.accent, borderRadius: 14,
-    paddingVertical: 15, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: T.accent,
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   saveEditText: { color: T.accentInk, fontSize: 15, fontWeight: '700' },
 });

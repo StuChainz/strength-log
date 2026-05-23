@@ -1,10 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, ScrollView, Share, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb, resetLocalData } from '@/db/client';
 import { exportDatabase } from '@/db/repositories/export.repo';
-import { getAppSettings, setAppSetting, type AppSettings, type WeekStartDay } from '@/db/repositories/settings.repo';
+import {
+  getAppSettings,
+  setAppSetting,
+  type AppSettings,
+  type WeekStartDay,
+} from '@/db/repositories/settings.repo';
 import { T } from '@/theme/tokens';
 import type { Unit } from '@/domain/types';
 
@@ -22,6 +36,8 @@ export default function Settings() {
   }, []);
 
   useEffect(() => {
+    // Loading local settings on mount is the screen's external synchronization point.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
@@ -46,16 +62,20 @@ export default function Settings() {
   };
 
   const confirmWipe = () => {
-    Alert.alert('Wipe local data?', 'This removes workouts, templates, tags, and settings on this device.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Wipe',
-        style: 'destructive',
-        onPress: () => {
-          void resetLocalData().then(load);
+    Alert.alert(
+      'Wipe local data?',
+      'This removes workouts, templates, tags, and settings on this device.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Wipe',
+          style: 'destructive',
+          onPress: () => {
+            void resetLocalData().then(load);
+          },
         },
-      },
-    ]);
+      ],
+    );
   };
 
   const feedback = () => {
@@ -80,7 +100,9 @@ export default function Settings() {
                 style={[styles.segment, settings.unit === unit && styles.segmentActive]}
                 onPress={() => void update('unit', unit)}
               >
-                <Text style={[styles.segmentText, settings.unit === unit && styles.segmentTextActive]}>
+                <Text
+                  style={[styles.segmentText, settings.unit === unit && styles.segmentTextActive]}
+                >
                   {unit.toUpperCase()}
                 </Text>
               </TouchableOpacity>
@@ -97,7 +119,12 @@ export default function Settings() {
                 style={[styles.segment, settings.weekStartDay === day && styles.segmentActive]}
                 onPress={() => void update('weekStartDay', day)}
               >
-                <Text style={[styles.segmentText, settings.weekStartDay === day && styles.segmentTextActive]}>
+                <Text
+                  style={[
+                    styles.segmentText,
+                    settings.weekStartDay === day && styles.segmentTextActive,
+                  ]}
+                >
                   {day.toUpperCase()}
                 </Text>
               </TouchableOpacity>
@@ -118,7 +145,11 @@ export default function Settings() {
           />
         </View>
 
-        <TouchableOpacity style={styles.actionRow} onPress={() => void exportData()} disabled={busy}>
+        <TouchableOpacity
+          style={styles.actionRow}
+          onPress={() => void exportData()}
+          disabled={busy}
+        >
           <Ionicons name="share-outline" size={18} color={T.textDim} />
           <Text style={styles.actionText}>{busy ? 'Exporting…' : 'Export data'}</Text>
         </TouchableOpacity>

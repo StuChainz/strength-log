@@ -57,6 +57,7 @@ export default function PostSessionTags() {
   const [energy, setEnergy] = useState<number | null>(null);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [sampledAtFallback] = useState<number>(Date.now);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,9 +86,9 @@ export default function PostSessionTags() {
       volume: summary.volume,
       durationMin: summary.durationMin,
       setCount: summary.setCount,
-      sampledAt: summary.session.ended_at ?? Date.now(),
+      sampledAt: summary.session.ended_at ?? sampledAtFallback,
     };
-  }, [summary]);
+  }, [sampledAtFallback, summary]);
 
   const toggleTag = (tag: SessionTag) => {
     setSelected((prev) =>

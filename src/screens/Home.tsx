@@ -28,6 +28,7 @@ export default function Home() {
   const [inProgress, setInProgress] = useState<WorkoutSession | null>(null);
   const [unfinishedTagsSessionId, setUnfinishedTagsSessionId] = useState<string | null>(null);
   const [insightCard, setInsightCard] = useState<WeeklyInsightCard | null>(null);
+  const [now, setNow] = useState<number>(Date.now);
 
   const load = useCallback(async () => {
     try {
@@ -50,18 +51,25 @@ export default function Home() {
       setInProgress(active);
       setUnfinishedTagsSessionId(unfinishedTags?.id ?? null);
       setInsightCard(latestInsight);
+      setNow(Date.now());
     } catch {
       // ignore
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const nextTemplate: TemplateSummary | null = templates[0] ?? null;
 
   const today = new Date();
   const dayLabel = today.toLocaleDateString('en-GB', { weekday: 'short' }).toUpperCase();
-  const dateLabel = today.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase();
+  const dateLabel = today
+    .toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    .toUpperCase();
 
   const formatDuration = (session: RecentSession) => {
     if (!session.ended_at) return '';
@@ -76,7 +84,7 @@ export default function Home() {
   };
 
   const formatWhen = (ts: number): string => {
-    const diff = Date.now() - ts;
+    const diff = now - ts;
     const days = Math.floor(diff / 86400000);
     if (days === 0) return 'Today';
     if (days === 1) return 'Yesterday';
@@ -100,7 +108,9 @@ export default function Home() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.eyebrow}>{dayLabel} · {dateLabel}</Text>
+            <Text style={styles.eyebrow}>
+              {dayLabel} · {dateLabel}
+            </Text>
             <Text style={styles.title}>Strength Log</Text>
           </View>
           <TouchableOpacity
@@ -125,7 +135,8 @@ export default function Home() {
               <View style={styles.resumeBody}>
                 <Text style={styles.resumeLabel}>IN PROGRESS</Text>
                 <Text style={styles.resumeTitle}>
-                  Resumed workout from {new Date(inProgress.started_at).toLocaleTimeString([], {
+                  Resumed workout from{' '}
+                  {new Date(inProgress.started_at).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
                   })}
@@ -141,7 +152,9 @@ export default function Home() {
             <TouchableOpacity
               style={styles.resumeCard}
               activeOpacity={0.86}
-              onPress={() => navigation.navigate('PostSessionTags', { sessionId: unfinishedTagsSessionId })}
+              onPress={() =>
+                navigation.navigate('PostSessionTags', { sessionId: unfinishedTagsSessionId })
+              }
             >
               <View style={styles.resumeIcon}>
                 <Ionicons name="pricetag-outline" size={18} color={T.accent} />
@@ -161,7 +174,10 @@ export default function Home() {
             activeOpacity={0.88}
             style={styles.heroCard}
             onPress={() =>
-              navigation.navigate('LiveWorkout', nextTemplate ? { templateId: nextTemplate.id } : {})
+              navigation.navigate(
+                'LiveWorkout',
+                nextTemplate ? { templateId: nextTemplate.id } : {},
+              )
             }
             testID="start-workout-btn"
           >
@@ -189,7 +205,9 @@ export default function Home() {
               <Text style={styles.statUnit}>sessions</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{weekVolume > 0 ? formatVolume(weekVolume) : '—'}</Text>
+              <Text style={styles.statValue}>
+                {weekVolume > 0 ? formatVolume(weekVolume) : '—'}
+              </Text>
               <Text style={styles.statUnit}>kg volume</Text>
             </View>
             <View style={styles.statCard}>
@@ -205,7 +223,9 @@ export default function Home() {
             <InsightCard card={insightCard} />
           ) : (
             <View style={styles.insightHint}>
-              <Text style={styles.insightHintText}>Add tags after workouts to unlock weekly patterns.</Text>
+              <Text style={styles.insightHintText}>
+                Add tags after workouts to unlock weekly patterns.
+              </Text>
             </View>
           )}
         </View>
