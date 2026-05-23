@@ -1,54 +1,82 @@
 // ─── Scalar enums ────────────────────────────────────────────────────────────
 
-export type Unit = 'kg' | 'lb';
-export type ExerciseCategory =
-  | 'barbell'
-  | 'dumbbell'
-  | 'machine'
-  | 'bodyweight'
-  | 'cable'
-  | 'other';
-export type ForceType = 'push' | 'pull' | 'legs' | 'hinge' | 'core' | 'carry' | 'mixed' | 'other';
-export type MovementPattern =
-  | 'horizontal_push'
-  | 'vertical_push'
-  | 'horizontal_pull'
-  | 'vertical_pull'
-  | 'squat'
-  | 'hinge'
-  | 'lunge'
-  | 'hip_extension'
-  | 'elbow_flexion'
-  | 'elbow_extension'
-  | 'shoulder_abduction'
-  | 'core'
-  | 'carry'
-  | 'other';
-export type MuscleGroup =
-  | 'chest'
-  | 'back'
-  | 'shoulders'
-  | 'biceps'
-  | 'triceps'
-  | 'quadriceps'
-  | 'hamstrings'
-  | 'glutes'
-  | 'calves'
-  | 'core'
-  | 'forearms'
-  | 'full_body'
-  | 'other';
-export type Equipment =
-  | 'barbell'
-  | 'dumbbell'
-  | 'machine'
-  | 'bodyweight'
-  | 'cable'
-  | 'bench'
-  | 'pull_up_bar'
-  | 'other';
-export type Mechanics = 'compound' | 'isolation' | 'other';
-export type Laterality = 'bilateral' | 'unilateral' | 'alternating' | 'single_side' | 'other';
+export const UNITS = ['kg', 'lb'] as const;
+export const EXERCISE_CATEGORIES = [
+  'barbell',
+  'dumbbell',
+  'machine',
+  'bodyweight',
+  'cable',
+  'other',
+] as const;
+export const FORCE_TYPES = [
+  'push',
+  'pull',
+  'legs',
+  'hinge',
+  'core',
+  'carry',
+  'mixed',
+  'other',
+] as const;
+export const MOVEMENT_PATTERNS = [
+  'horizontal_push',
+  'vertical_push',
+  'horizontal_pull',
+  'vertical_pull',
+  'squat',
+  'hinge',
+  'lunge',
+  'hip_extension',
+  'elbow_flexion',
+  'elbow_extension',
+  'shoulder_abduction',
+  'core',
+  'carry',
+  'other',
+] as const;
+export const MUSCLE_GROUPS = [
+  'chest',
+  'back',
+  'shoulders',
+  'biceps',
+  'triceps',
+  'quadriceps',
+  'hamstrings',
+  'glutes',
+  'calves',
+  'core',
+  'forearms',
+  'full_body',
+  'other',
+] as const;
+export const EQUIPMENT = [
+  'barbell',
+  'dumbbell',
+  'machine',
+  'bodyweight',
+  'cable',
+  'bench',
+  'pull_up_bar',
+  'other',
+] as const;
+export const MECHANICS_TYPES = ['compound', 'isolation', 'other'] as const;
+export const LATERALITY_TYPES = [
+  'bilateral',
+  'unilateral',
+  'alternating',
+  'single_side',
+  'other',
+] as const;
+
+export type Unit = (typeof UNITS)[number];
+export type ExerciseCategory = (typeof EXERCISE_CATEGORIES)[number];
+export type ForceType = (typeof FORCE_TYPES)[number];
+export type MovementPattern = (typeof MOVEMENT_PATTERNS)[number];
+export type MuscleGroup = (typeof MUSCLE_GROUPS)[number];
+export type Equipment = (typeof EQUIPMENT)[number];
+export type Mechanics = (typeof MECHANICS_TYPES)[number];
+export type Laterality = (typeof LATERALITY_TYPES)[number];
 export type SessionStatus = 'in_progress' | 'completed' | 'discarded';
 export type EventType =
   | 'session_started'

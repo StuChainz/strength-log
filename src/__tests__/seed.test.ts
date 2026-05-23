@@ -1,5 +1,6 @@
 import { SEED_EXERCISES, SEED_EXERCISE_METADATA } from '@/db/seed/exercises';
 import { normalizeName } from '@/domain/ids';
+import { ExerciseMetadataInputSchema } from '@/domain/validation';
 
 describe('SEED_EXERCISES', () => {
   it('contains at least 35 exercises', () => {
@@ -92,6 +93,13 @@ describe('SEED_EXERCISE_METADATA', () => {
 
     ['push', 'pull', 'legs', 'hinge', 'core'].forEach((forceType) => {
       expect(forceTypes.has(forceType)).toBe(true);
+    });
+  });
+
+  it('matches the exercise metadata validation schema', () => {
+    SEED_EXERCISE_METADATA.forEach(({ exerciseName, ...metadata }) => {
+      expect(() => ExerciseMetadataInputSchema.parse(metadata)).not.toThrow();
+      expect(exerciseName.trim().length).toBeGreaterThan(0);
     });
   });
 });
