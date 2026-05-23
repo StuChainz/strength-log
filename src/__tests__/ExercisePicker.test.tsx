@@ -1,7 +1,11 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { ExercisePicker } from '@/components/ExercisePicker';
-import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
+import {
+  getExercisesWithMetadata,
+  type ExerciseMetadataFilters,
+} from '@/db/repositories/exercises.repo';
+import { normalizeName } from '@/domain/ids';
 import type { ExerciseWithMetadata } from '@/domain/types';
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
@@ -109,9 +113,24 @@ const mockExercises: ExerciseWithMetadata[] = [
   },
 ];
 
+function filterMockExercises(filters: ExerciseMetadataFilters = {}): ExerciseWithMetadata[] {
+  return mockExercises.filter((exercise) => {
+    if (filters.category && exercise.category !== filters.category) return false;
+    if (filters.force_type && exercise.metadata?.force_type !== filters.force_type) return false;
+    if (filters.query?.trim()) {
+      const needle = normalizeName(filters.query);
+      return (
+        exercise.normalized_name.includes(needle) ||
+        exercise.aliases.some((alias) => alias.includes(needle))
+      );
+    }
+    return true;
+  });
+}
+
 jest.mock('@/db/client', () => ({ openDb: jest.fn().mockResolvedValue({}) }));
 jest.mock('@/db/repositories/exercises.repo', () => ({
-  getExercisesWithMetadata: jest.fn().mockResolvedValue(mockExercises),
+  getExercisesWithMetadata: jest.fn(),
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -125,7 +144,9 @@ const defaultProps = {
 describe('ExercisePicker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    getExercisesWithMetadata.mockResolvedValue(mockExercises);
+    getExercisesWithMetadata.mockImplementation((_db, filters) =>
+      Promise.resolve(filterMockExercises(filters)),
+    );
   });
 
   it('renders all exercises when visible', async () => {
@@ -175,6 +196,9 @@ describe('ExercisePicker', () => {
       expect(queryByTestId('picker-exercise-ex-1')).toBeNull();
       expect(getByTestId('picker-exercise-ex-2')).toBeTruthy();
     });
+    expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+      query: 'curl',
+    });
   });
 
   it('filters exercises by alias search query', async () => {
@@ -186,6 +210,9 @@ describe('ExercisePicker', () => {
     await waitFor(() => {
       expect(queryByTestId('picker-exercise-ex-1')).toBeNull();
       expect(getByTestId('picker-exercise-ex-3')).toBeTruthy();
+    });
+    expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+      query: 'pushup',
     });
   });
 
@@ -200,6 +227,9 @@ describe('ExercisePicker', () => {
       expect(getByTestId('picker-exercise-ex-2')).toBeTruthy();
       expect(queryByTestId('picker-exercise-ex-3')).toBeNull();
     });
+    expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+      force_type: 'pull',
+    });
   });
 
   it('filters exercises by category chip', async () => {
@@ -212,6 +242,9 @@ describe('ExercisePicker', () => {
       expect(queryByTestId('picker-exercise-ex-1')).toBeNull();
       expect(queryByTestId('picker-exercise-ex-2')).toBeNull();
       expect(getByTestId('picker-exercise-ex-3')).toBeTruthy();
+    });
+    expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+      category: 'bodyweight',
     });
   });
 

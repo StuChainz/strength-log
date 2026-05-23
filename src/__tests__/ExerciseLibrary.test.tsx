@@ -1,13 +1,18 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { act, render, fireEvent, waitFor } from '@testing-library/react-native';
 import ExerciseLibrary from '@/screens/ExerciseLibrary';
-import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
+import {
+  getExercisesWithMetadata,
+  type ExerciseMetadataFilters,
+} from '@/db/repositories/exercises.repo';
+import { normalizeName } from '@/domain/ids';
+import type { ExerciseWithMetadata } from '@/domain/types';
 
 // ── Navigation mock ───────────────────────────────────────────────────────────
 const mockNavigate = jest.fn();
 const mockSetOptions = jest.fn();
 const mockUseFocusEffect = jest.fn((cb: () => (() => void) | void) => {
-  cb();
+  React.useEffect(() => cb(), [cb]);
 });
 
 jest.mock('@react-navigation/native', () => ({
@@ -20,7 +25,7 @@ jest.mock('@react-navigation/native', () => ({
 }));
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
-const mockExercises = [
+const mockExercises: ExerciseWithMetadata[] = [
   {
     id: 'ex-1',
     name: 'Barbell Squat',
@@ -182,9 +187,27 @@ const mockExercises = [
   },
 ];
 
-jest.mock('@/db/client', () => ({ openDb: jest.fn() }));
+function filterMockExercises(filters: ExerciseMetadataFilters = {}): ExerciseWithMetadata[] {
+  return mockExercises.filter((exercise) => {
+    if (filters.category && exercise.category !== filters.category) return false;
+    if (filters.custom !== undefined && exercise.is_custom !== (filters.custom ? 1 : 0)) {
+      return false;
+    }
+    if (filters.force_type && exercise.metadata?.force_type !== filters.force_type) return false;
+    if (filters.query?.trim()) {
+      const needle = normalizeName(filters.query);
+      return (
+        exercise.normalized_name.includes(needle) ||
+        exercise.aliases.some((alias) => alias.includes(needle))
+      );
+    }
+    return true;
+  });
+}
+
+jest.mock('@/db/client', () => ({ openDb: jest.fn().mockResolvedValue({}) }));
 jest.mock('@/db/repositories/exercises.repo', () => ({
-  getExercisesWithMetadata: jest.fn().mockResolvedValue(mockExercises),
+  getExercisesWithMetadata: jest.fn(),
 }));
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -192,9 +215,11 @@ describe('ExerciseLibrary', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseFocusEffect.mockImplementation((cb) => {
-      cb();
+      React.useEffect(() => cb(), [cb]);
     });
-    getExercisesWithMetadata.mockResolvedValue(mockExercises);
+    getExercisesWithMetadata.mockImplementation((_db, filters) =>
+      Promise.resolve(filterMockExercises(filters)),
+    );
   });
 
   it('renders all exercises after load', async () => {
@@ -223,9 +248,15 @@ describe('ExerciseLibrary', () => {
 
     fireEvent.changeText(getByTestId('search-input'), 'squat');
 
-    await waitFor(() => {
-      expect(getByTestId('exercise-row-ex-1')).toBeTruthy();
-      expect(queryByTestId('exercise-row-ex-2')).toBeNull();
+    await waitFor(
+      () => {
+        expect(getByTestId('exercise-row-ex-1')).toBeTruthy();
+        expect(queryByTestId('exercise-row-ex-2')).toBeNull();
+      },
+      { timeout: 3000 },
+    );
+    expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+      query: 'squat',
     });
   });
 
@@ -235,9 +266,15 @@ describe('ExerciseLibrary', () => {
 
     fireEvent.changeText(getByTestId('search-input'), 'flat bench');
 
-    await waitFor(() => {
-      expect(getByTestId('exercise-row-ex-6')).toBeTruthy();
-      expect(queryByTestId('exercise-row-ex-1')).toBeNull();
+    await waitFor(
+      () => {
+        expect(getByTestId('exercise-row-ex-6')).toBeTruthy();
+        expect(queryByTestId('exercise-row-ex-1')).toBeNull();
+      },
+      { timeout: 3000 },
+    );
+    expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+      query: 'flat bench',
     });
   });
 
@@ -247,9 +284,15 @@ describe('ExerciseLibrary', () => {
 
     fireEvent.press(getByTestId('filter-dumbbell'));
 
-    await waitFor(() => {
-      expect(queryByTestId('exercise-row-ex-1')).toBeNull();
-      expect(getByTestId('exercise-row-ex-2')).toBeTruthy();
+    await waitFor(
+      () => {
+        expect(queryByTestId('exercise-row-ex-1')).toBeNull();
+        expect(getByTestId('exercise-row-ex-2')).toBeTruthy();
+      },
+      { timeout: 3000 },
+    );
+    expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+      category: 'dumbbell',
     });
   });
 
@@ -265,13 +308,19 @@ describe('ExerciseLibrary', () => {
 
     fireEvent.press(getByTestId(`filter-${filter}`));
 
-    await waitFor(() => {
-      expect(getByTestId(`exercise-row-${expectedId}`)).toBeTruthy();
-      mockExercises
-        .filter((exercise) => exercise.id !== expectedId)
-        .forEach((exercise) => {
-          expect(queryByTestId(`exercise-row-${exercise.id}`)).toBeNull();
-        });
+    await waitFor(
+      () => {
+        expect(getByTestId(`exercise-row-${expectedId}`)).toBeTruthy();
+        mockExercises
+          .filter((exercise) => exercise.id !== expectedId)
+          .forEach((exercise) => {
+            expect(queryByTestId(`exercise-row-${exercise.id}`)).toBeNull();
+          });
+      },
+      { timeout: 3000 },
+    );
+    expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+      force_type: filter,
     });
   });
 
@@ -281,10 +330,16 @@ describe('ExerciseLibrary', () => {
 
     fireEvent.press(getByTestId('filter-custom'));
 
-    await waitFor(() => {
-      expect(queryByTestId('exercise-row-ex-1')).toBeNull();
-      expect(queryByTestId('exercise-row-ex-2')).toBeNull();
-      expect(getByTestId('exercise-row-ex-3')).toBeTruthy();
+    await waitFor(
+      () => {
+        expect(queryByTestId('exercise-row-ex-1')).toBeNull();
+        expect(queryByTestId('exercise-row-ex-2')).toBeNull();
+        expect(getByTestId('exercise-row-ex-3')).toBeTruthy();
+      },
+      { timeout: 3000 },
+    );
+    expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+      custom: true,
     });
   });
 
@@ -325,7 +380,9 @@ describe('ExerciseLibrary', () => {
 
     // Simulate focus by re-invoking the useFocusEffect callback
     const cb = mockUseFocusEffect.mock.calls[0][0];
-    cb();
+    await act(async () => {
+      cb();
+    });
 
     await waitFor(() =>
       expect(getExercisesWithMetadata.mock.calls.length).toBeGreaterThan(callsBefore),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   Modal,
@@ -10,33 +10,13 @@ import {
 } from 'react-native';
 import { openDb } from '@/db/client';
 import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
+import {
+  BASE_EXERCISE_FILTER_CHIPS,
+  buildExerciseListFilters,
+  type ExerciseFilterOption,
+} from '@/domain/exerciseFilters';
 import { formatExerciseMetadataSummary } from '@/domain/exerciseMetadata';
-import { normalizeName } from '@/domain/ids';
-import type { Exercise, ExerciseCategory, ExerciseWithMetadata, ForceType } from '@/domain/types';
-
-type ForceFilterOption = Extract<ForceType, 'push' | 'pull' | 'legs' | 'hinge' | 'core'>;
-type FilterOption = ExerciseCategory | ForceFilterOption | 'all';
-
-interface FilterChip {
-  label: string;
-  value: FilterOption;
-}
-
-const FILTER_CHIPS: FilterChip[] = [
-  { label: 'All', value: 'all' },
-  { label: 'Push', value: 'push' },
-  { label: 'Pull', value: 'pull' },
-  { label: 'Legs', value: 'legs' },
-  { label: 'Hinge', value: 'hinge' },
-  { label: 'Core', value: 'core' },
-  { label: 'Barbell', value: 'barbell' },
-  { label: 'Dumbbell', value: 'dumbbell' },
-  { label: 'Bodyweight', value: 'bodyweight' },
-  { label: 'Machine', value: 'machine' },
-  { label: 'Cable', value: 'cable' },
-];
-
-const FORCE_FILTERS = new Set<FilterOption>(['push', 'pull', 'legs', 'hinge', 'core']);
+import type { Exercise, ExerciseWithMetadata } from '@/domain/types';
 
 interface ExercisePickerProps {
   visible: boolean;
@@ -47,19 +27,28 @@ interface ExercisePickerProps {
 export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerProps) {
   const [exercises, setExercises] = useState<ExerciseWithMetadata[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<FilterOption>('all');
+  const [activeFilter, setActiveFilter] = useState<ExerciseFilterOption>('all');
   const [loading, setLoading] = useState(false);
   const dbRef = useRef<Awaited<ReturnType<typeof openDb>> | null>(null);
+  const loadRequestIdRef = useRef(0);
+  const activeFilterRef = useRef<ExerciseFilterOption>('all');
+  const searchQueryRef = useRef('');
 
-  const loadExercises = useCallback(async () => {
+  const loadExercises = useCallback(async (filter: ExerciseFilterOption, query: string) => {
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
     setLoading(true);
     try {
       const db = dbRef.current ?? (await openDb());
       dbRef.current = db;
-      const all = await getExercisesWithMetadata(db);
-      setExercises(all);
+      const result = await getExercisesWithMetadata(db, buildExerciseListFilters(filter, query));
+      if (requestId === loadRequestIdRef.current) {
+        setExercises(result);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -69,29 +58,27 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
     /* eslint-disable react-hooks/set-state-in-effect */
     setSearchQuery('');
     setActiveFilter('all');
+    activeFilterRef.current = 'all';
+    searchQueryRef.current = '';
     /* eslint-enable react-hooks/set-state-in-effect */
-    void loadExercises();
+    void loadExercises('all', '');
   }, [visible, loadExercises]);
 
-  const filtered = useMemo(() => {
-    let result = exercises;
-
-    if (FORCE_FILTERS.has(activeFilter)) {
-      result = result.filter((e) => e.metadata?.force_type === activeFilter);
-    } else if (activeFilter !== 'all') {
-      result = result.filter((e) => e.category === activeFilter);
+  const handleSearchChange = (value: string) => {
+    searchQueryRef.current = value;
+    setSearchQuery(value);
+    if (visible) {
+      void loadExercises(activeFilterRef.current, value);
     }
+  };
 
-    if (searchQuery.trim()) {
-      const needle = normalizeName(searchQuery);
-      result = result.filter(
-        (e) =>
-          e.normalized_name.includes(needle) || e.aliases.some((alias) => alias.includes(needle)),
-      );
+  const handleFilterPress = (value: ExerciseFilterOption) => {
+    activeFilterRef.current = value;
+    setActiveFilter(value);
+    if (visible) {
+      void loadExercises(value, searchQueryRef.current);
     }
-
-    return result;
-  }, [exercises, searchQuery, activeFilter]);
+  };
 
   const handleSelect = (exercise: Exercise) => {
     onSelect(exercise);
@@ -122,7 +109,7 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
             placeholder="Search exercises…"
             placeholderTextColor="#555"
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={handleSearchChange}
             testID="picker-search-input"
             autoCorrect={false}
             clearButtonMode="while-editing"
@@ -131,7 +118,7 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
 
         {/* Filter chips */}
         <FlatList
-          data={FILTER_CHIPS}
+          data={BASE_EXERCISE_FILTER_CHIPS}
           keyExtractor={(c) => c.value}
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -139,7 +126,7 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
           renderItem={({ item }) => (
             <TouchableOpacity
               style={[styles.chip, activeFilter === item.value && styles.chipActive]}
-              onPress={() => setActiveFilter(item.value)}
+              onPress={() => handleFilterPress(item.value)}
               testID={`picker-filter-${item.value}`}
             >
               <Text
@@ -158,7 +145,7 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
           </View>
         ) : (
           <FlatList
-            data={filtered}
+            data={exercises}
             keyExtractor={(item) => item.id}
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={

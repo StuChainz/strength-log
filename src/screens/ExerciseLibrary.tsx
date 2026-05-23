@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   FlatList,
   ScrollView,
@@ -13,77 +13,67 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
+import {
+  buildExerciseListFilters,
+  LIBRARY_EXERCISE_FILTER_CHIPS,
+  type ExerciseFilterOption,
+} from '@/domain/exerciseFilters';
 import { formatExerciseMetadataSummary } from '@/domain/exerciseMetadata';
-import { normalizeName } from '@/domain/ids';
 import ExerciseHistorySheet from '@/screens/ExerciseHistorySheet';
 import { T } from '@/theme/tokens';
-import type { Exercise, ExerciseCategory, ExerciseWithMetadata, ForceType } from '@/domain/types';
+import type { Exercise, ExerciseWithMetadata } from '@/domain/types';
 import type { ExerciseLibraryNavigationProp } from '@/navigation/types';
-
-type ForceFilterOption = Extract<ForceType, 'push' | 'pull' | 'legs' | 'hinge' | 'core'>;
-type FilterOption = ExerciseCategory | ForceFilterOption | 'all' | 'custom';
-
-const FILTER_CHIPS: { label: string; value: FilterOption }[] = [
-  { label: 'All', value: 'all' },
-  { label: 'Push', value: 'push' },
-  { label: 'Pull', value: 'pull' },
-  { label: 'Legs', value: 'legs' },
-  { label: 'Hinge', value: 'hinge' },
-  { label: 'Core', value: 'core' },
-  { label: 'Barbell', value: 'barbell' },
-  { label: 'Dumbbell', value: 'dumbbell' },
-  { label: 'Machine', value: 'machine' },
-  { label: 'Bodyweight', value: 'bodyweight' },
-  { label: 'Cable', value: 'cable' },
-  { label: 'Custom', value: 'custom' },
-];
-
-const FORCE_FILTERS = new Set<FilterOption>(['push', 'pull', 'legs', 'hinge', 'core']);
 
 export default function ExerciseLibrary() {
   const navigation = useNavigation<ExerciseLibraryNavigationProp>();
   const [exercises, setExercises] = useState<ExerciseWithMetadata[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<FilterOption>('all');
+  const [activeFilter, setActiveFilter] = useState<ExerciseFilterOption>('all');
   const [loading, setLoading] = useState(true);
   const [historyExercise, setHistoryExercise] = useState<Exercise | null>(null);
   const dbRef = useRef<Awaited<ReturnType<typeof openDb>> | null>(null);
+  const loadRequestIdRef = useRef(0);
+  const activeFilterRef = useRef<ExerciseFilterOption>('all');
+  const searchQueryRef = useRef('');
 
-  const loadExercises = useCallback(async () => {
+  const loadExercises = useCallback(async (filter: ExerciseFilterOption, query: string) => {
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+    setLoading(true);
     try {
       const db = dbRef.current ?? (await openDb());
       dbRef.current = db;
-      const all = await getExercisesWithMetadata(db);
-      setExercises(all);
+      const result = await getExercisesWithMetadata(
+        db,
+        buildExerciseListFilters(filter, query),
+      );
+      if (requestId === loadRequestIdRef.current) {
+        setExercises(result);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      void loadExercises();
+      void loadExercises(activeFilterRef.current, searchQueryRef.current);
     }, [loadExercises]),
   );
 
-  const filtered = useMemo(() => {
-    let result = exercises;
-    if (activeFilter === 'custom') {
-      result = result.filter((e) => e.is_custom === 1);
-    } else if (FORCE_FILTERS.has(activeFilter)) {
-      result = result.filter((e) => e.metadata?.force_type === activeFilter);
-    } else if (activeFilter !== 'all') {
-      result = result.filter((e) => e.category === activeFilter);
-    }
-    if (searchQuery.trim()) {
-      const needle = normalizeName(searchQuery);
-      result = result.filter(
-        (e) =>
-          e.normalized_name.includes(needle) || e.aliases.some((alias) => alias.includes(needle)),
-      );
-    }
-    return result;
-  }, [exercises, searchQuery, activeFilter]);
+  const handleSearchChange = (value: string) => {
+    searchQueryRef.current = value;
+    setSearchQuery(value);
+    void loadExercises(activeFilterRef.current, value);
+  };
+
+  const handleFilterPress = (value: ExerciseFilterOption) => {
+    activeFilterRef.current = value;
+    setActiveFilter(value);
+    void loadExercises(value, searchQueryRef.current);
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -103,12 +93,12 @@ export default function ExerciseLibrary() {
               placeholder="Search by name or alias…"
               placeholderTextColor={T.muted}
               value={searchQuery}
-              onChangeText={setSearchQuery}
+              onChangeText={handleSearchChange}
               testID="search-input"
               autoCorrect={false}
             />
             {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+              <TouchableOpacity onPress={() => handleSearchChange('')} hitSlop={8}>
                 <Ionicons name="close" size={16} color={T.muted} />
               </TouchableOpacity>
             )}
@@ -122,11 +112,11 @@ export default function ExerciseLibrary() {
           contentContainerStyle={styles.filtersRow}
           style={styles.filtersScroll}
         >
-          {FILTER_CHIPS.map((f) => (
+          {LIBRARY_EXERCISE_FILTER_CHIPS.map((f) => (
             <TouchableOpacity
               key={f.value}
               style={[styles.chip, activeFilter === f.value && styles.chipActive]}
-              onPress={() => setActiveFilter(f.value)}
+              onPress={() => handleFilterPress(f.value)}
               testID={`filter-${f.value}`}
             >
               <Text style={[styles.chipText, activeFilter === f.value && styles.chipTextActive]}>
@@ -139,7 +129,7 @@ export default function ExerciseLibrary() {
         {/* Count + New */}
         <View style={styles.countRow}>
           <Text style={styles.countLabel}>
-            {loading ? '—' : `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`}
+            {loading ? '—' : `${exercises.length} result${exercises.length !== 1 ? 's' : ''}`}
           </Text>
           <TouchableOpacity
             onPress={() => navigation.navigate('ExerciseEdit', {})}
@@ -152,7 +142,7 @@ export default function ExerciseLibrary() {
 
         {/* Exercise list */}
         <FlatList
-          data={filtered}
+          data={exercises}
           keyExtractor={(item) => item.id}
           keyboardShouldPersistTaps="handled"
           style={styles.list}
