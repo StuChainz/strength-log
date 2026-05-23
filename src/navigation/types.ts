@@ -5,6 +5,8 @@ import type { CompositeNavigationProp, RouteProp } from '@react-navigation/nativ
 export type RootStackParamList = {
   Main: undefined;
   LiveWorkout: { templateId?: string } | undefined;
+  EndWorkoutSummary: { sessionId: string };
+  PostSessionTags: { sessionId: string };
   TemplateBuilder: { templateId?: string };
   ExerciseEdit: { exerciseId?: string };
 };
@@ -48,3 +50,15 @@ export type LiveWorkoutNavigationProp = NativeStackNavigationProp<
   'LiveWorkout'
 >;
 export type LiveWorkoutRouteProp = RouteProp<RootStackParamList, 'LiveWorkout'>;
+
+export type EndWorkoutSummaryNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'EndWorkoutSummary'
+>;
+export type EndWorkoutSummaryRouteProp = RouteProp<RootStackParamList, 'EndWorkoutSummary'>;
+
+export type PostSessionTagsNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'PostSessionTags'
+>;
+export type PostSessionTagsRouteProp = RouteProp<RootStackParamList, 'PostSessionTags'>;

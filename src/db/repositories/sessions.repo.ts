@@ -65,14 +65,20 @@ export async function createSession(
   };
 }
 
-export async function endSession(db: SQLiteDatabase, sessionId: string): Promise<void> {
+export async function endSession(
+  db: SQLiteDatabase,
+  sessionId: string,
+  totalVolume: number | null = null,
+): Promise<void> {
   const now = Date.now();
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      `UPDATE workout_sessions SET status = 'completed', ended_at = ?, updated_at = ? WHERE id = ?`,
-      [now, now, sessionId],
+      `UPDATE workout_sessions
+          SET status = 'completed', ended_at = ?, total_volume_cached = ?, updated_at = ?
+        WHERE id = ?`,
+      [now, totalVolume, now, sessionId],
     );
-    const payload: SessionEndedPayload = { ended_at: now, total_volume: null };
+    const payload: SessionEndedPayload = { ended_at: now, total_volume: totalVolume };
     await db.runAsync(
       `INSERT OR IGNORE INTO workout_events
          (id, session_id, event_type, payload_json, client_event_id, created_at)

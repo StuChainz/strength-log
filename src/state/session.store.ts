@@ -20,6 +20,7 @@ import {
   updateExerciseHistoryCache,
   updateSessionExerciseHistoryCache,
 } from '@/db/repositories/history.repo';
+import { calculateSessionVolume } from '@/domain/volume';
 import type { WorkoutSession, WorkoutSet, ExerciseCategory, Unit } from '@/domain/types';
 import type { SetAddedPayload, SetDeletedPayload, SetEditedPayload } from '@/domain/events';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -180,7 +181,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
   const endExisting = useCallback(async () => {
     const db = dbRef.current;
     if (!db || !existingSession) return;
-    await dbEndSession(db, existingSession.id);
+    await dbEndSession(db, existingSession.id, null);
     await updateSessionExerciseHistoryCache(db, existingSession.id);
     setExistingSession(null);
     setPhase('ended');
@@ -358,10 +359,11 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
   const endWorkout = useCallback(async () => {
     const db = dbRef.current;
     if (!db || !session) return;
-    await dbEndSession(db, session.id);
+    const totalVolume = calculateSessionVolume(sets.filter((set) => set.deleted_at === null));
+    await dbEndSession(db, session.id, totalVolume);
     await updateSessionExerciseHistoryCache(db, session.id);
     setPhase('ended');
-  }, [session]);
+  }, [session, sets]);
 
   const discardWorkout = useCallback(async () => {
     const db = dbRef.current;

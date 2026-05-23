@@ -68,6 +68,7 @@ export default function LiveWorkout() {
   const [editRpe, setEditRpe] = useState<number | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
   const loggingRef = useRef(false);
+  const completedRef = useRef(false);
 
   const activeExerciseIndex = exercises.findIndex((e) => e.id === activeExerciseId);
   const activeExercise = activeExerciseIndex >= 0 ? exercises[activeExerciseIndex] : null;
@@ -151,7 +152,7 @@ export default function LiveWorkout() {
 
   // Navigate away once session ends
   useEffect(() => {
-    if (phase === 'ended') navigation.popToTop();
+    if (phase === 'ended' && !completedRef.current) navigation.popToTop();
   }, [phase, navigation]);
 
   // Prompt resume/start-new
@@ -213,10 +214,20 @@ export default function LiveWorkout() {
   const handleEndWorkout = useCallback(() => {
     Alert.alert('End Workout', 'Finish and save this workout?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'End Workout', onPress: () => void endWorkout() },
+      {
+        text: 'End Workout',
+        onPress: () => {
+          if (!session) return;
+          const endedSessionId = session.id;
+          completedRef.current = true;
+          void endWorkout().then(() => {
+            navigation.replace('EndWorkoutSummary', { sessionId: endedSessionId });
+          });
+        },
+      },
       { text: 'Discard', style: 'destructive', onPress: () => void discardWorkout() },
     ]);
-  }, [endWorkout, discardWorkout]);
+  }, [discardWorkout, endWorkout, navigation, session]);
 
   const openEditSet = useCallback((set: WorkoutSet) => {
     setEditingSet(set);

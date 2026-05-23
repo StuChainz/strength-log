@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getAllTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
 import { getInProgressSession } from '@/db/repositories/sessions.repo';
+import { getUntaggedCompletedSession } from '@/db/repositories/tags.repo';
 import { T } from '@/theme/tokens';
 import type { WorkoutSession } from '@/domain/types';
 import type { HomeNavigationProp } from '@/navigation/types';
@@ -23,11 +24,12 @@ export default function Home() {
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [recents, setRecents] = useState<RecentSession[]>([]);
   const [inProgress, setInProgress] = useState<WorkoutSession | null>(null);
+  const [unfinishedTagsSessionId, setUnfinishedTagsSessionId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const db = await openDb();
-      const [tpls, sessions, active] = await Promise.all([
+      const [tpls, sessions, active, unfinishedTags] = await Promise.all([
         getAllTemplatesWithCount(db),
         db.getAllAsync<RecentSession>(
           `SELECT id, name, started_at, ended_at, total_volume_cached
@@ -37,10 +39,12 @@ export default function Home() {
            LIMIT 5`,
         ),
         getInProgressSession(db),
+        getUntaggedCompletedSession(db),
       ]);
       setTemplates(tpls);
       setRecents(sessions);
       setInProgress(active);
+      setUnfinishedTagsSessionId(unfinishedTags?.id ?? null);
     } catch {
       // ignore
     }
@@ -117,6 +121,25 @@ export default function Home() {
                     minute: '2-digit',
                   })}
                 </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={T.mutedDeep} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {unfinishedTagsSessionId && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.resumeCard}
+              activeOpacity={0.86}
+              onPress={() => navigation.navigate('PostSessionTags', { sessionId: unfinishedTagsSessionId })}
+            >
+              <View style={styles.resumeIcon}>
+                <Ionicons name="pricetag-outline" size={18} color={T.accent} />
+              </View>
+              <View style={styles.resumeBody}>
+                <Text style={styles.resumeLabel}>FINISH THIS SESSION</Text>
+                <Text style={styles.resumeTitle}>Add tags and energy rating</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={T.mutedDeep} />
             </TouchableOpacity>

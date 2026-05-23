@@ -7,6 +7,8 @@ import ExerciseEdit from '@/screens/ExerciseEdit';
 import TemplateList from '@/screens/TemplateList';
 import TemplateBuilder from '@/screens/TemplateBuilder';
 import LiveWorkout from '@/screens/LiveWorkout';
+import EndWorkoutSummary from '@/screens/EndWorkoutSummary';
+import PostSessionTags from '@/screens/PostSessionTags';
 import Insights from '@/screens/Insights';
 import { T } from '@/theme/tokens';
 import type { RootStackParamList, MainTabParamList } from './types';
@@ -87,6 +89,8 @@ export function RootNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Main" component={MainTabs} />
       <Stack.Screen name="LiveWorkout" component={LiveWorkout} />
+      <Stack.Screen name="EndWorkoutSummary" component={EndWorkoutSummary} />
+      <Stack.Screen name="PostSessionTags" component={PostSessionTags} />
       <Stack.Screen
         name="TemplateBuilder"
         component={TemplateBuilder}
