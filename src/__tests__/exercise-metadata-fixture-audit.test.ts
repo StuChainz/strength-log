@@ -1,4 +1,7 @@
-import { auditExerciseMetadataFixture } from '@/domain/exerciseMetadataFixtureAudit';
+import {
+  auditExerciseMetadataFixture,
+  summarizeExerciseMetadataCoverage,
+} from '@/domain/exerciseMetadataFixtureAudit';
 import type { MovementPattern } from '@/domain/types';
 
 const VALID_METADATA = {
@@ -92,5 +95,29 @@ describe('exercise metadata fixture audit', () => {
         exerciseName: 'Bench Press',
       }),
     ]);
+  });
+
+  it('summarizes which seed exercises still need metadata', () => {
+    const coverage = summarizeExerciseMetadataCoverage(
+      [
+        { name: 'Bench Press', category: 'barbell', primary_muscle: 'chest' },
+        { name: 'Pull Up', category: 'bodyweight', primary_muscle: 'back' },
+      ],
+      [VALID_METADATA],
+    );
+
+    expect(coverage).toEqual({
+      totalExercises: 2,
+      annotatedExercises: 1,
+      unannotatedExercises: 1,
+      coverageRatio: 0.5,
+      unannotated: [
+        {
+          name: 'Pull Up',
+          category: 'bodyweight',
+          primary_muscle: 'back',
+        },
+      ],
+    });
   });
 });

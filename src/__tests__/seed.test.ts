@@ -1,5 +1,8 @@
 import { SEED_EXERCISES, SEED_EXERCISE_METADATA } from '@/db/seed/exercises';
-import { auditExerciseMetadataFixture } from '@/domain/exerciseMetadataFixtureAudit';
+import {
+  auditExerciseMetadataFixture,
+  summarizeExerciseMetadataCoverage,
+} from '@/domain/exerciseMetadataFixtureAudit';
 import { normalizeName } from '@/domain/ids';
 import { ExerciseMetadataInputSchema } from '@/domain/validation';
 import type { ForceType, MovementPattern } from '@/domain/types';
@@ -126,5 +129,14 @@ describe('SEED_EXERCISE_METADATA', () => {
     expect(audit.issues).toEqual([]);
     expect(audit.ok).toBe(true);
     expect(audit.counts.metadata).toBe(SEED_EXERCISE_METADATA.length);
+  });
+
+  it('summarizes current metadata coverage without expanding the seed phase', () => {
+    const coverage = summarizeExerciseMetadataCoverage(SEED_EXERCISES, SEED_EXERCISE_METADATA);
+
+    expect(coverage.totalExercises).toBe(SEED_EXERCISES.length);
+    expect(coverage.annotatedExercises).toBe(SEED_EXERCISE_METADATA.length);
+    expect(coverage.unannotatedExercises).toBeGreaterThan(0);
+    expect(coverage.unannotated.map((exercise) => exercise.name)).toContain('Good Morning');
   });
 });

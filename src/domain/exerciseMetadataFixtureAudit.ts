@@ -5,6 +5,8 @@ import type { ForceType, MovementPattern } from '@/domain/types';
 
 export interface ExerciseMetadataFixtureExercise {
   name: string;
+  category?: string;
+  primary_muscle?: string | null;
 }
 
 export interface ExerciseMetadataFixtureAuditOptions {
@@ -46,6 +48,20 @@ export interface ExerciseMetadataFixtureAuditResult {
     forceTypes: number;
     sources: number;
   };
+}
+
+export interface ExerciseMetadataCoverageItem {
+  name: string;
+  category?: string;
+  primary_muscle?: string | null;
+}
+
+export interface ExerciseMetadataCoverageSummary {
+  totalExercises: number;
+  annotatedExercises: number;
+  unannotatedExercises: number;
+  coverageRatio: number;
+  unannotated: ExerciseMetadataCoverageItem[];
 }
 
 const FixtureEntrySchema = ExerciseMetadataInputSchema.extend({
@@ -194,6 +210,38 @@ export function auditExerciseMetadataFixture(
       forceTypes: forceTypes.size,
       sources: sources.size,
     },
+  };
+}
+
+export function summarizeExerciseMetadataCoverage(
+  exercises: readonly ExerciseMetadataFixtureExercise[],
+  metadataEntries: readonly unknown[],
+): ExerciseMetadataCoverageSummary {
+  const annotatedNames = new Set<string>();
+
+  metadataEntries.forEach((entry) => {
+    const exerciseName = readStringField(entry, 'exerciseName');
+    if (exerciseName) {
+      annotatedNames.add(normalizeName(exerciseName));
+    }
+  });
+
+  const unannotated = exercises
+    .filter((exercise) => !annotatedNames.has(normalizeName(exercise.name)))
+    .map((exercise) => ({
+      name: exercise.name,
+      category: exercise.category,
+      primary_muscle: exercise.primary_muscle,
+    }));
+
+  const annotatedExercises = exercises.length - unannotated.length;
+
+  return {
+    totalExercises: exercises.length,
+    annotatedExercises,
+    unannotatedExercises: unannotated.length,
+    coverageRatio: exercises.length === 0 ? 0 : annotatedExercises / exercises.length,
+    unannotated,
   };
 }
 
