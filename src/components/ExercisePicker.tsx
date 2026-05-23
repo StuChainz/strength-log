@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { openDb } from '@/db/client';
 import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
+import { formatExerciseMetadataSummary } from '@/domain/exerciseMetadata';
 import { normalizeName } from '@/domain/ids';
 import type { Exercise, ExerciseCategory, ExerciseWithMetadata, ForceType } from '@/domain/types';
 
@@ -34,26 +35,6 @@ const FILTER_CHIPS: FilterChip[] = [
   { label: 'Machine', value: 'machine' },
   { label: 'Cable', value: 'cable' },
 ];
-
-const CATEGORY_LABEL: Record<ExerciseCategory, string> = {
-  barbell: 'Barbell',
-  dumbbell: 'Dumbbell',
-  machine: 'Machine',
-  bodyweight: 'Bodyweight',
-  cable: 'Cable',
-  other: 'Other',
-};
-
-const FORCE_TYPE_LABEL: Record<ForceType, string> = {
-  push: 'Push',
-  pull: 'Pull',
-  legs: 'Legs',
-  hinge: 'Hinge',
-  core: 'Core',
-  carry: 'Carry',
-  mixed: 'Mixed',
-  other: 'Other',
-};
 
 const FORCE_FILTERS = new Set<FilterOption>(['push', 'pull', 'legs', 'hinge', 'core']);
 
@@ -197,7 +178,7 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
               >
                 <View style={styles.rowMain}>
                   <Text style={styles.rowName}>{item.name}</Text>
-                  <Text style={styles.rowMeta}>{formatExerciseMeta(item)}</Text>
+                  <Text style={styles.rowMeta}>{formatExerciseMetadataSummary(item)}</Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
@@ -268,28 +249,3 @@ const styles = StyleSheet.create({
 
   muted: { color: '#555', fontSize: 14 },
 });
-
-function formatExerciseMeta(exercise: ExerciseWithMetadata): string {
-  const metadata = exercise.metadata;
-  const primaryMuscle = metadata?.primary_muscles[0] ?? exercise.primary_muscle;
-  const equipment = metadata?.equipment[0]
-    ? formatValue(metadata.equipment[0])
-    : CATEGORY_LABEL[exercise.category];
-  const forceType = metadata?.force_type ? FORCE_TYPE_LABEL[metadata.force_type] : null;
-
-  return [
-    equipment,
-    primaryMuscle ? formatValue(primaryMuscle) : null,
-    forceType,
-    exercise.is_custom ? 'Custom' : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-}
-
-function formatValue(value: string): string {
-  return value
-    .split('_')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}

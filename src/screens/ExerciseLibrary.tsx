@@ -13,6 +13,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
+import { formatExerciseMetadataSummary } from '@/domain/exerciseMetadata';
 import { normalizeName } from '@/domain/ids';
 import ExerciseHistorySheet from '@/screens/ExerciseHistorySheet';
 import { T } from '@/theme/tokens';
@@ -36,26 +37,6 @@ const FILTER_CHIPS: { label: string; value: FilterOption }[] = [
   { label: 'Cable', value: 'cable' },
   { label: 'Custom', value: 'custom' },
 ];
-
-const CATEGORY_LABEL: Record<ExerciseCategory, string> = {
-  barbell: 'Barbell',
-  dumbbell: 'Dumbbell',
-  machine: 'Machine',
-  bodyweight: 'Bodyweight',
-  cable: 'Cable',
-  other: 'Other',
-};
-
-const FORCE_TYPE_LABEL: Record<ForceType, string> = {
-  push: 'Push',
-  pull: 'Pull',
-  legs: 'Legs',
-  hinge: 'Hinge',
-  core: 'Core',
-  carry: 'Carry',
-  mixed: 'Mixed',
-  other: 'Other',
-};
 
 const FORCE_FILTERS = new Set<FilterOption>(['push', 'pull', 'legs', 'hinge', 'core']);
 
@@ -195,7 +176,7 @@ export default function ExerciseLibrary() {
             >
               <View style={styles.exerciseInfo}>
                 <Text style={styles.exerciseName}>{item.name}</Text>
-                <Text style={styles.exerciseMeta}>{formatExerciseMeta(item)}</Text>
+                <Text style={styles.exerciseMeta}>{formatExerciseMetadataSummary(item)}</Text>
               </View>
               <TouchableOpacity
                 style={styles.historyBtn}
@@ -346,28 +327,3 @@ const styles = StyleSheet.create({
     color: T.muted,
   },
 });
-
-function formatExerciseMeta(exercise: ExerciseWithMetadata): string {
-  const metadata = exercise.metadata;
-  const primaryMuscle = metadata?.primary_muscles[0] ?? exercise.primary_muscle;
-  const equipment = metadata?.equipment[0]
-    ? formatValue(metadata.equipment[0])
-    : CATEGORY_LABEL[exercise.category];
-  const forceType = metadata?.force_type ? FORCE_TYPE_LABEL[metadata.force_type] : null;
-
-  return [
-    equipment,
-    primaryMuscle ? formatValue(primaryMuscle) : null,
-    forceType,
-    exercise.is_custom ? 'Custom' : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-}
-
-function formatValue(value: string): string {
-  return value
-    .split('_')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
