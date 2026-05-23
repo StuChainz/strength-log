@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { openDb } from '@/db/client';
 import { getExerciseCount } from '@/db/repositories/exercises.repo';
+import type { HomeNavigationProp } from '@/navigation/types';
 
 export default function Home() {
+  const navigation = useNavigation<HomeNavigationProp>();
   const [exerciseCount, setExerciseCount] = useState<number | null>(null);
 
   useEffect(() => {
@@ -13,9 +16,7 @@ export default function Home() {
       .then((count) => {
         if (!cancelled) setExerciseCount(count);
       })
-      .catch(() => {
-        // Silently ignore — native SQLite unavailable in some environments.
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -24,11 +25,20 @@ export default function Home() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Strength Log</Text>
+
       {exerciseCount !== null && (
         <Text style={styles.debug} testID="exercise-count">
           {exerciseCount} exercises loaded
         </Text>
       )}
+
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => navigation.navigate('ExerciseLibrary')}
+        testID="nav-exercise-library"
+      >
+        <Text style={styles.buttonText}>Exercise Library</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -39,6 +49,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a0a0a',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 16,
   },
   title: {
     fontSize: 28,
@@ -47,8 +58,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   debug: {
-    marginTop: 12,
     fontSize: 13,
     color: '#555',
+  },
+  button: {
+    marginTop: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: '#7c5cfc',
+    borderRadius: 10,
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
   },
 });

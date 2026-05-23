@@ -1,6 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/react-native';
 import Home from '@/screens/Home';
 
+// Mock navigation so we don't need a NavigationContainer in tests.
+jest.mock('@react-navigation/native', () => ({
+  ...jest.requireActual('@react-navigation/native'),
+  useNavigation: () => ({ navigate: jest.fn() }),
+}));
+
 // Prevent native SQLite from being called in tests.
 jest.mock('@/db/client', () => ({
   openDb: jest.fn().mockResolvedValue({}),

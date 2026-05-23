@@ -1,21 +1,33 @@
 import { useEffect } from 'react';
+import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { openDb } from '@/db/client';
-import Home from '@/screens/Home';
+import { RootNavigator } from '@/navigation/RootNavigator';
+
+const AppTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: '#7c5cfc',
+    background: '#0a0a0a',
+    card: '#111111',
+    text: '#f5f5f5',
+    border: '#2a2a2a',
+  },
+};
 
 export default function App() {
-  // Kick off DB initialisation (migrations + seed) as early as possible.
-  // Home.tsx also calls openDb(), which returns the cached singleton.
   useEffect(() => {
-    openDb().catch(() => {
-      // Native SQLite is unavailable in the web/test environment — ignore.
-    });
+    openDb().catch(() => {});
   }, []);
 
   return (
-    <>
-      <Home />
+    <SafeAreaProvider>
+      <NavigationContainer theme={AppTheme}>
+        <RootNavigator />
+      </NavigationContainer>
       <StatusBar style="light" />
-    </>
+    </SafeAreaProvider>
   );
 }
