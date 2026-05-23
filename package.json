@@ -1,6 +1,7 @@
 {
   "name": "strength-log",
   "version": "1.0.0",
+  "homepage": "https://stuchainz.github.io/strength-log",
   "main": "index.ts",
   "scripts": {
     "dev": "expo start",
