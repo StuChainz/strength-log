@@ -637,12 +637,39 @@ async function seedExerciseMetadata(db: SQLiteDatabase): Promise<void> {
       if (!exercise) continue;
 
       await db.runAsync(
-        `INSERT OR IGNORE INTO exercise_metadata
+        `INSERT INTO exercise_metadata
            (exercise_id, movement_pattern, force_type, body_region,
             primary_muscles_json, secondary_muscles_json, equipment_json,
             mechanics, laterality, difficulty, substitution_group, source,
             source_id, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'curated_seed', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'curated_seed', ?, ?)
+         ON CONFLICT(exercise_id) DO UPDATE SET
+           movement_pattern = excluded.movement_pattern,
+           force_type = excluded.force_type,
+           body_region = excluded.body_region,
+           primary_muscles_json = excluded.primary_muscles_json,
+           secondary_muscles_json = excluded.secondary_muscles_json,
+           equipment_json = excluded.equipment_json,
+           mechanics = excluded.mechanics,
+           laterality = excluded.laterality,
+           difficulty = excluded.difficulty,
+           substitution_group = excluded.substitution_group,
+           source_id = excluded.source_id,
+           updated_at = excluded.updated_at
+         WHERE exercise_metadata.source = 'curated_seed'
+           AND (
+             exercise_metadata.movement_pattern IS NOT excluded.movement_pattern OR
+             exercise_metadata.force_type IS NOT excluded.force_type OR
+             exercise_metadata.body_region IS NOT excluded.body_region OR
+             exercise_metadata.primary_muscles_json IS NOT excluded.primary_muscles_json OR
+             exercise_metadata.secondary_muscles_json IS NOT excluded.secondary_muscles_json OR
+             exercise_metadata.equipment_json IS NOT excluded.equipment_json OR
+             exercise_metadata.mechanics IS NOT excluded.mechanics OR
+             exercise_metadata.laterality IS NOT excluded.laterality OR
+             exercise_metadata.difficulty IS NOT excluded.difficulty OR
+             exercise_metadata.substitution_group IS NOT excluded.substitution_group OR
+             exercise_metadata.source_id IS NOT excluded.source_id
+           )`,
         [
           exercise.id,
           seed.movement_pattern,
