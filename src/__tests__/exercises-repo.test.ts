@@ -110,6 +110,8 @@ describe('exercises repository metadata', () => {
       movement_pattern: 'horizontal_push',
       body_region: 'upper_body',
       substitution_group: 'horizontal_press',
+      mechanics: 'compound',
+      laterality: 'bilateral',
       muscle: 'chest',
       equipment: 'barbell',
       query: 'bench',
@@ -121,6 +123,8 @@ describe('exercises repository metadata', () => {
     expect(db.allCalls[0].sql).toContain('m.movement_pattern = ?');
     expect(db.allCalls[0].sql).toContain('m.body_region = ?');
     expect(db.allCalls[0].sql).toContain('m.substitution_group = ?');
+    expect(db.allCalls[0].sql).toContain('m.mechanics = ?');
+    expect(db.allCalls[0].sql).toContain('m.laterality = ?');
     expect(db.allCalls[0].sql).toContain('m.primary_muscles_json LIKE ?');
     expect(db.allCalls[0].sql).toContain('m.equipment_json LIKE ?');
     expect(db.allCalls[0].sql).toContain('e.normalized_name LIKE ?');
@@ -133,6 +137,8 @@ describe('exercises repository metadata', () => {
       'horizontal_push',
       'upper_body',
       'horizontal_press',
+      'compound',
+      'bilateral',
       '%"chest"%',
       '%"chest"%',
       '%"barbell"%',
