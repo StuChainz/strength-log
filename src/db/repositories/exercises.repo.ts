@@ -131,10 +131,17 @@ export async function getExerciseById(db: SQLiteDatabase, id: string): Promise<E
 export async function searchExercises(db: SQLiteDatabase, query: string): Promise<Exercise[]> {
   const needle = normalizeName(query);
   return db.getAllAsync<Exercise>(
-    `SELECT * FROM exercises
-     WHERE normalized_name LIKE ? AND archived_at IS NULL
+    `SELECT e.* FROM exercises e
+     WHERE e.archived_at IS NULL
+       AND (
+         e.normalized_name LIKE ?
+         OR EXISTS (
+           SELECT 1 FROM exercise_aliases alias_match
+           WHERE alias_match.exercise_id = e.id AND alias_match.alias LIKE ?
+         )
+       )
      ORDER BY name ASC`,
-    [`%${needle}%`],
+    [`%${needle}%`, `%${needle}%`],
   );
 }
 

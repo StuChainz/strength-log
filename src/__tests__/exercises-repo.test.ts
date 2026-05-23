@@ -1,4 +1,8 @@
-import { createExercise, getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
+import {
+  createExercise,
+  getExercisesWithMetadata,
+  searchExercises,
+} from '@/db/repositories/exercises.repo';
 
 function createMockDb(rows: unknown[] = []) {
   const runCalls: { sql: string; params: unknown[] }[] = [];
@@ -132,5 +136,15 @@ describe('exercises repository metadata', () => {
     expect(db.runCalls[0].sql).toContain('INSERT INTO exercises');
     expect(db.runCalls[0].params).toContain('custom press');
     expect(exercise.is_custom).toBe(1);
+  });
+
+  it('searches exercises by name or alias', async () => {
+    const db = createMockDb([]);
+
+    await searchExercises(db as never, 'flat bench');
+
+    expect(db.allCalls[0].sql).toContain('e.normalized_name LIKE ?');
+    expect(db.allCalls[0].sql).toContain('alias_match.alias LIKE ?');
+    expect(db.allCalls[0].params).toEqual(['%flat bench%', '%flat bench%']);
   });
 });
