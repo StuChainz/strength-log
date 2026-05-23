@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  BODY_REGIONS,
   EQUIPMENT,
   EXERCISE_CATEGORIES,
   FORCE_TYPES,
@@ -16,6 +17,7 @@ export const ExerciseCategorySchema = z.enum(EXERCISE_CATEGORIES);
 export const ForceTypeSchema = z.enum(FORCE_TYPES);
 export const MovementPatternSchema = z.enum(MOVEMENT_PATTERNS);
 export const MuscleGroupSchema = z.enum(MUSCLE_GROUPS);
+export const BodyRegionSchema = z.enum(BODY_REGIONS);
 export const EquipmentSchema = z.enum(EQUIPMENT);
 export const MechanicsSchema = z.enum(MECHANICS_TYPES);
 export const LateralitySchema = z.enum(LATERALITY_TYPES);
@@ -32,7 +34,7 @@ export const UpdateExerciseSchema = CreateExerciseSchema.partial();
 export const ExerciseMetadataInputSchema = z.object({
   movement_pattern: MovementPatternSchema,
   force_type: ForceTypeSchema,
-  body_region: z.string().min(1).max(60),
+  body_region: BodyRegionSchema,
   primary_muscles: z.array(MuscleGroupSchema),
   secondary_muscles: z.array(MuscleGroupSchema),
   equipment: z.array(EquipmentSchema),

@@ -1,5 +1,6 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import {
+  type BodyRegion,
   type Equipment,
   type Exercise,
   type ExerciseCategory,
@@ -21,7 +22,7 @@ export interface ExerciseMetadataFilters {
   custom?: boolean;
   force_type?: ForceType;
   movement_pattern?: MovementPattern | string;
-  body_region?: string;
+  body_region?: BodyRegion | string;
   substitution_group?: string;
   mechanics?: Mechanics | string;
   laterality?: Laterality | string;
@@ -34,7 +35,7 @@ type ExerciseWithMetadataRow = Exercise & {
   metadata_exercise_id: string | null;
   movement_pattern: ExerciseMetadata['movement_pattern'] | null;
   force_type: ExerciseMetadata['force_type'] | null;
-  body_region: string | null;
+  body_region: ExerciseMetadata['body_region'] | null;
   primary_muscles_json: string | null;
   secondary_muscles_json: string | null;
   equipment_json: string | null;

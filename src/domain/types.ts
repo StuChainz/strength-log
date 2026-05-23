@@ -50,6 +50,7 @@ export const MUSCLE_GROUPS = [
   'full_body',
   'other',
 ] as const;
+export const BODY_REGIONS = ['upper_body', 'lower_body', 'full_body', 'core', 'other'] as const;
 export const EQUIPMENT = [
   'barbell',
   'dumbbell',
@@ -74,6 +75,7 @@ export type ExerciseCategory = (typeof EXERCISE_CATEGORIES)[number];
 export type ForceType = (typeof FORCE_TYPES)[number];
 export type MovementPattern = (typeof MOVEMENT_PATTERNS)[number];
 export type MuscleGroup = (typeof MUSCLE_GROUPS)[number];
+export type BodyRegion = (typeof BODY_REGIONS)[number];
 export type Equipment = (typeof EQUIPMENT)[number];
 export type Mechanics = (typeof MECHANICS_TYPES)[number];
 export type Laterality = (typeof LATERALITY_TYPES)[number];
@@ -124,7 +126,7 @@ export interface ExerciseMetadata {
   exercise_id: string;
   movement_pattern: MovementPattern | null;
   force_type: ForceType | null;
-  body_region: string | null;
+  body_region: BodyRegion | null;
   primary_muscles_json: string;
   secondary_muscles_json: string;
   equipment_json: string;
@@ -141,7 +143,7 @@ export interface ExerciseMetadataView {
   exercise_id: string;
   movement_pattern: MovementPattern | null;
   force_type: ForceType | null;
-  body_region: string | null;
+  body_region: BodyRegion | null;
   primary_muscles: MuscleGroup[];
   secondary_muscles: MuscleGroup[];
   equipment: Equipment[];

@@ -96,6 +96,14 @@ describe('SEED_EXERCISE_METADATA', () => {
     });
   });
 
+  it('covers practical body regions for library filtering', () => {
+    const regions = new Set(SEED_EXERCISE_METADATA.map((m) => m.body_region));
+
+    ['upper_body', 'lower_body', 'full_body', 'core'].forEach((region) => {
+      expect(regions.has(region)).toBe(true);
+    });
+  });
+
   it('matches the exercise metadata validation schema', () => {
     SEED_EXERCISE_METADATA.forEach(({ exerciseName, ...metadata }) => {
       expect(() => ExerciseMetadataInputSchema.parse(metadata)).not.toThrow();

@@ -1,6 +1,7 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import { newId, normalizeName } from '@/domain/ids';
 import {
+  type BodyRegion,
   type Equipment,
   type ExerciseCategory,
   type ForceType,
@@ -23,7 +24,7 @@ interface SeedExerciseMetadata {
   exerciseName: string;
   movement_pattern: MovementPattern;
   force_type: ForceType;
-  body_region: string;
+  body_region: BodyRegion;
   primary_muscles: MuscleGroup[];
   secondary_muscles: MuscleGroup[];
   equipment: Equipment[];
