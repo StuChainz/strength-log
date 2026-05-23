@@ -4,7 +4,6 @@ import TemplateBuilder from '@/screens/TemplateBuilder';
 import {
   createTemplate,
   updateTemplate,
-  archiveTemplate,
   getTemplateById,
   getTemplateItemsWithExercise,
 } from '@/db/repositories/templates.repo';
@@ -42,7 +41,9 @@ jest.mock('@/components/ExercisePicker', () => ({
     onClose: () => void;
   }) => {
     if (!visible) return null;
-    const { TouchableOpacity, Text } = require('react-native');
+    const { Text, TouchableOpacity } = jest.requireActual<typeof import('react-native')>(
+      'react-native',
+    );
     return (
       <TouchableOpacity
         testID="mock-picker-select"
