@@ -39,7 +39,9 @@ jobs:
         run: pnpm build:web
 
       - name: Make Expo asset paths Pages-safe
-        run: perl -0pi -e 's#src="/_expo/#src="./_expo/#g' dist/index.html
+        run: |
+          perl -0pi -e 's#src="/_expo/#src="./_expo/#g' dist/index.html
+          perl -0pi -e 's#href="/_expo/#href="./_expo/#g' dist/index.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
