@@ -199,9 +199,15 @@ CREATE INDEX IF NOT EXISTS idx_exercise_metadata_laterality
   ON exercise_metadata (laterality);
 `;
 
+const MIGRATION_005 = `
+CREATE INDEX IF NOT EXISTS idx_exercise_metadata_source_source_id
+  ON exercise_metadata (source, source_id);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { name: '001_init', sql: MIGRATION_001 },
   { name: '002_app_settings', sql: MIGRATION_002 },
   { name: '003_exercise_metadata', sql: MIGRATION_003 },
   { name: '004_exercise_metadata_filter_indexes', sql: MIGRATION_004 },
+  { name: '005_exercise_metadata_source_index', sql: MIGRATION_005 },
 ];

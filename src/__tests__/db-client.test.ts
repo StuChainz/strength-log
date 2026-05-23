@@ -141,6 +141,18 @@ describe('Migration runner', () => {
     expect(migrationSql).toContain('idx_exercise_metadata_laterality');
   });
 
+  it('applies exercise metadata source lookup index', async () => {
+    await openDb();
+    const indexMigration = mockDb._tables['_migrations']?.find(
+      (r) => r.name === '005_exercise_metadata_source_index',
+    );
+    const migrationSql = mockDb._execCalls.join('\n');
+
+    expect(indexMigration).toBeDefined();
+    expect(migrationSql).toContain('idx_exercise_metadata_source_source_id');
+    expect(migrationSql).toContain('ON exercise_metadata (source, source_id)');
+  });
+
   it('does not re-apply migrations on second open', async () => {
     await openDb();
     _resetDbSingleton();

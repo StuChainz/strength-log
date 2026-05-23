@@ -30,6 +30,8 @@ export interface ExerciseMetadataFilters {
   primary_muscle?: MuscleGroup | string;
   secondary_muscle?: MuscleGroup | string;
   equipment?: Equipment | string;
+  source?: string;
+  source_id?: string;
 }
 
 type ExerciseWithMetadataRow = Exercise & {
@@ -118,6 +120,14 @@ export async function getExercisesWithMetadata(
   if (filters.equipment) {
     where.push('m.equipment_json LIKE ?');
     params.push(jsonArrayContainsNeedle(filters.equipment));
+  }
+  if (filters.source) {
+    where.push('m.source = ?');
+    params.push(filters.source);
+  }
+  if (filters.source_id) {
+    where.push('m.source_id = ?');
+    params.push(filters.source_id);
   }
   if (filters.query?.trim()) {
     where.push(

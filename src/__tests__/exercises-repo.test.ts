@@ -114,6 +114,8 @@ describe('exercises repository metadata', () => {
       laterality: 'bilateral',
       muscle: 'chest',
       equipment: 'barbell',
+      source: 'curated_seed',
+      source_id: 'curated_seed:barbell_bench_press',
       query: 'bench',
     });
 
@@ -127,6 +129,8 @@ describe('exercises repository metadata', () => {
     expect(db.allCalls[0].sql).toContain('m.laterality = ?');
     expect(db.allCalls[0].sql).toContain('m.primary_muscles_json LIKE ?');
     expect(db.allCalls[0].sql).toContain('m.equipment_json LIKE ?');
+    expect(db.allCalls[0].sql).toContain('m.source = ?');
+    expect(db.allCalls[0].sql).toContain('m.source_id = ?');
     expect(db.allCalls[0].sql).toContain('e.normalized_name LIKE ?');
     expect(db.allCalls[0].sql).toContain('EXISTS');
     expect(db.allCalls[0].sql).toContain('alias_match.alias LIKE ?');
@@ -142,6 +146,8 @@ describe('exercises repository metadata', () => {
       '%"chest"%',
       '%"chest"%',
       '%"barbell"%',
+      'curated_seed',
+      'curated_seed:barbell_bench_press',
       '%bench%',
       '%bench%',
     ]);
