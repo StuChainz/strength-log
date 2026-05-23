@@ -9,11 +9,12 @@ import {
   View,
 } from 'react-native';
 import { openDb } from '@/db/client';
-import { getAllExercises } from '@/db/repositories/exercises.repo';
+import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
 import { normalizeName } from '@/domain/ids';
-import type { Exercise, ExerciseCategory } from '@/domain/types';
+import type { Exercise, ExerciseCategory, ExerciseWithMetadata, ForceType } from '@/domain/types';
 
-type FilterOption = ExerciseCategory | 'all';
+type ForceFilterOption = Extract<ForceType, 'push' | 'pull' | 'legs' | 'hinge' | 'core'>;
+type FilterOption = ExerciseCategory | ForceFilterOption | 'all';
 
 interface FilterChip {
   label: string;
@@ -22,6 +23,11 @@ interface FilterChip {
 
 const FILTER_CHIPS: FilterChip[] = [
   { label: 'All', value: 'all' },
+  { label: 'Push', value: 'push' },
+  { label: 'Pull', value: 'pull' },
+  { label: 'Legs', value: 'legs' },
+  { label: 'Hinge', value: 'hinge' },
+  { label: 'Core', value: 'core' },
   { label: 'Barbell', value: 'barbell' },
   { label: 'Dumbbell', value: 'dumbbell' },
   { label: 'Bodyweight', value: 'bodyweight' },
@@ -38,6 +44,19 @@ const CATEGORY_LABEL: Record<ExerciseCategory, string> = {
   other: 'Other',
 };
 
+const FORCE_TYPE_LABEL: Record<ForceType, string> = {
+  push: 'Push',
+  pull: 'Pull',
+  legs: 'Legs',
+  hinge: 'Hinge',
+  core: 'Core',
+  carry: 'Carry',
+  mixed: 'Mixed',
+  other: 'Other',
+};
+
+const FORCE_FILTERS = new Set<FilterOption>(['push', 'pull', 'legs', 'hinge', 'core']);
+
 interface ExercisePickerProps {
   visible: boolean;
   onSelect: (exercise: Exercise) => void;
@@ -45,7 +64,7 @@ interface ExercisePickerProps {
 }
 
 export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerProps) {
-  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [exercises, setExercises] = useState<ExerciseWithMetadata[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterOption>('all');
   const [loading, setLoading] = useState(false);
@@ -56,7 +75,7 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
     try {
       const db = dbRef.current ?? (await openDb());
       dbRef.current = db;
-      const all = await getAllExercises(db);
+      const all = await getExercisesWithMetadata(db);
       setExercises(all);
     } finally {
       setLoading(false);
@@ -76,13 +95,18 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
   const filtered = useMemo(() => {
     let result = exercises;
 
-    if (activeFilter !== 'all') {
+    if (FORCE_FILTERS.has(activeFilter)) {
+      result = result.filter((e) => e.metadata?.force_type === activeFilter);
+    } else if (activeFilter !== 'all') {
       result = result.filter((e) => e.category === activeFilter);
     }
 
     if (searchQuery.trim()) {
       const needle = normalizeName(searchQuery);
-      result = result.filter((e) => e.normalized_name.includes(needle));
+      result = result.filter(
+        (e) =>
+          e.normalized_name.includes(needle) || e.aliases.some((alias) => alias.includes(needle)),
+      );
     }
 
     return result;
@@ -173,11 +197,7 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
               >
                 <View style={styles.rowMain}>
                   <Text style={styles.rowName}>{item.name}</Text>
-                  <Text style={styles.rowMeta}>
-                    {CATEGORY_LABEL[item.category]}
-                    {item.primary_muscle ? ` · ${item.primary_muscle}` : ''}
-                    {item.is_custom ? ' · Custom' : ''}
-                  </Text>
+                  <Text style={styles.rowMeta}>{formatExerciseMeta(item)}</Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
@@ -248,3 +268,28 @@ const styles = StyleSheet.create({
 
   muted: { color: '#555', fontSize: 14 },
 });
+
+function formatExerciseMeta(exercise: ExerciseWithMetadata): string {
+  const metadata = exercise.metadata;
+  const primaryMuscle = metadata?.primary_muscles[0] ?? exercise.primary_muscle;
+  const equipment = metadata?.equipment[0]
+    ? formatValue(metadata.equipment[0])
+    : CATEGORY_LABEL[exercise.category];
+  const forceType = metadata?.force_type ? FORCE_TYPE_LABEL[metadata.force_type] : null;
+
+  return [
+    equipment,
+    primaryMuscle ? formatValue(primaryMuscle) : null,
+    forceType,
+    exercise.is_custom ? 'Custom' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function formatValue(value: string): string {
+  return value
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
