@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { useSessionStore } from '@/state/session.store';
 import { ExercisePicker } from '@/components/ExercisePicker';
+import ExerciseHistorySheet from '@/screens/ExerciseHistorySheet';
+import { getProgressionSuggestion } from '@/domain/progression';
 import { T } from '@/theme/tokens';
 import type {
   LiveWorkoutNavigationProp,
@@ -61,6 +63,7 @@ export default function LiveWorkout() {
   const [editWeight, setEditWeight] = useState(DEFAULT_WEIGHT);
   const [editReps, setEditReps] = useState(DEFAULT_REPS);
   const [editRpe, setEditRpe] = useState<number | null>(null);
+  const [historyVisible, setHistoryVisible] = useState(false);
   const loggingRef = useRef(false);
 
   const activeExerciseIndex = exercises.findIndex((e) => e.id === activeExerciseId);
@@ -69,6 +72,26 @@ export default function LiveWorkout() {
     (s) => s.exercise_id === activeExerciseId && s.deleted_at === null,
   );
   const hasLoggedSets = sets.some((s) => s.deleted_at === null);
+  const suggestion = useMemo(() => getProgressionSuggestion({
+    category: activeExercise?.category ?? 'barbell',
+    targetReps: activeExercise?.targetReps ?? null,
+    lastSet: lastSets[0]
+      ? {
+          weight: lastSets[0].weight,
+          reps: lastSets[0].reps,
+          rpe: lastSets[0].rpe,
+          unit: lastSets[0].unit,
+        }
+      : null,
+    previousSet: lastSets[1]
+      ? {
+          weight: lastSets[1].weight,
+          reps: lastSets[1].reps,
+          rpe: lastSets[1].rpe,
+          unit: lastSets[1].unit,
+        }
+      : null,
+  }), [activeExercise, lastSets]);
 
   // Elapsed timer
   useEffect(() => {
@@ -302,7 +325,11 @@ export default function LiveWorkout() {
           ListHeaderComponent={
             <>
               {/* Last-time strip */}
-              <TouchableOpacity style={styles.lastTimeCard} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.lastTimeCard}
+                activeOpacity={0.7}
+                onPress={() => setHistoryVisible(true)}
+              >
                 <Ionicons name="time-outline" size={16} color={T.muted} />
                 <View style={styles.lastTimeBody}>
                   <Text style={styles.lastTimeLabel}>{lastHintText ? 'LAST TIME' : 'NO HISTORY'}</Text>
@@ -376,14 +403,26 @@ export default function LiveWorkout() {
       {exercises.length > 0 && activeExercise && (
         <View style={styles.loggerBlock}>
           {/* Suggestion line */}
-          <View style={styles.suggestionRow}>
+          <TouchableOpacity
+            style={styles.suggestionRow}
+            disabled={suggestion.weight === null && suggestion.reps === null}
+            onPress={() => {
+              if (suggestion.weight !== null) setWeight(suggestion.weight);
+              if (suggestion.reps !== null) setReps(suggestion.reps);
+              setRpe(null);
+            }}
+          >
             <View style={styles.suggestionDot} />
             <Text style={styles.suggestionText} numberOfLines={1}>
-              {'Suggest · '}
-              <Text style={styles.suggestionValue}>{wgt} × {reps}</Text>
-              {activeExercise.targetReps !== null ? `  ·  target ${activeExercise.targetReps} reps` : ''}
+              {suggestion.weight !== null || suggestion.reps !== null ? 'Suggest · ' : ''}
+              <Text style={styles.suggestionValue}>
+                {suggestion.weight !== null || suggestion.reps !== null
+                  ? `${suggestion.weight ?? '—'} × ${suggestion.reps ?? '—'}`
+                  : suggestion.label}
+              </Text>
+              {suggestion.weight !== null || suggestion.reps !== null ? `  ·  ${suggestion.label}` : ''}
             </Text>
-          </View>
+          </TouchableOpacity>
 
           {/* Steppers */}
           <View style={styles.steppersRow}>
@@ -459,6 +498,20 @@ export default function LiveWorkout() {
           setPickerVisible(false);
         }}
         onClose={() => setPickerVisible(false)}
+      />
+
+      <ExerciseHistorySheet
+        visible={historyVisible}
+        exerciseId={activeExercise?.id ?? null}
+        exerciseName={activeExercise?.name ?? ''}
+        category={activeExercise?.category ?? 'barbell'}
+        targetReps={activeExercise?.targetReps ?? null}
+        onClose={() => setHistoryVisible(false)}
+        onApplySuggestion={(next) => {
+          if (next.weight !== null) setWeight(next.weight);
+          if (next.reps !== null) setReps(next.reps);
+          setRpe(null);
+        }}
       />
 
       <Modal

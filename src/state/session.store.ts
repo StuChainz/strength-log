@@ -16,6 +16,10 @@ import {
   updateSet,
   softDeleteSet,
 } from '@/db/repositories/sets.repo';
+import {
+  updateExerciseHistoryCache,
+  updateSessionExerciseHistoryCache,
+} from '@/db/repositories/history.repo';
 import type { WorkoutSession, WorkoutSet, ExerciseCategory, Unit } from '@/domain/types';
 import type { SetAddedPayload, SetDeletedPayload, SetEditedPayload } from '@/domain/events';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -285,8 +289,11 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
       setSets((prev) =>
         prev.map((set) => (set.id === setId ? { ...set, ...fields } : set)),
       );
+
+      const edited = sets.find((set) => set.id === setId);
+      if (edited) await updateExerciseHistoryCache(db, edited.exercise_id);
     },
-    [session],
+    [session, sets],
   );
 
   const deleteSet = useCallback(
@@ -296,6 +303,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
 
       const deletedAt = Date.now();
       const payload: SetDeletedPayload = { set_id: setId };
+      const deleted = sets.find((set) => set.id === setId);
 
       await db.withTransactionAsync(async () => {
         await insertEvent(db, {
@@ -311,8 +319,9 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
       setSets((prev) =>
         prev.map((set) => (set.id === setId ? { ...set, deleted_at: deletedAt } : set)),
       );
+      if (deleted) await updateExerciseHistoryCache(db, deleted.exercise_id);
     },
-    [session],
+    [session, sets],
   );
 
   const undoLastSet = useCallback(async () => {
@@ -327,6 +336,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     const db = dbRef.current;
     if (!db || !session) return;
     await dbEndSession(db, session.id);
+    await updateSessionExerciseHistoryCache(db, session.id);
     setPhase('ended');
   }, [session]);
 

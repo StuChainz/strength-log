@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getAllExercises } from '@/db/repositories/exercises.repo';
 import { normalizeName } from '@/domain/ids';
+import ExerciseHistorySheet from '@/screens/ExerciseHistorySheet';
 import { T } from '@/theme/tokens';
 import type { Exercise, ExerciseCategory } from '@/domain/types';
 import type { ExerciseLibraryNavigationProp } from '@/navigation/types';
@@ -45,6 +46,7 @@ export default function ExerciseLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterOption>('all');
   const [loading, setLoading] = useState(true);
+  const [historyExercise, setHistoryExercise] = useState<Exercise | null>(null);
   const dbRef = useRef<Awaited<ReturnType<typeof openDb>> | null>(null);
 
   const loadExercises = useCallback(async () => {
@@ -171,11 +173,29 @@ export default function ExerciseLibrary() {
                   {item.is_custom ? ' · CUSTOM' : ''}
                 </Text>
               </View>
+              <TouchableOpacity
+                style={styles.historyBtn}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  setHistoryExercise(item);
+                }}
+                hitSlop={8}
+              >
+                <Ionicons name="time-outline" size={16} color={T.textDim} />
+              </TouchableOpacity>
               <Ionicons name="chevron-forward" size={16} color={T.mutedDeep} />
             </TouchableOpacity>
           )}
         />
       </View>
+      <ExerciseHistorySheet
+        visible={historyExercise !== null}
+        exerciseId={historyExercise?.id ?? null}
+        exerciseName={historyExercise?.name ?? ''}
+        category={historyExercise?.category ?? 'barbell'}
+        targetReps={null}
+        onClose={() => setHistoryExercise(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -268,7 +288,7 @@ const styles = StyleSheet.create({
     backgroundColor: T.surface,
   },
   exerciseRowFirst: { borderTopWidth: 0, borderTopLeftRadius: 14, borderTopRightRadius: 14 },
-  exerciseInfo: { flex: 1 },
+  exerciseInfo: { flex: 1, minWidth: 0 },
   exerciseName: { fontSize: 14, fontWeight: '500', color: T.text },
   exerciseMeta: {
     fontFamily: 'Courier New',
@@ -277,6 +297,17 @@ const styles = StyleSheet.create({
     marginTop: 3,
     letterSpacing: 0.3,
     textTransform: 'uppercase',
+  },
+  historyBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+    marginRight: 8,
   },
 
   emptyList: {
