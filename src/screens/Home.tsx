@@ -5,7 +5,9 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getAllTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
+import { getInProgressSession } from '@/db/repositories/sessions.repo';
 import { T } from '@/theme/tokens';
+import type { WorkoutSession } from '@/domain/types';
 import type { HomeNavigationProp } from '@/navigation/types';
 
 interface RecentSession {
@@ -20,11 +22,12 @@ export default function Home() {
   const navigation = useNavigation<HomeNavigationProp>();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [recents, setRecents] = useState<RecentSession[]>([]);
+  const [inProgress, setInProgress] = useState<WorkoutSession | null>(null);
 
   const load = useCallback(async () => {
     try {
       const db = await openDb();
-      const [tpls, sessions] = await Promise.all([
+      const [tpls, sessions, active] = await Promise.all([
         getAllTemplatesWithCount(db),
         db.getAllAsync<RecentSession>(
           `SELECT id, name, started_at, ended_at, total_volume_cached
@@ -33,9 +36,11 @@ export default function Home() {
            ORDER BY ended_at DESC
            LIMIT 5`,
         ),
+        getInProgressSession(db),
       ]);
       setTemplates(tpls);
       setRecents(sessions);
+      setInProgress(active);
     } catch {
       // ignore
     }
@@ -93,6 +98,30 @@ export default function Home() {
             <Ionicons name="ellipsis-horizontal" size={18} color={T.textDim} />
           </TouchableOpacity>
         </View>
+
+        {inProgress && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.resumeCard}
+              activeOpacity={0.86}
+              onPress={() => navigation.navigate('LiveWorkout', {})}
+            >
+              <View style={styles.resumeIcon}>
+                <Ionicons name="refresh" size={18} color={T.accent} />
+              </View>
+              <View style={styles.resumeBody}>
+                <Text style={styles.resumeLabel}>IN PROGRESS</Text>
+                <Text style={styles.resumeTitle}>
+                  Resumed workout from {new Date(inProgress.started_at).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={T.mutedDeep} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Hero CTA */}
         <View style={styles.section}>
@@ -218,6 +247,32 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginBottom: 10,
   },
+  resumeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 14,
+    padding: 14,
+  },
+  resumeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    backgroundColor: T.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resumeBody: { flex: 1, minWidth: 0 },
+  resumeLabel: {
+    fontFamily: 'Courier New',
+    color: T.muted,
+    fontSize: 10.5,
+    letterSpacing: 1.2,
+  },
+  resumeTitle: { color: T.text, fontSize: 14, fontWeight: '600', marginTop: 3 },
 
   heroCard: {
     backgroundColor: T.accent,

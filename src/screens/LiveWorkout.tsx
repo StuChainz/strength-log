@@ -39,6 +39,7 @@ export default function LiveWorkout() {
     phase,
     session,
     existingSession,
+    resumedStartedAt,
     exercises,
     sets,
     activeExerciseId,
@@ -47,6 +48,8 @@ export default function LiveWorkout() {
     endWorkout,
     discardWorkout,
     resumeExisting,
+    endExisting,
+    discardExisting,
     discardAndStart,
     addExercise,
   } = store;
@@ -157,13 +160,23 @@ export default function LiveWorkout() {
     const started = new Date(existingSession.started_at).toLocaleTimeString([], {
       hour: '2-digit', minute: '2-digit',
     });
+    const isStale = Date.now() - existingSession.started_at > 12 * 60 * 60 * 1000;
+    const buttons = isStale
+      ? [
+          { text: 'Resume', onPress: resumeExisting },
+          { text: 'End', onPress: endExisting },
+          { text: 'Discard', style: 'destructive' as const, onPress: discardExisting },
+        ]
+      : [
+          { text: 'Resume', onPress: resumeExisting },
+          { text: 'Start New', style: 'destructive' as const, onPress: discardAndStart },
+        ];
     Alert.alert(
-      'Workout in Progress',
-      `You started a workout at ${started}. Resume it?`,
-      [
-        { text: 'Resume', onPress: resumeExisting },
-        { text: 'Start New', style: 'destructive', onPress: discardAndStart },
-      ],
+      isStale ? 'Still working out?' : 'Workout in Progress',
+      isStale
+        ? `You started a workout at ${started}. Resume, end, or discard it?`
+        : `You started a workout at ${started}. Resume it?`,
+      buttons,
       { cancelable: false },
     );
   }, [phase, existingSession]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -271,6 +284,18 @@ export default function LiveWorkout() {
       </View>
 
       {/* ── Exercise carousel ─────────────────────────────────── */}
+      {resumedStartedAt !== null && (
+        <View style={styles.resumeBanner}>
+          <Ionicons name="refresh" size={15} color={T.accent} />
+          <Text style={styles.resumeBannerText}>
+            Resumed your workout from {new Date(resumedStartedAt).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </Text>
+        </View>
+      )}
+
       {exercises.length > 0 && (
         <View style={styles.carouselHeader}>
           <TouchableOpacity
@@ -607,6 +632,25 @@ const styles = StyleSheet.create({
   liveDot: { width: 6, height: 6, borderRadius: 999, backgroundColor: T.accent },
   elapsedText: {
     fontFamily: 'Courier New', fontSize: 13, color: T.text, letterSpacing: 0.5,
+  },
+  resumeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+  },
+  resumeBannerText: {
+    flex: 1,
+    color: T.textDim,
+    fontFamily: 'Courier New',
+    fontSize: 12,
   },
 
   carouselHeader: {

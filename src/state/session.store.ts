@@ -48,6 +48,7 @@ export interface UseSessionStoreReturn {
   phase: StorePhase;
   session: WorkoutSession | null;
   existingSession: WorkoutSession | null;
+  resumedStartedAt: number | null;
   exercises: SessionExercise[];
   sets: WorkoutSet[];
   activeExerciseId: string | null;
@@ -59,6 +60,8 @@ export interface UseSessionStoreReturn {
   endWorkout: () => Promise<void>;
   discardWorkout: () => Promise<void>;
   resumeExisting: () => Promise<void>;
+  endExisting: () => Promise<void>;
+  discardExisting: () => Promise<void>;
   discardAndStart: () => Promise<void>;
   addExercise: (exercise: { id: string; name: string; category: ExerciseCategory; default_unit: Unit | null }) => void;
 }
@@ -102,6 +105,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
   const [phase, setPhase] = useState<StorePhase>('loading');
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [existingSession, setExistingSession] = useState<WorkoutSession | null>(null);
+  const [resumedStartedAt, setResumedStartedAt] = useState<number | null>(null);
   const [exercises, setExercises] = useState<SessionExercise[]>([]);
   const [sets, setSets] = useState<WorkoutSet[]>([]);
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
@@ -169,8 +173,26 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     const db = dbRef.current;
     if (!db || !existingSession) return;
     await initSession(existingSession, db);
+    setResumedStartedAt(existingSession.started_at);
     setExistingSession(null);
   }, [existingSession, initSession]);
+
+  const endExisting = useCallback(async () => {
+    const db = dbRef.current;
+    if (!db || !existingSession) return;
+    await dbEndSession(db, existingSession.id);
+    await updateSessionExerciseHistoryCache(db, existingSession.id);
+    setExistingSession(null);
+    setPhase('ended');
+  }, [existingSession]);
+
+  const discardExisting = useCallback(async () => {
+    const db = dbRef.current;
+    if (!db || !existingSession) return;
+    await dbDiscardSession(db, existingSession.id);
+    setExistingSession(null);
+    setPhase('ended');
+  }, [existingSession]);
 
   const discardAndStart = useCallback(async () => {
     const db = dbRef.current;
@@ -178,6 +200,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     await dbDiscardSession(db, existingSession.id);
     setExistingSession(null);
     const sess = await createSession(db, { templateId: templateId ?? null, name: null });
+    setResumedStartedAt(null);
     if (templateId) {
       const exs = await loadExercisesForTemplate(db, templateId);
       setExercises(exs);
@@ -371,6 +394,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     phase,
     session,
     existingSession,
+    resumedStartedAt,
     exercises,
     sets,
     activeExerciseId,
@@ -382,6 +406,8 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     endWorkout,
     discardWorkout,
     resumeExisting,
+    endExisting,
+    discardExisting,
     discardAndStart,
     addExercise,
   };

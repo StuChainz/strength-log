@@ -10,9 +10,16 @@ import type {
 export async function getInProgressSession(
   db: SQLiteDatabase,
 ): Promise<WorkoutSession | null> {
-  return db.getFirstAsync<WorkoutSession>(
-    "SELECT * FROM workout_sessions WHERE status = 'in_progress' LIMIT 1",
+  const sessions = await db.getAllAsync<WorkoutSession>(
+    "SELECT * FROM workout_sessions WHERE status = 'in_progress' ORDER BY started_at DESC",
   );
+  const [newest, ...older] = sessions;
+
+  for (const session of older) {
+    await discardSession(db, session.id);
+  }
+
+  return newest ?? null;
 }
 
 export async function getSessionById(
