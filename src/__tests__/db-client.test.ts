@@ -129,6 +129,18 @@ describe('Migration runner', () => {
     expect(metadataMigration).toBeDefined();
   });
 
+  it('applies additional exercise metadata filter indexes', async () => {
+    await openDb();
+    const indexMigration = mockDb._tables['_migrations']?.find(
+      (r) => r.name === '004_exercise_metadata_filter_indexes',
+    );
+    const migrationSql = mockDb._execCalls.join('\n');
+
+    expect(indexMigration).toBeDefined();
+    expect(migrationSql).toContain('idx_exercise_metadata_mechanics');
+    expect(migrationSql).toContain('idx_exercise_metadata_laterality');
+  });
+
   it('does not re-apply migrations on second open', async () => {
     await openDb();
     _resetDbSingleton();

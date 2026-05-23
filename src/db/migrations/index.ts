@@ -191,8 +191,17 @@ CREATE INDEX IF NOT EXISTS idx_exercise_metadata_substitution_group
   ON exercise_metadata (substitution_group);
 `;
 
+const MIGRATION_004 = `
+CREATE INDEX IF NOT EXISTS idx_exercise_metadata_mechanics
+  ON exercise_metadata (mechanics);
+
+CREATE INDEX IF NOT EXISTS idx_exercise_metadata_laterality
+  ON exercise_metadata (laterality);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { name: '001_init', sql: MIGRATION_001 },
   { name: '002_app_settings', sql: MIGRATION_002 },
   { name: '003_exercise_metadata', sql: MIGRATION_003 },
+  { name: '004_exercise_metadata_filter_indexes', sql: MIGRATION_004 },
 ];
