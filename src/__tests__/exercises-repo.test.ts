@@ -107,6 +107,7 @@ describe('exercises repository metadata', () => {
     await getExercisesWithMetadata(db as never, {
       category: 'barbell',
       custom: false,
+      has_metadata: true,
       force_type: 'push',
       movement_pattern: 'horizontal_push',
       body_region: 'upper_body',
@@ -122,6 +123,7 @@ describe('exercises repository metadata', () => {
 
     expect(db.allCalls[0].sql).toContain('e.category = ?');
     expect(db.allCalls[0].sql).toContain('e.is_custom = ?');
+    expect(db.allCalls[0].sql).toContain('m.exercise_id IS NOT NULL');
     expect(db.allCalls[0].sql).toContain('m.force_type = ?');
     expect(db.allCalls[0].sql).toContain('m.movement_pattern = ?');
     expect(db.allCalls[0].sql).toContain('m.body_region = ?');
@@ -152,6 +154,16 @@ describe('exercises repository metadata', () => {
       '%bench%',
       '%bench%',
     ]);
+  });
+
+  it('supports finding exercises that are still missing metadata', async () => {
+    const db = createMockDb([]);
+
+    await getExercisesWithMetadata(db as never, { has_metadata: false });
+
+    expect(db.allCalls[0].sql).toContain('LEFT JOIN exercise_metadata m ON m.exercise_id = e.id');
+    expect(db.allCalls[0].sql).toContain('m.exercise_id IS NULL');
+    expect(db.allCalls[0].params).toEqual([]);
   });
 
   it('supports primary and secondary muscle filters separately', async () => {

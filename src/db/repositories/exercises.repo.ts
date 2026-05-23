@@ -27,6 +27,7 @@ export interface ExerciseMetadataFilters {
   query?: string;
   category?: ExerciseCategory;
   custom?: boolean;
+  has_metadata?: boolean;
   force_type?: ForceType;
   movement_pattern?: MovementPattern | string;
   body_region?: BodyRegion | string;
@@ -113,6 +114,9 @@ export async function getExercisesWithMetadata(
   if (filters.custom !== undefined) {
     where.push('e.is_custom = ?');
     params.push(filters.custom ? 1 : 0);
+  }
+  if (filters.has_metadata !== undefined) {
+    where.push(filters.has_metadata ? 'm.exercise_id IS NOT NULL' : 'm.exercise_id IS NULL');
   }
   if (filters.force_type) {
     where.push('m.force_type = ?');
