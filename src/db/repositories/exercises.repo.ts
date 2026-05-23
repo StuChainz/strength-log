@@ -27,6 +27,8 @@ export interface ExerciseMetadataFilters {
   mechanics?: Mechanics | string;
   laterality?: Laterality | string;
   muscle?: MuscleGroup | string;
+  primary_muscle?: MuscleGroup | string;
+  secondary_muscle?: MuscleGroup | string;
   equipment?: Equipment | string;
 }
 
@@ -104,6 +106,14 @@ export async function getExercisesWithMetadata(
     where.push('(m.primary_muscles_json LIKE ? OR m.secondary_muscles_json LIKE ?)');
     const needle = jsonArrayContainsNeedle(filters.muscle);
     params.push(needle, needle);
+  }
+  if (filters.primary_muscle) {
+    where.push('m.primary_muscles_json LIKE ?');
+    params.push(jsonArrayContainsNeedle(filters.primary_muscle));
+  }
+  if (filters.secondary_muscle) {
+    where.push('m.secondary_muscles_json LIKE ?');
+    params.push(jsonArrayContainsNeedle(filters.secondary_muscle));
   }
   if (filters.equipment) {
     where.push('m.equipment_json LIKE ?');

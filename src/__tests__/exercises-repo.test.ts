@@ -147,6 +147,19 @@ describe('exercises repository metadata', () => {
     ]);
   });
 
+  it('supports primary and secondary muscle filters separately', async () => {
+    const db = createMockDb([]);
+
+    await getExercisesWithMetadata(db as never, {
+      primary_muscle: 'chest',
+      secondary_muscle: 'triceps',
+    });
+
+    expect(db.allCalls[0].sql).toContain('m.primary_muscles_json LIKE ?');
+    expect(db.allCalls[0].sql).toContain('m.secondary_muscles_json LIKE ?');
+    expect(db.allCalls[0].params).toEqual(['%"chest"%', '%"triceps"%']);
+  });
+
   it('still creates custom exercises without requiring metadata', async () => {
     const db = createMockDb();
 
