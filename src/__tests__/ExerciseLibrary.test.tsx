@@ -25,6 +25,7 @@ const mockExercises = [
     id: 'ex-1',
     name: 'Barbell Squat',
     normalized_name: 'barbell squat',
+    aliases: ['squat', 'back squat'],
     category: 'barbell',
     primary_muscle: 'quadriceps',
     is_custom: 0,
@@ -53,6 +54,7 @@ const mockExercises = [
     id: 'ex-2',
     name: 'Dumbbell Curl',
     normalized_name: 'dumbbell curl',
+    aliases: ['curl', 'db curl'],
     category: 'dumbbell',
     primary_muscle: 'biceps',
     is_custom: 0,
@@ -81,6 +83,7 @@ const mockExercises = [
     id: 'ex-3',
     name: 'My Custom Press',
     normalized_name: 'my custom press',
+    aliases: [],
     category: 'barbell',
     primary_muscle: null,
     is_custom: 1,
@@ -94,6 +97,7 @@ const mockExercises = [
     id: 'ex-4',
     name: 'Barbell Deadlift',
     normalized_name: 'barbell deadlift',
+    aliases: ['deadlift', 'dl'],
     category: 'barbell',
     primary_muscle: 'hamstrings',
     is_custom: 0,
@@ -122,6 +126,7 @@ const mockExercises = [
     id: 'ex-5',
     name: 'Plank',
     normalized_name: 'plank',
+    aliases: ['plank'],
     category: 'bodyweight',
     primary_muscle: 'core',
     is_custom: 0,
@@ -150,6 +155,7 @@ const mockExercises = [
     id: 'ex-6',
     name: 'Bench Press',
     normalized_name: 'bench press',
+    aliases: ['bench', 'flat bench'],
     category: 'barbell',
     primary_muscle: 'chest',
     is_custom: 0,
@@ -220,6 +226,18 @@ describe('ExerciseLibrary', () => {
     await waitFor(() => {
       expect(getByTestId('exercise-row-ex-1')).toBeTruthy();
       expect(queryByTestId('exercise-row-ex-2')).toBeNull();
+    });
+  });
+
+  it('filters by alias search query', async () => {
+    const { getByTestId, queryByTestId } = render(<ExerciseLibrary />);
+    await waitFor(() => expect(getByTestId('exercise-row-ex-1')).toBeTruthy());
+
+    fireEvent.changeText(getByTestId('search-input'), 'flat bench');
+
+    await waitFor(() => {
+      expect(getByTestId('exercise-row-ex-6')).toBeTruthy();
+      expect(queryByTestId('exercise-row-ex-1')).toBeNull();
     });
   });
 

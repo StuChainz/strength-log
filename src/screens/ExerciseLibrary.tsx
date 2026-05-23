@@ -96,7 +96,10 @@ export default function ExerciseLibrary() {
     }
     if (searchQuery.trim()) {
       const needle = normalizeName(searchQuery);
-      result = result.filter((e) => e.normalized_name.includes(needle));
+      result = result.filter(
+        (e) =>
+          e.normalized_name.includes(needle) || e.aliases.some((alias) => alias.includes(needle)),
+      );
     }
     return result;
   }, [exercises, searchQuery, activeFilter]);

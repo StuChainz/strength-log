@@ -127,6 +127,7 @@ export interface ExerciseMetadataView {
 }
 
 export interface ExerciseWithMetadata extends Exercise {
+  aliases: string[];
   metadata: ExerciseMetadataView | null;
 }
 

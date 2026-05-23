@@ -39,6 +39,7 @@ describe('exercises repository metadata', () => {
         id: 'ex-1',
         name: 'Bench Press',
         normalized_name: 'bench press',
+        aliases_concat: 'bench\u001fflat bench',
         category: 'barbell',
         primary_muscle: 'chest',
         default_unit: 'kg',
@@ -65,6 +66,7 @@ describe('exercises repository metadata', () => {
         id: 'custom-1',
         name: 'Custom Move',
         normalized_name: 'custom move',
+        aliases_concat: null,
         category: 'other',
         primary_muscle: null,
         default_unit: null,
@@ -79,12 +81,13 @@ describe('exercises repository metadata', () => {
     const exercises = await getExercisesWithMetadata(db as never);
 
     expect(exercises[0].metadata?.force_type).toBe('push');
+    expect(exercises[0].aliases).toEqual(['bench', 'flat bench']);
     expect(exercises[0].metadata?.primary_muscles).toEqual(['chest']);
     expect(exercises[0].metadata?.equipment).toEqual(['barbell', 'bench']);
     expect(exercises[1].metadata).toBeNull();
   });
 
-  it('supports category, custom, force, muscle, equipment, and name filters', async () => {
+  it('supports category, custom, force, muscle, equipment, and name or alias filters', async () => {
     const db = createMockDb([]);
 
     await getExercisesWithMetadata(db as never, {
@@ -102,6 +105,8 @@ describe('exercises repository metadata', () => {
     expect(db.allCalls[0].sql).toContain('m.primary_muscles_json LIKE ?');
     expect(db.allCalls[0].sql).toContain('m.equipment_json LIKE ?');
     expect(db.allCalls[0].sql).toContain('e.normalized_name LIKE ?');
+    expect(db.allCalls[0].sql).toContain('EXISTS');
+    expect(db.allCalls[0].sql).toContain('alias_match.alias LIKE ?');
     expect(db.allCalls[0].params).toEqual([
       'barbell',
       0,
@@ -109,6 +114,7 @@ describe('exercises repository metadata', () => {
       '%"chest"%',
       '%"chest"%',
       '%"barbell"%',
+      '%bench%',
       '%bench%',
     ]);
   });

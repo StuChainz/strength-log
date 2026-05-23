@@ -22,6 +22,7 @@ export interface ExerciseMetadataFilters {
 }
 
 type ExerciseWithMetadataRow = Exercise & {
+  aliases_concat: string | null;
   metadata_exercise_id: string | null;
   movement_pattern: ExerciseMetadata['movement_pattern'] | null;
   force_type: ExerciseMetadata['force_type'] | null;
@@ -80,13 +81,25 @@ export async function getExercisesWithMetadata(
     params.push(jsonArrayContainsNeedle(filters.equipment));
   }
   if (filters.query?.trim()) {
-    where.push('e.normalized_name LIKE ?');
-    params.push(`%${normalizeName(filters.query)}%`);
+    where.push(
+      `(e.normalized_name LIKE ?
+        OR EXISTS (
+          SELECT 1 FROM exercise_aliases alias_match
+          WHERE alias_match.exercise_id = e.id AND alias_match.alias LIKE ?
+        ))`,
+    );
+    const needle = `%${normalizeName(filters.query)}%`;
+    params.push(needle, needle);
   }
 
   const rows = await db.getAllAsync<ExerciseWithMetadataRow>(
     `SELECT
        e.*,
+       (
+         SELECT GROUP_CONCAT(alias_list.alias, char(31))
+         FROM exercise_aliases alias_list
+         WHERE alias_list.exercise_id = e.id
+       ) AS aliases_concat,
        m.exercise_id AS metadata_exercise_id,
        m.movement_pattern,
        m.force_type,
@@ -202,7 +215,7 @@ function rowToExerciseWithMetadata(row: ExerciseWithMetadataRow): ExerciseWithMe
   };
 
   if (!row.metadata_exercise_id) {
-    return { ...exercise, metadata: null };
+    return { ...exercise, aliases: parseAliasList(row.aliases_concat), metadata: null };
   }
 
   const metadata: ExerciseMetadataView = {
@@ -222,7 +235,7 @@ function rowToExerciseWithMetadata(row: ExerciseWithMetadataRow): ExerciseWithMe
     updated_at: row.metadata_updated_at ?? 0,
   };
 
-  return { ...exercise, metadata };
+  return { ...exercise, aliases: parseAliasList(row.aliases_concat), metadata };
 }
 
 function parseStringArray<T extends string>(json: string | null): T[] {
@@ -239,4 +252,9 @@ function parseStringArray<T extends string>(json: string | null): T[] {
 
 function jsonArrayContainsNeedle(value: string): string {
   return `%"${value}"%`;
+}
+
+function parseAliasList(value: string | null): string[] {
+  if (!value) return [];
+  return value.split('\u001f').filter(Boolean);
 }
