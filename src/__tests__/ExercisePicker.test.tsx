@@ -133,6 +133,10 @@ jest.mock('@/db/repositories/exercises.repo', () => ({
   getExercisesWithMetadata: jest.fn(),
 }));
 
+const getExercisesWithMetadataMock = getExercisesWithMetadata as jest.MockedFunction<
+  typeof getExercisesWithMetadata
+>;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const defaultProps = {
   visible: true,
@@ -144,7 +148,7 @@ const defaultProps = {
 describe('ExercisePicker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    getExercisesWithMetadata.mockImplementation((_db, filters) =>
+    getExercisesWithMetadataMock.mockImplementation((_db, filters) =>
       Promise.resolve(filterMockExercises(filters)),
     );
   });

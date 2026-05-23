@@ -6,7 +6,7 @@ import {
 } from '@/domain/exerciseMetadataFixtureAudit';
 import { normalizeName } from '@/domain/ids';
 import { ExerciseMetadataInputSchema } from '@/domain/validation';
-import type { ForceType, MovementPattern } from '@/domain/types';
+import type { BodyRegion, ForceType, MovementPattern } from '@/domain/types';
 
 const REQUIRED_METADATA_MOVEMENT_PATTERNS: MovementPattern[] = [
   'horizontal_push',
@@ -109,7 +109,9 @@ describe('SEED_EXERCISE_METADATA', () => {
   it('covers practical body regions for library filtering', () => {
     const regions = new Set(SEED_EXERCISE_METADATA.map((m) => m.body_region));
 
-    ['upper_body', 'lower_body', 'full_body', 'core'].forEach((region) => {
+    const requiredRegions: BodyRegion[] = ['upper_body', 'lower_body', 'full_body', 'core'];
+
+    requiredRegions.forEach((region) => {
       expect(regions.has(region)).toBe(true);
     });
   });

@@ -210,6 +210,10 @@ jest.mock('@/db/repositories/exercises.repo', () => ({
   getExercisesWithMetadata: jest.fn(),
 }));
 
+const getExercisesWithMetadataMock = getExercisesWithMetadata as jest.MockedFunction<
+  typeof getExercisesWithMetadata
+>;
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 describe('ExerciseLibrary', () => {
   beforeEach(() => {
@@ -217,7 +221,7 @@ describe('ExerciseLibrary', () => {
     mockUseFocusEffect.mockImplementation((cb) => {
       React.useEffect(() => cb(), [cb]);
     });
-    getExercisesWithMetadata.mockImplementation((_db, filters) =>
+    getExercisesWithMetadataMock.mockImplementation((_db, filters) =>
       Promise.resolve(filterMockExercises(filters)),
     );
   });
@@ -376,7 +380,7 @@ describe('ExerciseLibrary', () => {
     render(<ExerciseLibrary />);
     await waitFor(() => expect(getExercisesWithMetadata).toHaveBeenCalled());
 
-    const callsBefore = getExercisesWithMetadata.mock.calls.length;
+    const callsBefore = getExercisesWithMetadataMock.mock.calls.length;
 
     // Simulate focus by re-invoking the useFocusEffect callback
     const cb = mockUseFocusEffect.mock.calls[0][0];
@@ -385,7 +389,7 @@ describe('ExerciseLibrary', () => {
     });
 
     await waitFor(() =>
-      expect(getExercisesWithMetadata.mock.calls.length).toBeGreaterThan(callsBefore),
+      expect(getExercisesWithMetadataMock.mock.calls.length).toBeGreaterThan(callsBefore),
     );
   });
 });

@@ -37,7 +37,13 @@ export const LIBRARY_EXERCISE_FILTER_CHIPS: ExerciseFilterChip[] = [
   { label: 'Custom', value: 'custom' },
 ];
 
-const FORCE_FILTERS = new Set<ExerciseFilterOption>(['push', 'pull', 'legs', 'hinge', 'core']);
+const FORCE_FILTERS = new Set<ExerciseForceFilterOption>([
+  'push',
+  'pull',
+  'legs',
+  'hinge',
+  'core',
+]);
 
 export function buildExerciseListFilters(
   activeFilter: ExerciseFilterOption,
@@ -52,11 +58,15 @@ export function buildExerciseListFilters(
 
   if (activeFilter === 'custom') {
     filters.custom = true;
-  } else if (FORCE_FILTERS.has(activeFilter)) {
-    filters.force_type = activeFilter as ExerciseForceFilterOption;
+  } else if (isForceFilter(activeFilter)) {
+    filters.force_type = activeFilter;
   } else if (activeFilter !== 'all') {
     filters.category = activeFilter;
   }
 
   return filters;
+}
+
+function isForceFilter(value: ExerciseFilterOption): value is ExerciseForceFilterOption {
+  return FORCE_FILTERS.has(value as ExerciseForceFilterOption);
 }
