@@ -1,0 +1,202 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, ScrollView, Share, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { openDb, resetLocalData } from '@/db/client';
+import { exportDatabase } from '@/db/repositories/export.repo';
+import { getAppSettings, setAppSetting, type AppSettings, type WeekStartDay } from '@/db/repositories/settings.repo';
+import { T } from '@/theme/tokens';
+import type { Unit } from '@/domain/types';
+
+export default function Settings() {
+  const [settings, setSettings] = useState<AppSettings>({
+    unit: 'kg',
+    weekStartDay: 'monday',
+    voiceMode: false,
+  });
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const db = await openDb();
+    setSettings(await getAppSettings(db));
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const update = async <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+    const db = await openDb();
+    await setAppSetting(db, key, value);
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const exportData = async () => {
+    setBusy(true);
+    try {
+      const db = await openDb();
+      const payload = await exportDatabase(db);
+      await Share.share({
+        title: 'Strength Log export',
+        message: JSON.stringify(payload, null, 2),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmWipe = () => {
+    Alert.alert('Wipe local data?', 'This removes workouts, templates, tags, and settings on this device.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Wipe',
+        style: 'destructive',
+        onPress: () => {
+          void resetLocalData().then(load);
+        },
+      },
+    ]);
+  };
+
+  const feedback = () => {
+    Alert.alert(
+      'Beta feedback',
+      '1. Was logging fast enough?\n2. What felt confusing?\n3. Did suggestions help?\n4. What broke?\n5. What would you need next?',
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <Text style={styles.eyebrow}>Beta</Text>
+        <Text style={styles.title}>Settings</Text>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Units</Text>
+          <View style={styles.segmented}>
+            {(['kg', 'lb'] as Unit[]).map((unit) => (
+              <TouchableOpacity
+                key={unit}
+                style={[styles.segment, settings.unit === unit && styles.segmentActive]}
+                onPress={() => void update('unit', unit)}
+              >
+                <Text style={[styles.segmentText, settings.unit === unit && styles.segmentTextActive]}>
+                  {unit.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Week Starts</Text>
+          <View style={styles.segmented}>
+            {(['monday', 'sunday'] as WeekStartDay[]).map((day) => (
+              <TouchableOpacity
+                key={day}
+                style={[styles.segment, settings.weekStartDay === day && styles.segmentActive]}
+                onPress={() => void update('weekStartDay', day)}
+              >
+                <Text style={[styles.segmentText, settings.weekStartDay === day && styles.segmentTextActive]}>
+                  {day.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={styles.rowTitle}>Voice mode</Text>
+            <Text style={styles.rowSub}>Typed parser only; real ASR stays off.</Text>
+          </View>
+          <Switch
+            value={settings.voiceMode}
+            onValueChange={(value) => void update('voiceMode', value)}
+            trackColor={{ false: T.surface3, true: T.accent }}
+            thumbColor={settings.voiceMode ? T.accentInk : T.textDim}
+          />
+        </View>
+
+        <TouchableOpacity style={styles.actionRow} onPress={() => void exportData()} disabled={busy}>
+          <Ionicons name="share-outline" size={18} color={T.textDim} />
+          <Text style={styles.actionText}>{busy ? 'Exporting…' : 'Export data'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionRow} onPress={feedback}>
+          <Ionicons name="chatbox-ellipses-outline" size={18} color={T.textDim} />
+          <Text style={styles.actionText}>Beta feedback</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.actionRow, styles.dangerRow]} onPress={confirmWipe}>
+          <Ionicons name="trash-outline" size={18} color={T.danger} />
+          <Text style={styles.dangerText}>Wipe local data</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: T.bg },
+  container: { flex: 1, backgroundColor: T.bg },
+  content: { padding: 22, paddingTop: 16, paddingBottom: 28 },
+  eyebrow: {
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: T.muted,
+  },
+  title: { color: T.text, fontSize: 28, fontWeight: '700', marginTop: 4 },
+  section: { marginTop: 24 },
+  sectionLabel: {
+    color: T.muted,
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  segmented: {
+    flexDirection: 'row',
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 4,
+  },
+  segment: { flex: 1, alignItems: 'center', borderRadius: 9, paddingVertical: 10 },
+  segmentActive: { backgroundColor: T.accent },
+  segmentText: { color: T.textDim, fontSize: 12, fontWeight: '700' },
+  segmentTextActive: { color: T.accentInk },
+  row: {
+    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 14,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 14,
+  },
+  rowText: { flex: 1 },
+  rowTitle: { color: T.text, fontSize: 15, fontWeight: '700' },
+  rowSub: { color: T.muted, fontSize: 12, marginTop: 3 },
+  actionRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 14,
+  },
+  actionText: { color: T.text, fontSize: 15, fontWeight: '700' },
+  dangerRow: { borderColor: 'rgba(255,122,106,0.35)' },
+  dangerText: { color: T.danger, fontSize: 15, fontWeight: '700' },
+});

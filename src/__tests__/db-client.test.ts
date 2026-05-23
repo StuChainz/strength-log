@@ -100,7 +100,7 @@ describe('Migration runner', () => {
     const migrationInserts = mockDb._runCalls.filter((c) =>
       /INSERT INTO _migrations/.test(c.sql),
     );
-    expect(migrationInserts).toHaveLength(1);
+    expect(migrationInserts).toHaveLength(2);
   });
 
   it('wraps migration SQL in a transaction', async () => {

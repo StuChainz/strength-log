@@ -155,4 +155,15 @@ CREATE TABLE IF NOT EXISTS weekly_insight_cards (
 );
 `;
 
-export const MIGRATIONS: Migration[] = [{ name: '001_init', sql: MIGRATION_001 }];
+const MIGRATION_002 = `
+CREATE TABLE IF NOT EXISTS app_settings (
+  key        TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+`;
+
+export const MIGRATIONS: Migration[] = [
+  { name: '001_init', sql: MIGRATION_001 },
+  { name: '002_app_settings', sql: MIGRATION_002 },
+];

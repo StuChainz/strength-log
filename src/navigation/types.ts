@@ -7,6 +7,7 @@ export type RootStackParamList = {
   LiveWorkout: { templateId?: string } | undefined;
   EndWorkoutSummary: { sessionId: string };
   PostSessionTags: { sessionId: string };
+  Settings: undefined;
   TemplateBuilder: { templateId?: string };
   ExerciseEdit: { exerciseId?: string };
 };
@@ -62,3 +63,8 @@ export type PostSessionTagsNavigationProp = NativeStackNavigationProp<
   'PostSessionTags'
 >;
 export type PostSessionTagsRouteProp = RouteProp<RootStackParamList, 'PostSessionTags'>;
+
+export type SettingsNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'Settings'
+>;

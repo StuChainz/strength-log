@@ -19,3 +19,5 @@ export async function openDb(): Promise<MockDb> {
 }
 
 export function _resetDbSingleton(): void {}
+
+export async function resetLocalData(): Promise<void> {}

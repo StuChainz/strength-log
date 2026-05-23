@@ -103,7 +103,11 @@ export default function Home() {
             <Text style={styles.eyebrow}>{dayLabel} · {dateLabel}</Text>
             <Text style={styles.title}>Strength Log</Text>
           </View>
-          <TouchableOpacity style={styles.dotsBtn} hitSlop={8}>
+          <TouchableOpacity
+            style={styles.dotsBtn}
+            hitSlop={8}
+            onPress={() => navigation.navigate('Settings')}
+          >
             <Ionicons name="ellipsis-horizontal" size={18} color={T.textDim} />
           </TouchableOpacity>
         </View>

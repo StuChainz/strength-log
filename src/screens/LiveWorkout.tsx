@@ -8,6 +8,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Vibration,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -237,6 +238,7 @@ export default function LiveWorkout() {
         rpe,
         unit: activeExercise?.defaultUnit ?? 'kg',
       });
+      Vibration.vibrate(10);
       setJustLogged(true);
       setTimeout(() => setJustLogged(false), 900);
     } finally {
@@ -255,6 +257,7 @@ export default function LiveWorkout() {
           const endedSessionId = session.id;
           completedRef.current = true;
           void endWorkout().then(() => {
+            Vibration.vibrate(30);
             navigation.replace('EndWorkoutSummary', { sessionId: endedSessionId });
           });
         },

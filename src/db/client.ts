@@ -24,6 +24,29 @@ export function _resetDbSingleton(): void {
   _db = null;
 }
 
+export async function resetLocalData(): Promise<void> {
+  const db = await openDb();
+  await db.execAsync(`
+    DROP TABLE IF EXISTS app_settings;
+    DROP TABLE IF EXISTS weekly_insight_cards;
+    DROP TABLE IF EXISTS metric_samples;
+    DROP TABLE IF EXISTS session_notes;
+    DROP TABLE IF EXISTS post_session_tags;
+    DROP TABLE IF EXISTS exercise_history_cache;
+    DROP TABLE IF EXISTS workout_sets;
+    DROP TABLE IF EXISTS workout_events;
+    DROP TABLE IF EXISTS workout_sessions;
+    DROP TABLE IF EXISTS template_items;
+    DROP TABLE IF EXISTS templates;
+    DROP TABLE IF EXISTS exercise_aliases;
+    DROP TABLE IF EXISTS exercises;
+    DROP TABLE IF EXISTS users;
+    DROP TABLE IF EXISTS _migrations;
+  `);
+  await runMigrations(db);
+  await seedExercises(db);
+}
+
 // ─── Migration runner ─────────────────────────────────────────────────────────
 
 async function runMigrations(db: SQLiteDatabase): Promise<void> {
