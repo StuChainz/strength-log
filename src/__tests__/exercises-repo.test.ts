@@ -91,13 +91,16 @@ describe('exercises repository metadata', () => {
     expect(exercises[1].metadata).toBeNull();
   });
 
-  it('supports category, custom, force, muscle, equipment, and name or alias filters', async () => {
+  it('supports category, custom, metadata, muscle, equipment, and name or alias filters', async () => {
     const db = createMockDb([]);
 
     await getExercisesWithMetadata(db as never, {
       category: 'barbell',
       custom: false,
       force_type: 'push',
+      movement_pattern: 'horizontal_push',
+      body_region: 'upper_body',
+      substitution_group: 'horizontal_press',
       muscle: 'chest',
       equipment: 'barbell',
       query: 'bench',
@@ -106,6 +109,9 @@ describe('exercises repository metadata', () => {
     expect(db.allCalls[0].sql).toContain('e.category = ?');
     expect(db.allCalls[0].sql).toContain('e.is_custom = ?');
     expect(db.allCalls[0].sql).toContain('m.force_type = ?');
+    expect(db.allCalls[0].sql).toContain('m.movement_pattern = ?');
+    expect(db.allCalls[0].sql).toContain('m.body_region = ?');
+    expect(db.allCalls[0].sql).toContain('m.substitution_group = ?');
     expect(db.allCalls[0].sql).toContain('m.primary_muscles_json LIKE ?');
     expect(db.allCalls[0].sql).toContain('m.equipment_json LIKE ?');
     expect(db.allCalls[0].sql).toContain('e.normalized_name LIKE ?');
@@ -115,6 +121,9 @@ describe('exercises repository metadata', () => {
       'barbell',
       0,
       'push',
+      'horizontal_push',
+      'upper_body',
+      'horizontal_press',
       '%"chest"%',
       '%"chest"%',
       '%"barbell"%',

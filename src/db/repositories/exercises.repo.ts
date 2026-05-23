@@ -7,6 +7,7 @@ import {
   type ExerciseMetadataView,
   type ExerciseWithMetadata,
   type ForceType,
+  type MovementPattern,
   type MuscleGroup,
 } from '@/domain/types';
 import { newId, normalizeName } from '@/domain/ids';
@@ -17,6 +18,9 @@ export interface ExerciseMetadataFilters {
   category?: ExerciseCategory;
   custom?: boolean;
   force_type?: ForceType;
+  movement_pattern?: MovementPattern | string;
+  body_region?: string;
+  substitution_group?: string;
   muscle?: MuscleGroup | string;
   equipment?: Equipment | string;
 }
@@ -70,6 +74,18 @@ export async function getExercisesWithMetadata(
   if (filters.force_type) {
     where.push('m.force_type = ?');
     params.push(filters.force_type);
+  }
+  if (filters.movement_pattern) {
+    where.push('m.movement_pattern = ?');
+    params.push(filters.movement_pattern);
+  }
+  if (filters.body_region) {
+    where.push('m.body_region = ?');
+    params.push(filters.body_region);
+  }
+  if (filters.substitution_group) {
+    where.push('m.substitution_group = ?');
+    params.push(filters.substitution_group);
   }
   if (filters.muscle) {
     where.push('(m.primary_muscles_json LIKE ? OR m.secondary_muscles_json LIKE ?)');
