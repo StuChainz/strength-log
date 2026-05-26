@@ -34,18 +34,50 @@ export default function EndWorkoutSummary() {
   const route = useRoute<EndWorkoutSummaryRouteProp>();
   const { sessionId } = route.params;
   const [summary, setSummary] = useState<WorkoutSummary | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     openDb()
       .then((db) => getWorkoutSummary(db, sessionId))
       .then((next) => {
-        if (!cancelled) setSummary(next);
+        if (!cancelled) {
+          setSummary(next);
+          setLoadError(null);
+        }
+      })
+      .catch((error) => {
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.error('[EndWorkoutSummary] Failed to load workout summary', error);
+        }
+        if (!cancelled) setLoadError(__DEV__ ? formatDevError(error) : 'Summary failed to load.');
       });
     return () => {
       cancelled = true;
     };
   }, [sessionId]);
+
+  if (loadError) {
+    return (
+      <SafeAreaView style={[styles.safe, styles.center]} edges={['top', 'bottom']}>
+        <View style={styles.errorCard} testID="summary-load-error">
+          <Ionicons name="warning-outline" size={22} color={T.danger} />
+          <Text style={styles.errorTitle}>Summary could not load</Text>
+          <Text style={styles.errorBody}>
+            {__DEV__ ? loadError : 'Continue to tags or return home.'}
+          </Text>
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            onPress={() => navigation.replace('PostSessionTags', { sessionId })}
+          >
+            <Text style={styles.primaryText}>Continue</Text>
+            <Ionicons name="arrow-forward" size={18} color={T.accentInk} />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!summary) {
     return (
@@ -118,6 +150,19 @@ export default function EndWorkoutSummary() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
   center: { alignItems: 'center', justifyContent: 'center' },
+  errorCard: {
+    width: '86%',
+    maxWidth: 380,
+    alignItems: 'center',
+    gap: 10,
+    padding: 18,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surface,
+  },
+  errorTitle: { color: T.text, fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  errorBody: { color: T.textDim, fontSize: 13, lineHeight: 18, textAlign: 'center' },
   container: { flex: 1, paddingHorizontal: 22, paddingTop: 18, paddingBottom: 16 },
   header: {
     flexDirection: 'row',
@@ -189,3 +234,8 @@ const styles = StyleSheet.create({
   },
   primaryText: { color: T.accentInk, fontSize: 16, fontWeight: '800' },
 });
+
+function formatDevError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}

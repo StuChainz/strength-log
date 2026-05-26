@@ -1,3 +1,4 @@
+import { exportDatabase } from '@/db/repositories/export.repo';
 import { EXPORT_TABLES, validateExportPayload, type StrengthLogExport } from '@/export/schema';
 
 function emptyTables(): StrengthLogExport['tables'] {
@@ -36,5 +37,28 @@ describe('export schema', () => {
     delete (payload.tables as Partial<StrengthLogExport['tables']>).workout_events;
 
     expect(validateExportPayload(payload)).toBe(false);
+  });
+
+  it('exports missing optional local tables as empty arrays instead of crashing', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const db = {
+      getAllAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('exercise_prs')) throw new Error('no such table: exercise_prs');
+        if (sql.includes('post_session_tags')) throw new Error('no such table: post_session_tags');
+        return [];
+      }),
+    };
+
+    const exported = await exportDatabase(db as never);
+
+    expect(Object.keys(exported.tables).sort()).toEqual([...EXPORT_TABLES].sort());
+    expect(exported.tables.exercise_prs).toEqual([]);
+    expect(exported.tables.post_session_tags).toEqual([]);
+    expect(validateExportPayload(exported)).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[export] Missing table "exercise_prs" during export; exporting it as empty',
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 });

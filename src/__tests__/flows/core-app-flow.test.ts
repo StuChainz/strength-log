@@ -396,7 +396,9 @@ describe('core app flow repository acceptance', () => {
     const bench = await exerciseByName(db, 'Barbell Bench Press');
 
     const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(template_items)');
-    expect(columns).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'rest_seconds' })]));
+    expect(columns).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'rest_seconds' })]),
+    );
 
     const template = await createTemplate(db as never, {
       name: 'Rest template',
@@ -780,7 +782,9 @@ describe('core app flow repository acceptance', () => {
     await appendEvent(db, session.id, 'rest_timer_cancelled', { cancelled_at: 20_000 });
     await appendEvent(db, session.id, 'rest_timer_completed', { completed_at: 30_000 });
 
-    expect((await getEventsBySession(db as never, session.id)).map((event) => event.event_type)).toEqual([
+    expect(
+      (await getEventsBySession(db as never, session.id)).map((event) => event.event_type),
+    ).toEqual([
       'session_started',
       'rest_timer_started',
       'rest_timer_cancelled',
@@ -822,6 +826,30 @@ describe('core app flow repository acceptance', () => {
       expect.objectContaining({ exercise_id: bench.id, weight: 80, reps: 5 }),
       expect.objectContaining({ exercise_id: squat.id, weight: 100, reps: 3 }),
     ]);
+  });
+
+  it('returns the newest in-progress session without discarding older session data', async () => {
+    db = await setupDb();
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const older = await createSession(db as never, { templateId: null, name: 'Older active' });
+    const newest = await createSession(db as never, { templateId: null, name: 'Newest active' });
+
+    expect((await getInProgressSession(db as never))?.id).toBe(newest.id);
+    expect(
+      await db.getAllAsync<WorkoutSession>(
+        "SELECT * FROM workout_sessions WHERE status = 'in_progress' ORDER BY started_at DESC",
+      ),
+    ).toEqual([
+      expect.objectContaining({ id: newest.id, status: 'in_progress' }),
+      expect.objectContaining({ id: older.id, status: 'in_progress' }),
+    ]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[sessions] Multiple in-progress sessions found; leaving older sessions intact',
+      { keptSessionId: newest.id, olderSessionIds: [older.id] },
+    );
+
+    warnSpy.mockRestore();
   });
 
   it('rebuilds old set_added events without set_type as working sets', async () => {
@@ -1000,6 +1028,25 @@ describe('core app flow repository acceptance', () => {
     expect(await getWorkoutSummary(db as never, session.id)).toEqual(
       expect.objectContaining({ prCount: 3, prs: expect.arrayContaining(prs) }),
     );
+  });
+
+  it('does not append duplicate end events when endSession is called twice', async () => {
+    db = await setupDb();
+    const session = await createSession(db as never, { templateId: null, name: 'Double end' });
+
+    await endSession(db as never, session.id, 0);
+    await endSession(db as never, session.id, 0);
+
+    expect(
+      (await getEventsBySession(db as never, session.id)).filter(
+        (event) => event.event_type === 'session_ended',
+      ),
+    ).toHaveLength(1);
+    expect(
+      await db.getFirstAsync<WorkoutSession>('SELECT * FROM workout_sessions WHERE id = ?', [
+        session.id,
+      ]),
+    ).toEqual(expect.objectContaining({ status: 'completed' }));
   });
 
   it('compares final PRs against completed sessions only and ignores invalid current sets', async () => {

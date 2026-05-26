@@ -2,6 +2,7 @@ import React from 'react';
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import LiveWorkout from '@/screens/LiveWorkout';
+import { openDb } from '@/db/client';
 import { getPreviousPRDataForExercises } from '@/db/repositories/prs.repo';
 import { getProgressionSuggestion } from '@/domain/progression';
 import { useSessionStore, type UseSessionStoreReturn } from '@/state/session.store';
@@ -66,6 +67,7 @@ jest.mock('@/screens/ExerciseHistorySheet', () => () => null);
 jest.mock('@/screens/VoiceConfirm', () => () => null);
 
 const useSessionStoreMock = useSessionStore as jest.MockedFunction<typeof useSessionStore>;
+const openDbMock = openDb as jest.MockedFunction<typeof openDb>;
 const getPreviousPRDataForExercisesMock = getPreviousPRDataForExercises as jest.MockedFunction<
   typeof getPreviousPRDataForExercises
 >;
@@ -76,6 +78,7 @@ const getProgressionSuggestionMock = getProgressionSuggestion as jest.MockedFunc
 function activeStore(overrides: Partial<UseSessionStoreReturn> = {}): UseSessionStoreReturn {
   return {
     phase: 'active',
+    startupError: null,
     session: {
       id: 'session-1',
       template_id: null,
@@ -142,6 +145,7 @@ describe('LiveWorkout screen core flow', () => {
     jest.clearAllMocks();
     jest.useRealTimers();
     mockRouteParams = {};
+    openDbMock.mockResolvedValue(mockDb as never);
     mockDb.getAllAsync.mockResolvedValue([]);
     mockDb.getFirstAsync.mockResolvedValue(null);
     mockDb.runAsync.mockResolvedValue({ changes: 0, lastInsertRowId: 0 });
@@ -379,6 +383,48 @@ describe('LiveWorkout screen core flow', () => {
         expect.objectContaining({ text: 'Discard', style: 'destructive' }),
       ]),
     );
+
+    alertSpy.mockRestore();
+  });
+
+  it('shows a recoverable error instead of a permanent loading state', () => {
+    useSessionStoreMock.mockReturnValue(
+      activeStore({
+        phase: 'error',
+        startupError: 'open database failed',
+        session: null,
+        exercises: [],
+        sets: [],
+        activeExerciseId: null,
+      }),
+    );
+
+    const { getByTestId, getByText, queryByTestId } = render(<LiveWorkout />);
+
+    expect(getByTestId('live-workout-error')).toBeTruthy();
+    expect(getByText('Workout could not open')).toBeTruthy();
+    expect(getByText('open database failed')).toBeTruthy();
+    expect(queryByTestId('log-set-btn')).toBeNull();
+
+    fireEvent.press(getByTestId('live-workout-back-home'));
+    expect(mockPopToTop).toHaveBeenCalledTimes(1);
+  });
+
+  it('guards the finish action from duplicate taps', async () => {
+    const store = activeStore();
+    useSessionStoreMock.mockReturnValue(store);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      buttons?.find((button) => button.text === 'End Workout')?.onPress?.();
+    });
+
+    const { getByTestId } = render(<LiveWorkout />);
+
+    fireEvent.press(getByTestId('end-workout-btn'));
+    fireEvent.press(getByTestId('end-workout-btn'));
+
+    await waitFor(() => expect(store.endWorkout).toHaveBeenCalledTimes(1));
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith('EndWorkoutSummary', { sessionId: 'session-1' });
 
     alertSpy.mockRestore();
   });

@@ -51,10 +51,11 @@ export interface LogSetParams {
   source?: 'tap' | 'voice';
 }
 
-export type StorePhase = 'loading' | 'prompt_resume' | 'active' | 'ended';
+export type StorePhase = 'loading' | 'prompt_resume' | 'active' | 'ended' | 'error';
 
 export interface UseSessionStoreReturn {
   phase: StorePhase;
+  startupError: string | null;
   session: WorkoutSession | null;
   existingSession: WorkoutSession | null;
   resumedStartedAt: number | null;
@@ -171,8 +172,14 @@ async function recordFinalPrsSafely(db: SQLiteDatabase, sessionId: string): Prom
   }
 }
 
+function formatDevError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 export function useSessionStore(templateId: string | undefined): UseSessionStoreReturn {
   const [phase, setPhase] = useState<StorePhase>('loading');
+  const [startupError, setStartupError] = useState<string | null>(null);
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [existingSession, setExistingSession] = useState<WorkoutSession | null>(null);
   const [resumedStartedAt, setResumedStartedAt] = useState<number | null>(null);
@@ -180,6 +187,16 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
   const [sets, setSets] = useState<WorkoutSet[]>([]);
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
   const dbRef = useRef<SQLiteDatabase | null>(null);
+  const endingRef = useRef(false);
+
+  const failStartup = useCallback((context: string, error: unknown) => {
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.error(`[session] ${context}`, error);
+    }
+    setStartupError(__DEV__ ? formatDevError(error) : 'Workout setup failed.');
+    setPhase('error');
+  }, []);
 
   const initSession = useCallback(async (sess: WorkoutSession, db: SQLiteDatabase) => {
     await rebuildSets(db, sess.id);
@@ -231,20 +248,26 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
         setSession(sess);
         setPhase('active');
       }
-    })().catch(() => {});
+    })().catch((error) => {
+      if (!cancelled) failStartup('Failed to start workout session', error);
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [templateId]);
+  }, [failStartup, templateId]);
 
   const resumeExisting = useCallback(async () => {
     const db = dbRef.current;
     if (!db || !existingSession) return;
-    await initSession(existingSession, db);
-    setResumedStartedAt(existingSession.started_at);
-    setExistingSession(null);
-  }, [existingSession, initSession]);
+    try {
+      await initSession(existingSession, db);
+      setResumedStartedAt(existingSession.started_at);
+      setExistingSession(null);
+    } catch (error) {
+      failStartup('Failed to resume workout session', error);
+    }
+  }, [existingSession, failStartup, initSession]);
 
   const endExisting = useCallback(async () => {
     const db = dbRef.current;
@@ -267,18 +290,22 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
   const discardAndStart = useCallback(async () => {
     const db = dbRef.current;
     if (!db || !existingSession) return;
-    await dbDiscardSession(db, existingSession.id);
-    setExistingSession(null);
-    const sess = await createSession(db, { templateId: templateId ?? null, name: null });
-    setResumedStartedAt(null);
-    if (templateId) {
-      const exs = await loadExercisesForTemplate(db, templateId);
-      setExercises(exs);
-      setActiveExerciseId(exs[0]?.id ?? null);
+    try {
+      await dbDiscardSession(db, existingSession.id);
+      setExistingSession(null);
+      const sess = await createSession(db, { templateId: templateId ?? null, name: null });
+      setResumedStartedAt(null);
+      if (templateId) {
+        const exs = await loadExercisesForTemplate(db, templateId);
+        setExercises(exs);
+        setActiveExerciseId(exs[0]?.id ?? null);
+      }
+      setSession(sess);
+      setPhase('active');
+    } catch (error) {
+      failStartup('Failed to discard and start workout session', error);
     }
-    setSession(sess);
-    setPhase('active');
-  }, [existingSession, templateId]);
+  }, [existingSession, failStartup, templateId]);
 
   const logSet = useCallback(
     async (params: LogSetParams) => {
@@ -431,12 +458,17 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
 
   const endWorkout = useCallback(async () => {
     const db = dbRef.current;
-    if (!db || !session) return;
-    const totalVolume = calculateSessionVolume(sets.filter((set) => set.deleted_at === null));
-    await dbEndSession(db, session.id, totalVolume);
-    await updateSessionExerciseHistoryCache(db, session.id);
-    await recordFinalPrsSafely(db, session.id);
-    setPhase('ended');
+    if (!db || !session || endingRef.current) return;
+    endingRef.current = true;
+    try {
+      const totalVolume = calculateSessionVolume(sets.filter((set) => set.deleted_at === null));
+      await dbEndSession(db, session.id, totalVolume);
+      await updateSessionExerciseHistoryCache(db, session.id);
+      await recordFinalPrsSafely(db, session.id);
+      setPhase('ended');
+    } finally {
+      endingRef.current = false;
+    }
   }, [session, sets]);
 
   const discardWorkout = useCallback(async () => {
@@ -477,6 +509,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
 
   return {
     phase,
+    startupError,
     session,
     existingSession,
     resumedStartedAt,

@@ -4,7 +4,9 @@ import Home from '@/screens/Home';
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
   useNavigation: () => ({ navigate: jest.fn() }),
-  useFocusEffect: (cb: () => void) => { cb(); },
+  useFocusEffect: (cb: () => void) => {
+    cb();
+  },
 }));
 
 jest.mock('@/db/client', () => ({
@@ -15,6 +17,18 @@ jest.mock('@/db/client', () => ({
 
 jest.mock('@/db/repositories/templates.repo', () => ({
   getAllTemplatesWithCount: jest.fn().mockResolvedValue([]),
+}));
+
+jest.mock('@/db/repositories/sessions.repo', () => ({
+  getInProgressSession: jest.fn().mockResolvedValue(null),
+}));
+
+jest.mock('@/db/repositories/tags.repo', () => ({
+  getUntaggedCompletedSession: jest.fn().mockResolvedValue(null),
+}));
+
+jest.mock('@/db/repositories/insights.repo', () => ({
+  maybeGenerateWeeklyInsight: jest.fn().mockResolvedValue(null),
 }));
 
 describe('Home screen', () => {

@@ -7,16 +7,18 @@ import type {
   SessionDiscardedPayload,
 } from '@/domain/events';
 
-export async function getInProgressSession(
-  db: SQLiteDatabase,
-): Promise<WorkoutSession | null> {
+export async function getInProgressSession(db: SQLiteDatabase): Promise<WorkoutSession | null> {
   const sessions = await db.getAllAsync<WorkoutSession>(
     "SELECT * FROM workout_sessions WHERE status = 'in_progress' ORDER BY started_at DESC",
   );
   const [newest, ...older] = sessions;
 
-  for (const session of older) {
-    await discardSession(db, session.id);
+  if (older.length > 0 && __DEV__) {
+    // eslint-disable-next-line no-console
+    console.warn('[sessions] Multiple in-progress sessions found; leaving older sessions intact', {
+      keptSessionId: newest?.id ?? null,
+      olderSessionIds: older.map((session) => session.id),
+    });
   }
 
   return newest ?? null;
@@ -72,12 +74,14 @@ export async function endSession(
 ): Promise<void> {
   const now = Date.now();
   await db.withTransactionAsync(async () => {
-    await db.runAsync(
+    const result = await db.runAsync(
       `UPDATE workout_sessions
           SET status = 'completed', ended_at = ?, total_volume_cached = ?, updated_at = ?
-        WHERE id = ?`,
+        WHERE id = ? AND status = 'in_progress'`,
       [now, totalVolume, now, sessionId],
     );
+    if (result.changes === 0) return;
+
     const payload: SessionEndedPayload = { ended_at: now, total_volume: totalVolume };
     await db.runAsync(
       `INSERT OR IGNORE INTO workout_events
@@ -91,10 +95,14 @@ export async function endSession(
 export async function discardSession(db: SQLiteDatabase, sessionId: string): Promise<void> {
   const now = Date.now();
   await db.withTransactionAsync(async () => {
-    await db.runAsync(
-      `UPDATE workout_sessions SET status = 'discarded', ended_at = ?, updated_at = ? WHERE id = ?`,
+    const result = await db.runAsync(
+      `UPDATE workout_sessions
+          SET status = 'discarded', ended_at = ?, updated_at = ?
+        WHERE id = ? AND status = 'in_progress'`,
       [now, now, sessionId],
     );
+    if (result.changes === 0) return;
+
     const payload: SessionDiscardedPayload = { discarded_at: now };
     await db.runAsync(
       `INSERT OR IGNORE INTO workout_events

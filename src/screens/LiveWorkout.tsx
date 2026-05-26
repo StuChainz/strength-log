@@ -205,6 +205,7 @@ export default function LiveWorkout() {
   const store = useSessionStore(templateId);
   const {
     phase,
+    startupError,
     session,
     existingSession,
     resumedStartedAt,
@@ -335,36 +336,31 @@ export default function LiveWorkout() {
     }),
     [activeExercise, activeExerciseId, exercises, lastLoggedSet],
   );
-  const suggestion = useMemo(
-    () => {
-      const { recentSets, previousSessionSets } = getRecentHistoryBuckets(lastSets);
-      const currentSessionSets =
-        session === null || activeExerciseId === null
-          ? []
-          : sets
-              .filter(
-                (set) => set.session_id === session.id && set.exercise_id === activeExerciseId,
-              )
-              .sort((a, b) => a.position - b.position);
+  const suggestion = useMemo(() => {
+    const { recentSets, previousSessionSets } = getRecentHistoryBuckets(lastSets);
+    const currentSessionSets =
+      session === null || activeExerciseId === null
+        ? []
+        : sets
+            .filter((set) => set.session_id === session.id && set.exercise_id === activeExerciseId)
+            .sort((a, b) => a.position - b.position);
 
-      return getProgressionSuggestion({
-        exercise: activeExercise?.progressionExercise ?? {
-          category: activeExercise?.category ?? 'barbell',
-        },
-        templateTarget: {
-          targetSets: activeExercise?.targetSets ?? null,
-          targetReps: activeExercise?.targetReps ?? null,
-          targetWeight: activeExercise?.targetWeight ?? null,
-          unit: activeExercise?.defaultUnit ?? 'kg',
-        },
-        progressionRule: activeExercise?.progressionRule ?? { rule: 'none' },
-        recentSets,
-        previousSessionSets,
-        currentSessionSets,
-      });
-    },
-    [activeExercise, activeExerciseId, lastSets, session, sets],
-  );
+    return getProgressionSuggestion({
+      exercise: activeExercise?.progressionExercise ?? {
+        category: activeExercise?.category ?? 'barbell',
+      },
+      templateTarget: {
+        targetSets: activeExercise?.targetSets ?? null,
+        targetReps: activeExercise?.targetReps ?? null,
+        targetWeight: activeExercise?.targetWeight ?? null,
+        unit: activeExercise?.defaultUnit ?? 'kg',
+      },
+      progressionRule: activeExercise?.progressionRule ?? { rule: 'none' },
+      recentSets,
+      previousSessionSets,
+      currentSessionSets,
+    });
+  }, [activeExercise, activeExerciseId, lastSets, session, sets]);
   const potentialPRs = useMemo(
     () => (previousPRData ? detectLivePotentialPRs(sets, previousPRData) : []),
     [previousPRData, sets],
@@ -381,9 +377,7 @@ export default function LiveWorkout() {
     (indicator) =>
       indicator.exercise_id === activeExerciseId && indicator.record_type === 'session_volume',
   );
-  const restRemainingSeconds = restTimer
-    ? getRestTimerRemainingSeconds(restTimer, restNow)
-    : 0;
+  const restRemainingSeconds = restTimer ? getRestTimerRemainingSeconds(restTimer, restNow) : 0;
   const restTimerExerciseName =
     restTimer?.exerciseName ??
     exercises.find((exercise) => exercise.id === restTimer?.exerciseId)?.name ??
@@ -414,7 +408,11 @@ export default function LiveWorkout() {
       .then((data) => {
         if (!cancelled) setPreviousPRData(data);
       })
-      .catch(() => {
+      .catch((error) => {
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.warn('[LiveWorkout] Failed to load previous PR data', error);
+        }
         if (!cancelled) setPreviousPRData(null);
       });
     return () => {
@@ -461,7 +459,12 @@ export default function LiveWorkout() {
         setRestNow(Date.now());
         setRestTimer(recoveredTimer);
       })
-      .catch(() => {});
+      .catch((error) => {
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.warn('[LiveWorkout] Failed to recover rest timer', error);
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -525,7 +528,13 @@ export default function LiveWorkout() {
       .then((rows) => {
         if (!cancelled) setLastSets(rows);
       })
-      .catch(() => {});
+      .catch((error) => {
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.warn('[LiveWorkout] Failed to load previous exercise sets', error);
+        }
+        if (!cancelled) setLastSets([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -831,18 +840,28 @@ export default function LiveWorkout() {
   ]);
 
   const handleEndWorkout = useCallback(() => {
+    if (completedRef.current) return;
     Alert.alert('End Workout', 'Finish and save this workout?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'End Workout',
         onPress: () => {
-          if (!session) return;
+          if (!session || completedRef.current) return;
           const endedSessionId = session.id;
           completedRef.current = true;
-          void endWorkout().then(() => {
-            Vibration.vibrate(30);
-            navigation.replace('EndWorkoutSummary', { sessionId: endedSessionId });
-          });
+          void endWorkout()
+            .then(() => {
+              Vibration.vibrate(30);
+              navigation.replace('EndWorkoutSummary', { sessionId: endedSessionId });
+            })
+            .catch((error) => {
+              completedRef.current = false;
+              if (__DEV__) {
+                // eslint-disable-next-line no-console
+                console.error('[LiveWorkout] Failed to end workout', error);
+              }
+              Alert.alert('Could not end workout', 'Your workout is still in progress. Try again.');
+            });
         },
       },
       { text: 'Discard', style: 'destructive', onPress: () => void discardWorkout() },
@@ -985,6 +1004,29 @@ export default function LiveWorkout() {
     return (
       <SafeAreaView style={[styles.safe, styles.center]} edges={['top']}>
         <ActivityIndicator color={T.accent} />
+      </SafeAreaView>
+    );
+  }
+
+  if (phase === 'error') {
+    return (
+      <SafeAreaView style={[styles.safe, styles.center]} edges={['top', 'bottom']}>
+        <View style={styles.errorCard} testID="live-workout-error">
+          <Ionicons name="warning-outline" size={22} color={T.danger} />
+          <Text style={styles.errorTitle}>Workout could not open</Text>
+          <Text style={styles.errorBody}>
+            {__DEV__ && startupError
+              ? startupError
+              : 'Nothing was discarded. Go back and try opening the workout again.'}
+          </Text>
+          <TouchableOpacity
+            style={styles.errorAction}
+            onPress={() => navigation.popToTop()}
+            testID="live-workout-back-home"
+          >
+            <Text style={styles.errorActionText}>Back to Home</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
@@ -1147,7 +1189,10 @@ export default function LiveWorkout() {
                 contentContainerStyle={styles.manualRestOptions}
               >
                 <TouchableOpacity
-                  style={[styles.manualRestBtn, activeRestSeconds === null && styles.manualRestBtnActive]}
+                  style={[
+                    styles.manualRestBtn,
+                    activeRestSeconds === null && styles.manualRestBtnActive,
+                  ]}
                   onPress={handleClearExerciseRest}
                   testID="manual-rest-off"
                 >
@@ -1589,18 +1634,18 @@ export default function LiveWorkout() {
         exerciseId={activeExercise?.id ?? null}
         exerciseName={activeExercise?.name ?? ''}
         category={activeExercise?.category ?? 'barbell'}
-            targetReps={activeExercise?.targetReps ?? null}
-            targetSets={activeExercise?.targetSets ?? null}
-            targetWeight={activeExercise?.targetWeight ?? null}
-            progressionRule={activeExercise?.progressionRule ?? { rule: 'none' }}
-            progressionExercise={
-              activeExercise?.progressionExercise ?? {
-                category: activeExercise?.category ?? 'barbell',
-              }
-            }
-            defaultUnit={activeExercise?.defaultUnit ?? 'kg'}
-            onClose={() => setHistoryVisible(false)}
-            onApplySuggestion={(next) => {
+        targetReps={activeExercise?.targetReps ?? null}
+        targetSets={activeExercise?.targetSets ?? null}
+        targetWeight={activeExercise?.targetWeight ?? null}
+        progressionRule={activeExercise?.progressionRule ?? { rule: 'none' }}
+        progressionExercise={
+          activeExercise?.progressionExercise ?? {
+            category: activeExercise?.category ?? 'barbell',
+          }
+        }
+        defaultUnit={activeExercise?.defaultUnit ?? 'kg'}
+        onClose={() => setHistoryVisible(false)}
+        onApplySuggestion={(next) => {
           if (next.weight !== null) setWeight(next.weight);
           if (next.reps !== null) setReps(next.reps);
           setRpe(null);
@@ -1834,6 +1879,29 @@ export default function LiveWorkout() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  errorCard: {
+    width: '86%',
+    maxWidth: 380,
+    alignItems: 'center',
+    gap: 10,
+    padding: 18,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surface,
+  },
+  errorTitle: { color: T.text, fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  errorBody: { color: T.textDim, fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  errorAction: {
+    marginTop: 4,
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: T.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  errorActionText: { color: T.accentInk, fontSize: 14, fontWeight: '800' },
 
   topBar: {
     flexDirection: 'row',

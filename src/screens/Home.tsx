@@ -29,6 +29,7 @@ export default function Home() {
   const [unfinishedTagsSessionId, setUnfinishedTagsSessionId] = useState<string | null>(null);
   const [insightCard, setInsightCard] = useState<WeeklyInsightCard | null>(null);
   const [now, setNow] = useState<number>(Date.now);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -52,8 +53,13 @@ export default function Home() {
       setUnfinishedTagsSessionId(unfinishedTags?.id ?? null);
       setInsightCard(latestInsight);
       setNow(Date.now());
-    } catch {
-      // ignore
+      setLoadError(null);
+    } catch (error) {
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.error('[Home] Failed to load home data', error);
+      }
+      setLoadError(__DEV__ ? formatDevError(error) : null);
     }
   }, []);
 
@@ -121,6 +127,12 @@ export default function Home() {
             <Ionicons name="ellipsis-horizontal" size={18} color={T.textDim} />
           </TouchableOpacity>
         </View>
+
+        {__DEV__ && loadError ? (
+          <View style={styles.devError} testID="home-load-error">
+            <Text style={styles.devErrorText}>Home data failed to load: {loadError}</Text>
+          </View>
+        ) : null}
 
         {inProgress && (
           <View style={styles.section}>
@@ -336,6 +348,20 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   resumeTitle: { color: T.text, fontSize: 14, fontWeight: '600', marginTop: 3 },
+  devError: {
+    marginHorizontal: 22,
+    marginTop: 10,
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#7f1d1d',
+    backgroundColor: '#2a0d0d',
+  },
+  devErrorText: {
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    color: '#fecaca',
+  },
 
   heroCard: {
     backgroundColor: T.accent,
@@ -442,3 +468,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 });
+
+function formatDevError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}

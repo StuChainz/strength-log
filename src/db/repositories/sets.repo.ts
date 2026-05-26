@@ -91,6 +91,22 @@ export async function softDeleteSet(
   await db.runAsync('UPDATE workout_sets SET deleted_at = ? WHERE id = ?', [deletedAt, id]);
 }
 
+function normalizeSetType(value: unknown): SetType {
+  return value === 'warmup' || value === 'drop' || value === 'working' ? value : 'working';
+}
+
+function parseEventPayload<T>(eventType: string, payloadJson: string): T | null {
+  try {
+    return JSON.parse(payloadJson) as T;
+  } catch (error) {
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.warn(`[sets] Ignoring malformed ${eventType} event during rebuild`, error);
+    }
+    return null;
+  }
+}
+
 export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promise<void> {
   const events = await db.getAllAsync<{
     event_type: string;
@@ -104,7 +120,9 @@ export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promis
   await db.withTransactionAsync(async () => {
     for (const event of events) {
       if (event.event_type === 'set_added') {
-        const p = JSON.parse(event.payload_json) as SetAddedPayload;
+        const p = parseEventPayload<SetAddedPayload>(event.event_type, event.payload_json);
+        if (!p) continue;
+        const setType = normalizeSetType(p.set_type);
         await db.runAsync(
           `INSERT OR IGNORE INTO workout_sets
              (id, session_id, exercise_id, position, weight, reps, rpe,
@@ -118,22 +136,24 @@ export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promis
             p.weight,
             p.reps,
             p.rpe,
-            p.unit,
-            p.set_type === 'warmup' ? 1 : 0,
-            p.set_type ?? 'working',
+            p.unit ?? 'kg',
+            setType === 'warmup' ? 1 : 0,
+            setType,
             p.logged_at,
-            p.source,
+            p.source ?? 'tap',
             p.client_set_id,
           ],
         );
       } else if (event.event_type === 'set_deleted') {
-        const p = JSON.parse(event.payload_json) as SetDeletedPayload;
+        const p = parseEventPayload<SetDeletedPayload>(event.event_type, event.payload_json);
+        if (!p) continue;
         await db.runAsync(
           `UPDATE workout_sets SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL`,
           [event.created_at, p.set_id],
         );
       } else if (event.event_type === 'set_edited') {
-        const p = JSON.parse(event.payload_json) as SetEditedPayload;
+        const p = parseEventPayload<SetEditedPayload>(event.event_type, event.payload_json);
+        if (!p) continue;
         const setClauses: string[] = [];
         const values: (number | string | null)[] = [];
         if (p.weight !== undefined) {
@@ -153,8 +173,9 @@ export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promis
           values.push(p.unit);
         }
         if (p.set_type !== undefined) {
+          const setType = normalizeSetType(p.set_type);
           setClauses.push('set_type = ?', 'is_warmup = ?');
-          values.push(p.set_type, p.set_type === 'warmup' ? 1 : 0);
+          values.push(setType, setType === 'warmup' ? 1 : 0);
         }
         if (setClauses.length > 0) {
           values.push(p.set_id);

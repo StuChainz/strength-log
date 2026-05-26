@@ -85,6 +85,7 @@ export default function TemplateBuilder() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const dbRef = useRef<Awaited<ReturnType<typeof openDb>> | null>(null);
   const getDb = useCallback(async () => {
@@ -96,40 +97,49 @@ export default function TemplateBuilder() {
   useEffect(() => {
     if (!templateId) return;
     (async () => {
-      const db = await getDb();
-      const [tmpl, existingItems] = await Promise.all([
-        getTemplateById(db, templateId),
-        getTemplateItemsWithExercise(db, templateId),
-      ]);
-      if (!tmpl) return;
-      setTemplateName(tmpl.name);
-      setTemplateNotes(tmpl.notes ?? '');
-      setItems(
-        existingItems.map((it) => ({
-          key: nextKey(),
-          exercise_id: it.exercise_id,
-          exercise_name: it.exercise_name,
-          exercise_category: it.exercise_category,
-          exercise_default_unit: it.exercise_default_unit,
-          target_sets: it.target_sets != null ? String(it.target_sets) : '',
-          target_reps: it.target_reps != null ? String(it.target_reps) : '',
-          target_weight: it.target_weight != null ? String(it.target_weight) : '',
-          target_rpe: it.target_rpe != null ? String(it.target_rpe) : '',
-          rest_seconds: it.rest_seconds != null ? String(it.rest_seconds) : '',
-          progression_rule: it.progression_rule ?? 'none',
-          increment:
-            it.exercise_default_unit === 'lb'
-              ? it.increment_lb != null
-                ? String(it.increment_lb)
-                : ''
-              : it.increment_kg != null
-                ? String(it.increment_kg)
-                : '',
-          rep_range_min: it.rep_range_min != null ? String(it.rep_range_min) : '',
-          rep_range_max: it.rep_range_max != null ? String(it.rep_range_max) : '',
-          rpe_cap: it.rpe_cap != null ? String(it.rpe_cap) : '',
-        })),
-      );
+      try {
+        const db = await getDb();
+        const [tmpl, existingItems] = await Promise.all([
+          getTemplateById(db, templateId),
+          getTemplateItemsWithExercise(db, templateId),
+        ]);
+        if (!tmpl) return;
+        setTemplateName(tmpl.name);
+        setTemplateNotes(tmpl.notes ?? '');
+        setItems(
+          existingItems.map((it) => ({
+            key: nextKey(),
+            exercise_id: it.exercise_id,
+            exercise_name: it.exercise_name,
+            exercise_category: it.exercise_category,
+            exercise_default_unit: it.exercise_default_unit,
+            target_sets: it.target_sets != null ? String(it.target_sets) : '',
+            target_reps: it.target_reps != null ? String(it.target_reps) : '',
+            target_weight: it.target_weight != null ? String(it.target_weight) : '',
+            target_rpe: it.target_rpe != null ? String(it.target_rpe) : '',
+            rest_seconds: it.rest_seconds != null ? String(it.rest_seconds) : '',
+            progression_rule: it.progression_rule ?? 'none',
+            increment:
+              it.exercise_default_unit === 'lb'
+                ? it.increment_lb != null
+                  ? String(it.increment_lb)
+                  : ''
+                : it.increment_kg != null
+                  ? String(it.increment_kg)
+                  : '',
+            rep_range_min: it.rep_range_min != null ? String(it.rep_range_min) : '',
+            rep_range_max: it.rep_range_max != null ? String(it.rep_range_max) : '',
+            rpe_cap: it.rpe_cap != null ? String(it.rpe_cap) : '',
+          })),
+        );
+        setLoadError(null);
+      } catch (error) {
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.error('[TemplateBuilder] Failed to load template', error);
+        }
+        setLoadError(__DEV__ ? formatDevError(error) : null);
+      }
     })();
   }, [templateId, getDb]);
 
@@ -263,7 +273,11 @@ export default function TemplateBuilder() {
         });
       }
       navigation.goBack();
-    } catch {
+    } catch (error) {
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.error('[TemplateBuilder] Failed to save template', error);
+      }
       Alert.alert('Error', 'Could not save the template. Please try again.');
     } finally {
       setSaving(false);
@@ -282,9 +296,17 @@ export default function TemplateBuilder() {
           style: 'destructive',
           onPress: async () => {
             if (!templateId) return;
-            const db = await getDb();
-            await archiveTemplate(db, templateId);
-            navigation.goBack();
+            try {
+              const db = await getDb();
+              await archiveTemplate(db, templateId);
+              navigation.goBack();
+            } catch (error) {
+              if (__DEV__) {
+                // eslint-disable-next-line no-console
+                console.error('[TemplateBuilder] Failed to archive template', error);
+              }
+              Alert.alert('Error', 'Could not archive the template. Please try again.');
+            }
           },
         },
       ],
@@ -324,6 +346,11 @@ export default function TemplateBuilder() {
             {nameError}
           </Text>
         )}
+        {__DEV__ && loadError ? (
+          <View style={styles.devError} testID="template-load-error">
+            <Text style={styles.devErrorText}>Template failed to load: {loadError}</Text>
+          </View>
+        ) : null}
 
         {/* Notes */}
         <Text style={styles.label}>Notes (optional)</Text>
@@ -474,9 +501,7 @@ export default function TemplateBuilder() {
                           onPress={() => updateItemField(index, 'rest_seconds', value)}
                           testID={`rest-preset-${seconds}-${item.key}`}
                         >
-                          <Text
-                            style={[styles.restChipText, active && styles.restChipTextActive]}
-                          >
+                          <Text style={[styles.restChipText, active && styles.restChipTextActive]}>
                             {seconds}s
                           </Text>
                         </TouchableOpacity>
@@ -485,7 +510,9 @@ export default function TemplateBuilder() {
                     <TextInput
                       style={styles.restInput}
                       value={
-                        REST_PRESETS_SECONDS.some((seconds) => String(seconds) === item.rest_seconds)
+                        REST_PRESETS_SECONDS.some(
+                          (seconds) => String(seconds) === item.rest_seconds,
+                        )
                           ? ''
                           : item.rest_seconds
                       }
@@ -649,6 +676,19 @@ const styles = StyleSheet.create({
   notesInput: { minHeight: 72, textAlignVertical: 'top' },
 
   errorText: { color: '#e74c3c', fontSize: 13, marginTop: 4 },
+  devError: {
+    marginTop: 10,
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#7f1d1d',
+    backgroundColor: '#2a0d0d',
+  },
+  devErrorText: {
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    color: '#fecaca',
+  },
 
   emptyExercises: {
     paddingVertical: 20,
@@ -808,3 +848,8 @@ const styles = StyleSheet.create({
   },
   archiveBtnText: { color: '#e74c3c', fontWeight: '600', fontSize: 15 },
 });
+
+function formatDevError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}

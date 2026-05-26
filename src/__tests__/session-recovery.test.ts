@@ -16,22 +16,24 @@ function session(id: string, startedAt: number): WorkoutSession {
 }
 
 describe('session recovery', () => {
-  it('returns the newest in-progress session and discards older duplicates', async () => {
+  it('returns the newest in-progress session and leaves older sessions untouched', async () => {
     const rows = [session('new', 200), session('old', 100)];
-    const writes: string[] = [];
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const db = {
       getAllAsync: jest.fn(async () => rows),
-      runAsync: jest.fn(async (sql: string) => {
-        writes.push(sql);
-        return { lastInsertRowId: 0, changes: 1 };
-      }),
+      runAsync: jest.fn(),
       withTransactionAsync: jest.fn(async (task: () => Promise<void>) => task()),
     };
 
     const recovered = await getInProgressSession(db as never);
 
     expect(recovered?.id).toBe('new');
-    expect(writes.some((sql) => sql.includes("status = 'discarded'"))).toBe(true);
-    expect(writes.some((sql) => sql.includes("'session_discarded'"))).toBe(true);
+    expect(db.runAsync).not.toHaveBeenCalled();
+    expect(db.withTransactionAsync).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[sessions] Multiple in-progress sessions found; leaving older sessions intact',
+      { keptSessionId: 'new', olderSessionIds: ['old'] },
+    );
+    warnSpy.mockRestore();
   });
 });
