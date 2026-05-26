@@ -1,6 +1,6 @@
 import React from 'react';
 import { Alert } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import LiveWorkout from '@/screens/LiveWorkout';
 import { getPreviousPRDataForExercises } from '@/db/repositories/prs.repo';
 import { getProgressionSuggestion } from '@/domain/progression';
@@ -11,6 +11,7 @@ const mockPopToTop = jest.fn();
 let mockRouteParams: { templateId?: string } = {};
 const mockDb = {
   getAllAsync: jest.fn().mockResolvedValue([]),
+  getFirstAsync: jest.fn().mockResolvedValue(null),
   runAsync: jest.fn(),
 };
 
@@ -33,6 +34,11 @@ jest.mock('@/state/session.store', () => ({
 
 jest.mock('@/db/repositories/prs.repo', () => ({
   getPreviousPRDataForExercises: jest.fn(),
+}));
+
+jest.mock('@/db/repositories/events.repo', () => ({
+  getLatestRestTimerEvent: jest.fn().mockResolvedValue(null),
+  insertEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@/domain/progression', () => ({
@@ -90,6 +96,7 @@ function activeStore(overrides: Partial<UseSessionStoreReturn> = {}): UseSession
         targetReps: 5,
         targetWeight: 80,
         targetRpe: 8,
+        restSeconds: null,
       },
     ],
     sets: [
@@ -130,8 +137,10 @@ function activeStore(overrides: Partial<UseSessionStoreReturn> = {}): UseSession
 describe('LiveWorkout screen core flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useRealTimers();
     mockRouteParams = {};
     mockDb.getAllAsync.mockResolvedValue([]);
+    mockDb.getFirstAsync.mockResolvedValue(null);
     mockDb.runAsync.mockResolvedValue({ changes: 0, lastInsertRowId: 0 });
     getPreviousPRDataForExercisesMock.mockResolvedValue({
       repMaxes: [],
@@ -146,6 +155,10 @@ describe('LiveWorkout screen core flow', () => {
       unit: 'kg',
     });
     useSessionStoreMock.mockReturnValue(activeStore());
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it("renders today's target with sets, reps, weight, RPE, and completed count", () => {
@@ -171,6 +184,7 @@ describe('LiveWorkout screen core flow', () => {
           targetReps: null,
           targetWeight: null,
           targetRpe: null,
+          restSeconds: null,
         },
       ],
       sets: [],
@@ -298,6 +312,69 @@ describe('LiveWorkout screen core flow', () => {
     );
   });
 
+  it('auto-starts the configured rest timer after logging a set', async () => {
+    const store = activeStore({
+      exercises: [{ ...activeStore().exercises[0]!, restSeconds: 90 }],
+      sets: [],
+    });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId } = render(<LiveWorkout />);
+
+    fireEvent.press(getByTestId('log-set-btn'));
+
+    await waitFor(() => expect(store.logSet).toHaveBeenCalledTimes(1));
+    expect(getByTestId('rest-timer-remaining').props.children).toBe('01:30');
+  });
+
+  it('does not auto-start a rest timer when no rest is configured', async () => {
+    const store = activeStore({ sets: [] });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId, queryByTestId } = render(<LiveWorkout />);
+
+    fireEvent.press(getByTestId('log-set-btn'));
+
+    await waitFor(() => expect(store.logSet).toHaveBeenCalledTimes(1));
+    expect(queryByTestId('rest-timer-remaining')).toBeNull();
+    expect(getByTestId('manual-rest-60')).toBeTruthy();
+  });
+
+  it('starts, extends, and stops a manual rest timer without logging sets', async () => {
+    const store = activeStore({ sets: [] });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId, queryByTestId } = render(<LiveWorkout />);
+
+    fireEvent.press(getByTestId('manual-rest-60'));
+    expect(getByTestId('rest-timer-remaining').props.children).toBe('01:00');
+
+    fireEvent.press(getByTestId('rest-add-30'));
+    expect(getByTestId('rest-timer-remaining').props.children).toBe('01:30');
+
+    fireEvent.press(getByTestId('rest-stop'));
+    expect(queryByTestId('rest-timer-remaining')).toBeNull();
+    expect(getByTestId('manual-rest-60')).toBeTruthy();
+    expect(store.logSet).not.toHaveBeenCalled();
+  });
+
+  it('shows rest done when the foreground timer reaches zero', async () => {
+    jest.useFakeTimers({ now: 1_000_000 });
+    const store = activeStore({ sets: [] });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId, getByText } = render(<LiveWorkout />);
+
+    fireEvent.press(getByTestId('manual-rest-60'));
+    act(() => {
+      jest.advanceTimersByTime(60_000);
+    });
+
+    await waitFor(() => expect(getByText('Rest done')).toBeTruthy());
+    expect(getByTestId('rest-timer-remaining').props.children).toBe('00:00');
+    jest.useRealTimers();
+  });
+
   it('commits typed edits from completed set weight and reps fields', async () => {
     const store = activeStore();
     useSessionStoreMock.mockReturnValue(store);
@@ -356,6 +433,7 @@ describe('LiveWorkout screen core flow', () => {
           targetReps: 5,
           targetWeight: 80,
           targetRpe: 8,
+          restSeconds: null,
         },
         {
           id: 'row',
@@ -366,6 +444,7 @@ describe('LiveWorkout screen core flow', () => {
           targetReps: null,
           targetWeight: null,
           targetRpe: null,
+          restSeconds: null,
         },
       ],
       sets: [
@@ -577,5 +656,19 @@ describe('LiveWorkout screen core flow', () => {
         source: 'voice',
       }),
     );
+  });
+
+  it('starts the real timer from typed rest commands', async () => {
+    const store = activeStore({ sets: [] });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByPlaceholderText, getByTestId } = render(<LiveWorkout />);
+    const input = getByPlaceholderText('Typed voice debug');
+
+    fireEvent.changeText(input, 'rest 3 minutes');
+    fireEvent(input, 'submitEditing');
+
+    await waitFor(() => expect(getByTestId('rest-timer-remaining').props.children).toBe('03:00'));
+    expect(store.logSet).not.toHaveBeenCalled();
   });
 });

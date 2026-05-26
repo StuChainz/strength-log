@@ -88,6 +88,9 @@ export type EventType =
   | 'set_added'
   | 'set_edited'
   | 'set_deleted'
+  | 'rest_timer_started'
+  | 'rest_timer_cancelled'
+  | 'rest_timer_completed'
   | 'session_ended'
   | 'session_discarded'
   | 'tags_added';
@@ -182,6 +185,7 @@ export interface TemplateItem {
   target_reps: number | null;
   target_weight: number | null;
   target_rpe: number | null;
+  rest_seconds: number | null;
 }
 
 export interface WorkoutSession {

@@ -35,6 +35,7 @@ export interface SessionExercise {
   targetReps: number | null;
   targetWeight: number | null;
   targetRpe: number | null;
+  restSeconds: number | null;
 }
 
 export interface LogSetParams {
@@ -93,6 +94,7 @@ async function loadExercisesForTemplate(
     targetReps: item.target_reps,
     targetWeight: item.target_weight,
     targetRpe: item.target_rpe,
+    restSeconds: item.rest_seconds,
   }));
 }
 
@@ -102,7 +104,8 @@ async function loadExercisesFromSets(
 ): Promise<SessionExercise[]> {
   return db.getAllAsync<SessionExercise>(
     `SELECT e.id, e.name, e.category, e.default_unit AS defaultUnit,
-            NULL AS targetSets, NULL AS targetReps, NULL AS targetWeight, NULL AS targetRpe
+            NULL AS targetSets, NULL AS targetReps, NULL AS targetWeight, NULL AS targetRpe,
+            NULL AS restSeconds
      FROM (
        SELECT exercise_id, MIN(position) AS min_pos
        FROM workout_sets
@@ -420,6 +423,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
           targetReps: null,
           targetWeight: null,
           targetRpe: null,
+          restSeconds: null,
         };
         return [...prev, next];
       });

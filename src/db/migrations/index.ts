@@ -232,6 +232,12 @@ CREATE INDEX IF NOT EXISTS idx_exercise_prs_record_type ON exercise_prs (record_
 CREATE INDEX IF NOT EXISTS idx_exercise_prs_achieved_at ON exercise_prs (achieved_at DESC);
 `;
 
+const MIGRATION_008 = `
+ALTER TABLE template_items
+  ADD COLUMN rest_seconds INTEGER
+  CHECK (rest_seconds IS NULL OR rest_seconds > 0);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { name: '001_init', sql: MIGRATION_001 },
   { name: '002_app_settings', sql: MIGRATION_002 },
@@ -240,4 +246,5 @@ export const MIGRATIONS: Migration[] = [
   { name: '005_exercise_metadata_source_index', sql: MIGRATION_005 },
   { name: '006_workout_set_type', sql: MIGRATION_006 },
   { name: '007_exercise_prs', sql: MIGRATION_007 },
+  { name: '008_template_item_rest_seconds', sql: MIGRATION_008 },
 ];

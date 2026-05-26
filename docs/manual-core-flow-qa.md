@@ -13,19 +13,24 @@ Use this checklist for the native Expo Go pass. Keep it short and record only cl
 
 1. Open Exercise Library.
 2. Confirm the seeded library count is present and seeded rows render.
-3. Search `bench` and confirm bench exercises appear.
-4. Search `dl` and confirm Deadlift appears through alias search.
+3. On iPhone, confirm filter chips are compact horizontal pills under the search bar.
+4. Scroll the filter chip row horizontally.
 5. Tap Push, Pull, Legs, Hinge, and Core chips and confirm each returns relevant rows.
-6. Create a custom exercise with minimal metadata, such as `QA Carry`, category `Other`, no muscle, no unit.
-7. Return to Exercise Library, tap Custom, and confirm `QA Carry` appears and does not crash the list.
+6. Confirm the exercise list remains visible while changing filters.
+7. Search `bench` and confirm bench exercises appear.
+8. Search `dl` and confirm Deadlift appears through alias search.
+9. Create a custom exercise with minimal metadata, such as `QA Carry`, category `Other`, no muscle, no unit.
+10. Return to Exercise Library, tap Custom, and confirm `QA Carry` appears and does not crash the list.
 
 ## Templates
 
 1. Create a template named `QA Push`.
 2. Add at least two exercises.
 3. Set target sets/reps for one exercise.
-4. While editing the template name, notes, sets, reps, weight, and RPE fields, confirm the keyboard does not cover the focused field.
-5. Save, leave the screen, return to Templates, and confirm the template and item count persist.
+4. Set `90s` rest on one template exercise and leave another exercise with rest off.
+5. While editing the template name, notes, sets, reps, weight, RPE, and custom rest fields, confirm the keyboard does not cover the focused field.
+6. Save, leave the screen, return to Templates, and confirm the template and item count persist.
+7. Reopen the template and confirm the `90s` rest selection persisted.
 
 ## Live Workout
 
@@ -33,21 +38,28 @@ Use this checklist for the native Expo Go pass. Keep it short and record only cl
 2. Confirm the first exercise is active and the log button is visible.
 3. Type `32.5` directly into the weight field and confirm the log button reflects the value.
 4. Tap the weight `+` and `-` controls and confirm they still change weight in the existing quick increments.
-5. Select `Warm-up`, log a set, and confirm the row shows `WARM-UP`.
-6. Select `Working`, log a set after the direct weight edit, and confirm the row records the typed weight and shows `WORKING`.
-7. Select `Drop`, log a set, and confirm the row shows `DROP`.
-8. Edit the first set, change its set type, save, and confirm the row updates.
-9. Force close Expo Go, reopen, resume the workout, and verify the set types persist.
-10. Open the workout summary and verify elapsed time, total sets, working sets, total volume, working volume, completed set details, and left-to-do target sets.
-11. Delete the second set.
-12. Use Undo and confirm the remaining latest set is removed according to current app behavior.
-13. Add another exercise to the live workout.
-14. Type a supported typed voice command such as `80 for 5` and confirm it logs a set.
-15. Log a first workout set and confirm a subtle potential PR appears live.
-16. Log a stronger set and confirm a live pending PR appears.
-17. Edit the stronger set lower and confirm the pending PR disappears.
-18. Delete the stronger set and confirm the pending PR disappears.
-19. Change a qualifying set to `Warm-up` and confirm the pending PR disappears.
+5. Log a set for the exercise with `90s` rest and confirm a 90s timer starts.
+6. Press `+30s` and confirm the timer updates.
+7. Stop/skip the timer.
+8. Manually start a 60s timer.
+9. Log a set for the exercise with no rest configured and confirm no auto-timer starts.
+10. Select `Warm-up`, log a set, and confirm the row shows `WARM-UP`.
+11. Select `Working`, log a set after the direct weight edit, and confirm the row records the typed weight and shows `WORKING`.
+12. Select `Drop`, log a set, and confirm the row shows `DROP`.
+13. Edit the first set, change its set type, save, and confirm the row updates.
+14. Force close Expo Go, reopen, resume the workout, and verify workout data and set types persist.
+15. If a rest timer was running before reopen, confirm remaining time is sensible after resume.
+16. Open the workout summary and verify elapsed time, total sets, working sets, total volume, working volume, completed set details, and left-to-do target sets.
+17. Delete the second set.
+18. Use Undo and confirm the remaining latest set is removed according to current app behavior.
+19. Add another exercise to the live workout.
+20. Type a supported typed voice command such as `80 for 5` and confirm it logs a set.
+21. Type `rest 3 minutes` in the typed voice debug field and confirm the real timer starts.
+22. Log a first workout set and confirm a subtle potential PR appears live.
+23. Log a stronger set and confirm a live pending PR appears.
+24. Edit the stronger set lower and confirm the pending PR disappears.
+25. Delete the stronger set and confirm the pending PR disappears.
+26. Change a qualifying set to `Warm-up` and confirm the pending PR disappears.
 
 ## Recovery
 

@@ -13,6 +13,7 @@ import {
   getAllTemplates,
   getTemplateById,
   getTemplateItemsWithExercise,
+  updateTemplate,
 } from '@/db/repositories/templates.repo';
 import { createSession, endSession, getInProgressSession } from '@/db/repositories/sessions.repo';
 import { insertEvent, getEventsBySession } from '@/db/repositories/events.repo';
@@ -350,13 +351,21 @@ describe('core app flow repository acceptance', () => {
       name: 'Core acceptance template',
       notes: 'Repository flow',
       items: [
-        { exercise_id: bench.id, target_sets: 3, target_reps: 5, target_weight: 80, target_rpe: 8 },
+        {
+          exercise_id: bench.id,
+          target_sets: 3,
+          target_reps: 5,
+          target_weight: 80,
+          target_rpe: 8,
+          rest_seconds: 90,
+        },
         {
           exercise_id: squat.id,
           target_sets: 4,
           target_reps: 5,
           target_weight: 100,
           target_rpe: 8,
+          rest_seconds: null,
         },
       ],
     });
@@ -365,7 +374,12 @@ describe('core app flow repository acceptance', () => {
       expect.objectContaining({ name: 'Core acceptance template', notes: 'Repository flow' }),
     );
     expect(await getTemplateItemsWithExercise(db as never, template.id)).toEqual([
-      expect.objectContaining({ exercise_id: bench.id, position: 0, target_reps: 5 }),
+      expect.objectContaining({
+        exercise_id: bench.id,
+        position: 0,
+        target_reps: 5,
+        rest_seconds: 90,
+      }),
       expect.objectContaining({ exercise_id: squat.id, position: 1, target_weight: 100 }),
     ]);
 
@@ -375,6 +389,69 @@ describe('core app flow repository acceptance', () => {
     expect(await getTemplateById(db as never, template.id)).toEqual(
       expect.objectContaining({ archived_at: expect.any(Number) }),
     );
+  });
+
+  it('keeps template rest_seconds nullable, persistent, and positive', async () => {
+    db = await setupDb();
+    const bench = await exerciseByName(db, 'Barbell Bench Press');
+
+    const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(template_items)');
+    expect(columns).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'rest_seconds' })]));
+
+    const template = await createTemplate(db as never, {
+      name: 'Rest template',
+      notes: null,
+      items: [
+        {
+          exercise_id: bench.id,
+          target_sets: null,
+          target_reps: null,
+          target_weight: null,
+          target_rpe: null,
+          rest_seconds: 90,
+        },
+      ],
+    });
+
+    expect(await getTemplateItemsWithExercise(db as never, template.id)).toEqual([
+      expect.objectContaining({ exercise_id: bench.id, rest_seconds: 90 }),
+    ]);
+
+    await updateTemplate(db as never, template.id, {
+      name: 'Rest template',
+      notes: null,
+      items: [
+        {
+          exercise_id: bench.id,
+          target_sets: null,
+          target_reps: null,
+          target_weight: null,
+          target_rpe: null,
+          rest_seconds: null,
+        },
+      ],
+    });
+
+    expect(await getTemplateItemsWithExercise(db as never, template.id)).toEqual([
+      expect.objectContaining({ exercise_id: bench.id, rest_seconds: null }),
+    ]);
+
+    await expect(
+      createTemplate(db as never, {
+        name: 'Invalid rest template',
+        notes: null,
+        items: [
+          {
+            exercise_id: bench.id,
+            target_sets: null,
+            target_reps: null,
+            target_weight: null,
+            target_rpe: null,
+            rest_seconds: 0,
+          },
+        ],
+      }),
+    ).rejects.toThrow('rest_seconds must be a positive integer when set');
   });
 
   it('adds set_type to workout_sets with a working default', async () => {
@@ -531,6 +608,30 @@ describe('core app flow repository acceptance', () => {
     expect(await getEventsBySession(db as never, session.id)).toHaveLength(
       eventsBeforeRebuild.length,
     );
+  });
+
+  it('keeps rest timer events append-only and out of workout set rebuilds', async () => {
+    db = await setupDb();
+    const bench = await exerciseByName(db, 'Barbell Bench Press');
+    const session = await createSession(db as never, { templateId: null, name: null });
+
+    await appendEvent(db, session.id, 'rest_timer_started', {
+      duration_seconds: 90,
+      started_at: 10_000,
+      exercise_id: bench.id,
+    });
+    await appendEvent(db, session.id, 'rest_timer_cancelled', { cancelled_at: 20_000 });
+    await appendEvent(db, session.id, 'rest_timer_completed', { completed_at: 30_000 });
+
+    expect((await getEventsBySession(db as never, session.id)).map((event) => event.event_type)).toEqual([
+      'session_started',
+      'rest_timer_started',
+      'rest_timer_cancelled',
+      'rest_timer_completed',
+    ]);
+
+    await rebuildSets(db as never, session.id);
+    expect(await getSetsBySession(db as never, session.id)).toEqual([]);
   });
 
   it('recovers an in-progress workout and avoids duplicate materialized sets after restart rebuilds', async () => {
@@ -938,6 +1039,7 @@ describe('core app flow repository acceptance', () => {
           target_reps: 10,
           target_weight: null,
           target_rpe: null,
+          rest_seconds: null,
         },
       ],
     });

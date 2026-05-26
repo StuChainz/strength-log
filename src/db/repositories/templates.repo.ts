@@ -24,6 +24,13 @@ export interface DraftItemInput {
   target_reps: number | null;
   target_weight: number | null;
   target_rpe: number | null;
+  rest_seconds: number | null;
+}
+
+function assertValidRestSeconds(value: number | null): void {
+  if (value !== null && (!Number.isInteger(value) || value <= 0)) {
+    throw new RangeError('rest_seconds must be a positive integer when set');
+  }
 }
 
 export async function getAllTemplates(db: SQLiteDatabase): Promise<Template[]> {
@@ -80,10 +87,11 @@ export async function createTemplate(
     );
     for (let i = 0; i < data.items.length; i++) {
       const item = data.items[i]!;
+      assertValidRestSeconds(item.rest_seconds);
       await db.runAsync(
         `INSERT INTO template_items
-           (id, template_id, exercise_id, position, target_sets, target_reps, target_weight, target_rpe)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, template_id, exercise_id, position, target_sets, target_reps, target_weight, target_rpe, rest_seconds)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newId(),
           id,
@@ -93,6 +101,7 @@ export async function createTemplate(
           item.target_reps,
           item.target_weight,
           item.target_rpe,
+          item.rest_seconds,
         ],
       );
     }
@@ -123,10 +132,11 @@ export async function updateTemplate(
     await db.runAsync(`DELETE FROM template_items WHERE template_id = ?`, [id]);
     for (let i = 0; i < data.items.length; i++) {
       const item = data.items[i]!;
+      assertValidRestSeconds(item.rest_seconds);
       await db.runAsync(
         `INSERT INTO template_items
-           (id, template_id, exercise_id, position, target_sets, target_reps, target_weight, target_rpe)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, template_id, exercise_id, position, target_sets, target_reps, target_weight, target_rpe, rest_seconds)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newId(),
           id,
@@ -136,6 +146,7 @@ export async function updateTemplate(
           item.target_reps,
           item.target_weight,
           item.target_rpe,
+          item.rest_seconds,
         ],
       );
     }

@@ -127,6 +127,7 @@ export default function ExerciseLibrary() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filtersRow}
           style={styles.filtersScroll}
+          testID="exercise-library-filter-scroll"
         >
           {LIBRARY_EXERCISE_FILTER_CHIPS.map((f) => (
             <TouchableOpacity
@@ -260,11 +261,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  filtersScroll: { marginTop: 12 },
+  filtersScroll: {
+    marginTop: 12,
+    flexGrow: 0,
+    flexShrink: 0,
+    maxHeight: 44,
+  },
   filtersRow: {
     paddingHorizontal: 22,
     gap: 8,
     paddingBottom: 4,
+    alignItems: 'center',
   },
   chip: {
     paddingHorizontal: 12,
@@ -273,6 +280,9 @@ const styles = StyleSheet.create({
     backgroundColor: T.surface2,
     borderWidth: 1,
     borderColor: T.border,
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chipActive: { backgroundColor: T.accent, borderColor: T.accent },
   chipText: { fontSize: 13, fontWeight: '500', color: T.text },

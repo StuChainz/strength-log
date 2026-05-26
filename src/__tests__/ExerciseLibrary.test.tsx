@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, render, fireEvent, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import ExerciseLibrary from '@/screens/ExerciseLibrary';
 import {
   getExerciseLibraryDiagnostics,
@@ -308,6 +309,31 @@ describe('ExerciseLibrary', () => {
     );
     expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
       category: 'dumbbell',
+    });
+  });
+
+  it('keeps filter chips compact and pressable', async () => {
+    const { getByTestId, queryByTestId } = render(<ExerciseLibrary />);
+    await waitFor(() => expect(getByTestId('exercise-row-ex-1')).toBeTruthy());
+
+    const filtersScrollStyle = StyleSheet.flatten(
+      getByTestId('exercise-library-filter-scroll').props.style,
+    );
+    const allChipStyle = StyleSheet.flatten(getByTestId('filter-all').props.style);
+
+    expect(filtersScrollStyle.flexGrow).toBe(0);
+    expect(filtersScrollStyle.flexShrink).toBe(0);
+    expect(filtersScrollStyle.maxHeight).toBeLessThanOrEqual(44);
+    expect(allChipStyle.minHeight).toBeGreaterThanOrEqual(34);
+
+    fireEvent.press(getByTestId('filter-push'));
+
+    await waitFor(() => {
+      expect(getByTestId('exercise-row-ex-6')).toBeTruthy();
+      expect(queryByTestId('exercise-row-ex-1')).toBeNull();
+    });
+    expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+      force_type: 'push',
     });
   });
 

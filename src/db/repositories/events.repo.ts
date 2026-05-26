@@ -37,3 +37,17 @@ export async function getEventsBySession(
     [sessionId],
   );
 }
+
+export async function getLatestRestTimerEvent(
+  db: SQLiteDatabase,
+  sessionId: string,
+): Promise<WorkoutEvent | null> {
+  return db.getFirstAsync<WorkoutEvent>(
+    `SELECT * FROM workout_events
+     WHERE session_id = ?
+       AND event_type IN ('rest_timer_started', 'rest_timer_cancelled', 'rest_timer_completed')
+     ORDER BY created_at DESC, rowid DESC
+     LIMIT 1`,
+    [sessionId],
+  );
+}

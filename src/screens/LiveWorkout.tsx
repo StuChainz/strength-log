@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
+import { insertEvent, getLatestRestTimerEvent } from '@/db/repositories/events.repo';
 import { getPreviousPRDataForExercises } from '@/db/repositories/prs.repo';
 import { useSessionStore } from '@/state/session.store';
 import { ExercisePicker } from '@/components/ExercisePicker';
@@ -29,12 +30,22 @@ import {
   calculateWorkingSessionVolume,
   isWorkingSet,
 } from '@/domain/volume';
-import { normalizeName } from '@/domain/ids';
+import { newId, normalizeName } from '@/domain/ids';
+import {
+  addRestTimerSeconds,
+  getRestTimerRemainingSeconds,
+  isRestTimerDone,
+} from '@/domain/restTimer';
 import { isStaleCommand } from '@/voice/confidence';
 import { parseVoiceCommand } from '@/voice/parser';
 import { T } from '@/theme/tokens';
 import type { LiveWorkoutNavigationProp, LiveWorkoutRouteProp } from '@/navigation/types';
-import type { SetType, WorkoutSet } from '@/domain/types';
+import type { EventType, SetType, WorkoutSet } from '@/domain/types';
+import type {
+  RestTimerCancelledPayload,
+  RestTimerCompletedPayload,
+  RestTimerStartedPayload,
+} from '@/domain/events';
 import type { IntentResult, ParserContext } from '@/voice/commands';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
@@ -46,7 +57,16 @@ const SET_TYPE_OPTIONS: { value: SetType; label: string; rowLabel: string }[] = 
   { value: 'working', label: 'Working', rowLabel: 'WORKING' },
   { value: 'drop', label: 'Drop', rowLabel: 'DROP' },
 ];
+const REST_TIMER_PRESETS_SECONDS = [60, 90, 120, 180] as const;
 const ENABLE_TYPED_VOICE_DEBUG = process.env.NODE_ENV !== 'production';
+
+type RestTimerState = {
+  durationSeconds: number;
+  startedAt: number;
+  exerciseId: string | null;
+  exerciseName: string | null;
+  status: 'running' | 'done';
+};
 
 function formatWeightInput(value: number): string {
   return value % 1 === 0 ? String(value) : value.toFixed(1);
@@ -203,8 +223,11 @@ export default function LiveWorkout() {
   const [setDrafts, setSetDrafts] = useState<Record<string, { weight?: string; reps?: string }>>(
     {},
   );
+  const [restTimer, setRestTimer] = useState<RestTimerState | null>(null);
+  const [restNow, setRestNow] = useState(Date.now());
   const loggingRef = useRef(false);
   const completedRef = useRef(false);
+  const completedRestTimerKeyRef = useRef<string | null>(null);
   const justLoggedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeExerciseIndex = exercises.findIndex((e) => e.id === activeExerciseId);
@@ -323,6 +346,14 @@ export default function LiveWorkout() {
     (indicator) =>
       indicator.exercise_id === activeExerciseId && indicator.record_type === 'session_volume',
   );
+  const restRemainingSeconds = restTimer
+    ? getRestTimerRemainingSeconds(restTimer, restNow)
+    : 0;
+  const restTimerExerciseName =
+    restTimer?.exerciseName ??
+    exercises.find((exercise) => exercise.id === restTimer?.exerciseId)?.name ??
+    activeExercise?.name ??
+    null;
 
   useEffect(() => {
     if (!session || exerciseIdsKey.length === 0) {
@@ -355,6 +386,50 @@ export default function LiveWorkout() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [phase, session]);
+
+  // Recover the latest rest timer event for resumed in-progress sessions.
+  useEffect(() => {
+    if (phase !== 'active' || !session) return;
+    let cancelled = false;
+    openDb()
+      .then((db) => getLatestRestTimerEvent(db, session.id))
+      .then((event) => {
+        if (cancelled || !event || event.event_type !== 'rest_timer_started') return;
+        const payload = JSON.parse(event.payload_json) as RestTimerStartedPayload;
+        if (!Number.isFinite(payload.duration_seconds) || payload.duration_seconds <= 0) return;
+        const exercise = exercises.find((item) => item.id === payload.exercise_id);
+        const recoveredTimer: RestTimerState = {
+          durationSeconds: Math.floor(payload.duration_seconds),
+          startedAt: payload.started_at,
+          exerciseId: payload.exercise_id,
+          exerciseName: exercise?.name ?? null,
+          status: isRestTimerDone(
+            {
+              durationSeconds: payload.duration_seconds,
+              startedAt: payload.started_at,
+            },
+            Date.now(),
+          )
+            ? 'done'
+            : 'running',
+        };
+        setRestNow(Date.now());
+        setRestTimer(recoveredTimer);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [exercises, phase, session]);
+
+  // Foreground rest timer tick.
+  useEffect(() => {
+    if (!restTimer || restTimer.status !== 'running') return;
+    const tick = () => setRestNow(Date.now());
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [restTimer]);
 
   // Seed stepper defaults when exercise changes
   useEffect(() => {
@@ -483,6 +558,94 @@ export default function LiveWorkout() {
     return parsed;
   }, [reps, repsInput]);
 
+  const appendRestTimerEvent = useCallback(
+    async (
+      eventType: Extract<
+        EventType,
+        'rest_timer_started' | 'rest_timer_cancelled' | 'rest_timer_completed'
+      >,
+      payload: RestTimerStartedPayload | RestTimerCancelledPayload | RestTimerCompletedPayload,
+    ) => {
+      if (!session) return;
+      const db = await openDb();
+      await insertEvent(db, {
+        id: newId(),
+        session_id: session.id,
+        event_type: eventType,
+        payload_json: JSON.stringify(payload),
+        client_event_id: newId(),
+      });
+    },
+    [session],
+  );
+
+  const startRestTimer = useCallback(
+    (
+      durationSeconds: number,
+      exercise: { id: string; name: string } | null = activeExercise,
+      startedAt = Date.now(),
+    ) => {
+      if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return;
+      const roundedDuration = Math.floor(durationSeconds);
+      const nextTimer: RestTimerState = {
+        durationSeconds: roundedDuration,
+        startedAt,
+        exerciseId: exercise?.id ?? null,
+        exerciseName: exercise?.name ?? null,
+        status: 'running',
+      };
+      completedRestTimerKeyRef.current = null;
+      setRestNow(Date.now());
+      setRestTimer(nextTimer);
+      void appendRestTimerEvent('rest_timer_started', {
+        duration_seconds: roundedDuration,
+        started_at: startedAt,
+        exercise_id: exercise?.id ?? null,
+      });
+    },
+    [activeExercise, appendRestTimerEvent],
+  );
+
+  const handleAddRestTime = useCallback(() => {
+    if (!restTimer) return;
+    const nextTimer: RestTimerState = {
+      ...addRestTimerSeconds(restTimer, 30),
+      exerciseId: restTimer.exerciseId,
+      exerciseName: restTimer.exerciseName,
+      status: 'running',
+    };
+    completedRestTimerKeyRef.current = null;
+    setRestNow(Date.now());
+    setRestTimer(nextTimer);
+    void appendRestTimerEvent('rest_timer_started', {
+      duration_seconds: nextTimer.durationSeconds,
+      started_at: nextTimer.startedAt,
+      exercise_id: nextTimer.exerciseId,
+    });
+  }, [appendRestTimerEvent, restTimer]);
+
+  const handleStopRestTimer = useCallback(() => {
+    if (!restTimer) return;
+    const wasRunning = restTimer.status === 'running';
+    setRestTimer(null);
+    completedRestTimerKeyRef.current = null;
+    if (wasRunning) {
+      void appendRestTimerEvent('rest_timer_cancelled', { cancelled_at: Date.now() });
+    }
+  }, [appendRestTimerEvent, restTimer]);
+
+  useEffect(() => {
+    if (!restTimer || restTimer.status !== 'running' || restRemainingSeconds > 0) return;
+    const timerKey = `${restTimer.startedAt}:${restTimer.durationSeconds}:${
+      restTimer.exerciseId ?? ''
+    }`;
+    if (completedRestTimerKeyRef.current === timerKey) return;
+    completedRestTimerKeyRef.current = timerKey;
+    setRestTimer((current) => (current ? { ...current, status: 'done' } : current));
+    Vibration.vibrate([0, 80, 80, 80]);
+    void appendRestTimerEvent('rest_timer_completed', { completed_at: Date.now() });
+  }, [appendRestTimerEvent, restRemainingSeconds, restTimer]);
+
   const updateSetDraft = useCallback((setId: string, field: 'weight' | 'reps', value: string) => {
     setSetDrafts((prev) => ({
       ...prev,
@@ -562,6 +725,9 @@ export default function LiveWorkout() {
         unit: activeExercise?.defaultUnit ?? 'kg',
         setType,
       });
+      if (activeExercise?.restSeconds) {
+        startRestTimer(activeExercise.restSeconds, activeExercise);
+      }
       if (setType === 'warmup') setSetType('working');
       Vibration.vibrate(10);
       setJustLogged(true);
@@ -574,7 +740,16 @@ export default function LiveWorkout() {
       loggingRef.current = false;
       setIsLogging(false);
     }
-  }, [activeExerciseId, activeExercise, commitRepsInput, commitWeightInput, logSet, rpe, setType]);
+  }, [
+    activeExerciseId,
+    activeExercise,
+    commitRepsInput,
+    commitWeightInput,
+    logSet,
+    rpe,
+    setType,
+    startRestTimer,
+  ]);
 
   const handleEndWorkout = useCallback(() => {
     Alert.alert('End Workout', 'Finish and save this workout?', [
@@ -637,14 +812,17 @@ export default function LiveWorkout() {
         parsed.intent === 'log_set_same' ||
         parsed.intent === 'log_set_delta'
       ) {
+        const exerciseId = parsed.args.exerciseId as string;
         await logSet({
-          exerciseId: parsed.args.exerciseId as string,
+          exerciseId,
           weight: parsed.args.weight as number,
           reps: parsed.args.reps as number,
           rpe: null,
           unit: parsed.args.unit as 'kg' | 'lb',
           source: 'voice',
         });
+        const loggedExercise = exercises.find((exercise) => exercise.id === exerciseId);
+        if (loggedExercise?.restSeconds) startRestTimer(loggedExercise.restSeconds, loggedExercise);
         setVoiceMessage('Logged from typed voice.');
         return;
       }
@@ -672,7 +850,8 @@ export default function LiveWorkout() {
       }
 
       if (parsed.intent === 'start_rest_timer') {
-        Alert.alert('Rest Timer', `${parsed.args.seconds as number} seconds`);
+        startRestTimer(parsed.args.seconds as number, activeExercise);
+        setVoiceMessage('Rest timer started.');
         return;
       }
 
@@ -680,7 +859,16 @@ export default function LiveWorkout() {
         handleEndWorkout();
       }
     },
-    [activeExerciseIndex, exercises, handleEndWorkout, logSet, setActiveExerciseId, store],
+    [
+      activeExercise,
+      activeExerciseIndex,
+      exercises,
+      handleEndWorkout,
+      logSet,
+      setActiveExerciseId,
+      startRestTimer,
+      store,
+    ],
   );
 
   const handleVoiceDebugSubmit = useCallback(() => {
@@ -817,6 +1005,68 @@ export default function LiveWorkout() {
               color={activeExerciseIndex >= exercises.length - 1 ? T.mutedDeep : T.textDim}
             />
           </TouchableOpacity>
+        </View>
+      )}
+
+      {exercises.length > 0 && (
+        <View style={styles.restTimerPanel} testID="rest-timer-panel">
+          {restTimer ? (
+            <>
+              <View style={styles.restTimerMain}>
+                <Text style={styles.restTimerLabel}>
+                  {restTimer.status === 'done' ? 'Rest done' : 'Rest'}
+                </Text>
+                <Text style={styles.restTimerValue} testID="rest-timer-remaining">
+                  {formatElapsed(restRemainingSeconds)}
+                </Text>
+                {restTimerExerciseName && (
+                  <Text style={styles.restTimerExercise} numberOfLines={1}>
+                    {restTimerExerciseName}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.restTimerActions}>
+                <TouchableOpacity
+                  style={styles.restTimerActionBtn}
+                  onPress={handleAddRestTime}
+                  testID="rest-add-30"
+                >
+                  <Text style={styles.restTimerActionText}>+30s</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.restTimerActionBtn}
+                  onPress={handleStopRestTimer}
+                  testID="rest-stop"
+                >
+                  <Text style={styles.restTimerActionText}>
+                    {restTimer.status === 'done' ? 'Clear' : 'Skip'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.manualRestLabel}>Rest</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.manualRestOptions}
+              >
+                {REST_TIMER_PRESETS_SECONDS.map((seconds) => (
+                  <TouchableOpacity
+                    key={seconds}
+                    style={styles.manualRestBtn}
+                    onPress={() => startRestTimer(seconds, activeExercise)}
+                    testID={`manual-rest-${seconds}`}
+                  >
+                    <Text style={styles.manualRestBtnText}>
+                      {seconds >= 60 ? `${seconds / 60}m` : `${seconds}s`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          )}
         </View>
       )}
 
@@ -1568,6 +1818,73 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
+  restTimerPanel: {
+    minHeight: 48,
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  restTimerMain: { flex: 1, minWidth: 0 },
+  restTimerLabel: {
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    color: T.accent,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    fontWeight: '700',
+  },
+  restTimerValue: {
+    fontFamily: 'Courier New',
+    fontSize: 22,
+    color: T.text,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  restTimerExercise: {
+    color: T.textDim,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  restTimerActions: { flexDirection: 'row', gap: 6, flexShrink: 0 },
+  restTimerActionBtn: {
+    minHeight: 32,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    backgroundColor: T.surface2,
+    paddingHorizontal: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  restTimerActionText: { color: T.text, fontSize: 12, fontWeight: '700' },
+  manualRestLabel: {
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    color: T.muted,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    fontWeight: '700',
+  },
+  manualRestOptions: { gap: 6, alignItems: 'center' },
+  manualRestBtn: {
+    minHeight: 32,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    backgroundColor: T.surface2,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manualRestBtnText: { color: T.textDim, fontSize: 12, fontWeight: '700' },
 
   scrollArea: { flex: 1 },
   scrollContent: { paddingHorizontal: 22, paddingTop: 14, paddingBottom: 8 },

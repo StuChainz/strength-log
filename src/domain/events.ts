@@ -41,3 +41,17 @@ export interface SessionEndedPayload {
 export interface SessionDiscardedPayload {
   discarded_at: number;
 }
+
+export interface RestTimerStartedPayload {
+  duration_seconds: number;
+  started_at: number;
+  exercise_id: string | null;
+}
+
+export interface RestTimerCancelledPayload {
+  cancelled_at: number;
+}
+
+export interface RestTimerCompletedPayload {
+  completed_at: number;
+}

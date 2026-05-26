@@ -34,7 +34,10 @@ type DraftItem = {
   target_reps: string;
   target_weight: string;
   target_rpe: string;
+  rest_seconds: string;
 };
+
+const REST_PRESETS_SECONDS = [60, 90, 120, 180] as const;
 
 let draftKeyCounter = 0;
 const nextKey = () => String(++draftKeyCounter);
@@ -42,6 +45,13 @@ const nextKey = () => String(++draftKeyCounter);
 function parseOptionalInt(s: string): number | null {
   const n = parseInt(s, 10);
   return isNaN(n) || n <= 0 ? null : n;
+}
+
+function parseOptionalRestSeconds(s: string): number | null {
+  const trimmed = s.trim();
+  if (trimmed.length === 0 || !/^\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
 function parseOptionalFloat(s: string): number | null {
@@ -92,6 +102,7 @@ export default function TemplateBuilder() {
           target_reps: it.target_reps != null ? String(it.target_reps) : '',
           target_weight: it.target_weight != null ? String(it.target_weight) : '',
           target_rpe: it.target_rpe != null ? String(it.target_rpe) : '',
+          rest_seconds: it.rest_seconds != null ? String(it.rest_seconds) : '',
         })),
       );
     })();
@@ -110,6 +121,7 @@ export default function TemplateBuilder() {
         target_reps: '',
         target_weight: '',
         target_rpe: '',
+        rest_seconds: '',
       },
     ]);
   };
@@ -139,7 +151,10 @@ export default function TemplateBuilder() {
 
   const updateItemField = (
     index: number,
-    field: keyof Pick<DraftItem, 'target_sets' | 'target_reps' | 'target_weight' | 'target_rpe'>,
+    field: keyof Pick<
+      DraftItem,
+      'target_sets' | 'target_reps' | 'target_weight' | 'target_rpe' | 'rest_seconds'
+    >,
     value: string,
   ) => {
     setItems((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
@@ -165,6 +180,7 @@ export default function TemplateBuilder() {
         target_reps: parseOptionalInt(it.target_reps),
         target_weight: parseOptionalFloat(it.target_weight),
         target_rpe: parseOptionalFloat(it.target_rpe),
+        rest_seconds: parseOptionalRestSeconds(it.rest_seconds),
       }));
 
       if (isEditMode && templateId) {
@@ -363,6 +379,59 @@ export default function TemplateBuilder() {
                     />
                   </View>
                 </View>
+
+                {/* Rest timer */}
+                <View style={styles.restRow}>
+                  <Text style={styles.restLabel}>Rest</Text>
+                  <View style={styles.restOptions}>
+                    <TouchableOpacity
+                      style={[styles.restChip, item.rest_seconds === '' && styles.restChipActive]}
+                      onPress={() => updateItemField(index, 'rest_seconds', '')}
+                      testID={`rest-preset-none-${item.key}`}
+                    >
+                      <Text
+                        style={[
+                          styles.restChipText,
+                          item.rest_seconds === '' && styles.restChipTextActive,
+                        ]}
+                      >
+                        Off
+                      </Text>
+                    </TouchableOpacity>
+                    {REST_PRESETS_SECONDS.map((seconds) => {
+                      const value = String(seconds);
+                      const active = item.rest_seconds === value;
+                      return (
+                        <TouchableOpacity
+                          key={seconds}
+                          style={[styles.restChip, active && styles.restChipActive]}
+                          onPress={() => updateItemField(index, 'rest_seconds', value)}
+                          testID={`rest-preset-${seconds}-${item.key}`}
+                        >
+                          <Text
+                            style={[styles.restChipText, active && styles.restChipTextActive]}
+                          >
+                            {seconds}s
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    <TextInput
+                      style={styles.restInput}
+                      value={
+                        REST_PRESETS_SECONDS.some((seconds) => String(seconds) === item.rest_seconds)
+                          ? ''
+                          : item.rest_seconds
+                      }
+                      onChangeText={(v) => updateItemField(index, 'rest_seconds', v)}
+                      keyboardType="number-pad"
+                      placeholder="Custom"
+                      placeholderTextColor="#444"
+                      maxLength={4}
+                      testID={`rest-custom-${item.key}`}
+                    />
+                  </View>
+                </View>
               </View>
             ))}
           </View>
@@ -478,6 +547,45 @@ const styles = StyleSheet.create({
     color: '#f5f5f5',
     fontSize: 14,
     textAlign: 'center',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  restRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+  },
+  restLabel: {
+    width: 36,
+    color: '#777',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  restOptions: { flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  restChip: {
+    minHeight: 30,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  restChipActive: { backgroundColor: '#7c5cfc', borderColor: '#7c5cfc' },
+  restChipText: { color: '#888', fontSize: 12, fontWeight: '600' },
+  restChipTextActive: { color: '#fff' },
+  restInput: {
+    minWidth: 72,
+    minHeight: 30,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    color: '#f5f5f5',
+    fontSize: 12,
     borderWidth: 1,
     borderColor: '#2a2a2a',
   },

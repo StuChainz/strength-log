@@ -189,6 +189,7 @@ describe('TemplateBuilder — create mode', () => {
               target_reps: 8,
               target_weight: 32.5,
               target_rpe: 8,
+              rest_seconds: null,
             },
           ],
         }),
@@ -227,6 +228,7 @@ describe('TemplateBuilder — edit mode', () => {
         target_reps: 8,
         target_weight: 80,
         target_rpe: 8,
+        rest_seconds: 90,
       },
     ]);
   });
@@ -260,6 +262,32 @@ describe('TemplateBuilder — edit mode', () => {
     });
   });
 
+  it('shows and saves rest seconds for template exercises', async () => {
+    const { getByTestId, getByText } = render(<TemplateBuilder />);
+    await waitFor(() => expect(getByTestId('template-name-input').props.value).toBe('Push A'));
+
+    expect(getByText('Rest')).toBeTruthy();
+    expect(getByText('90s')).toBeTruthy();
+
+    fireEvent.press(getByText('120s'));
+    fireEvent.press(getByTestId('save-btn'));
+
+    await waitFor(() => {
+      expect(updateTemplate).toHaveBeenCalledWith(
+        expect.anything(),
+        'tmpl-1',
+        expect.objectContaining({
+          items: [
+            expect.objectContaining({
+              exercise_id: 'ex-bench',
+              rest_seconds: 120,
+            }),
+          ],
+        }),
+      );
+    });
+  });
+
   it('can reorder exercises with up/down buttons', async () => {
     (getTemplateItemsWithExercise as jest.Mock).mockResolvedValue([
       {
@@ -273,6 +301,7 @@ describe('TemplateBuilder — edit mode', () => {
         target_reps: null,
         target_weight: null,
         target_rpe: null,
+        rest_seconds: null,
       },
       {
         id: 'item-2',
@@ -285,6 +314,7 @@ describe('TemplateBuilder — edit mode', () => {
         target_reps: null,
         target_weight: null,
         target_rpe: null,
+        rest_seconds: null,
       },
     ]);
 

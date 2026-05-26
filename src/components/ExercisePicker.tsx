@@ -112,6 +112,7 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
           keyExtractor={(c) => c.value}
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={styles.chipsList}
           contentContainerStyle={styles.chipsRow}
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -194,7 +195,8 @@ const styles = StyleSheet.create({
     borderColor: '#2a2a2a',
   },
 
-  chipsRow: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
+  chipsList: { flexGrow: 0, flexShrink: 0, maxHeight: 46 },
+  chipsRow: { paddingHorizontal: 12, paddingBottom: 8, gap: 8, alignItems: 'center' },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 6,
@@ -202,6 +204,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1a',
     borderWidth: 1,
     borderColor: '#2a2a2a',
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chipActive: { backgroundColor: '#7c5cfc', borderColor: '#7c5cfc' },
   chipText: { color: '#888', fontSize: 13, fontWeight: '500' },
