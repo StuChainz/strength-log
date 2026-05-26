@@ -19,7 +19,12 @@ const AppTheme = {
 
 export default function App() {
   useEffect(() => {
-    openDb().catch(() => {});
+    openDb().catch((error) => {
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.error('[db] openDb startup failed', error);
+      }
+    });
   }, []);
 
   return (

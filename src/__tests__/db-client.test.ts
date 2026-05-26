@@ -5,8 +5,10 @@
  * client.ts / migration / seed logic without a native SQLite binary.
  */
 
-import { openDb, _resetDbSingleton } from '@/db/client';
+import { openDb, resetLocalData, _resetDbSingleton } from '@/db/client';
 import { MIGRATIONS } from '@/db/migrations';
+import { getAllExercises } from '@/db/repositories/exercises.repo';
+import { SEED_EXERCISES } from '@/db/seed/exercises';
 
 // jest.mock is hoisted by Babel before any imports, so the factory can safely
 // reference `mockDb` (a let declared below) via closure.
@@ -36,6 +38,9 @@ function createMockDb() {
 
     execAsync: jest.fn(async (sql: string) => {
       execCalls.push(sql);
+      for (const [, name] of sql.matchAll(/DROP TABLE IF EXISTS (\w+)/g)) {
+        delete tables[name];
+      }
       for (const [, name] of sql.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) {
         ensureTable(name);
       }
@@ -43,9 +48,14 @@ function createMockDb() {
 
     runAsync: jest.fn(async (sql: string, params: (string | number | null)[] = []) => {
       runCalls.push({ sql, params });
-      if (/INSERT INTO _migrations/.test(sql) && params[0] != null) {
+      if (/INSERT(?: OR IGNORE)? INTO _migrations/.test(sql) && params[0] != null) {
         ensureTable('_migrations');
-        tables['_migrations'].push({ name: params[0] as string, applied_at: params[1] as number });
+        if (!tables['_migrations'].some((row) => row.name === params[0])) {
+          tables['_migrations'].push({
+            name: params[0] as string,
+            applied_at: params[1] as number,
+          });
+        }
       }
       if (/INSERT INTO exercises/.test(sql) && !/INSERT OR IGNORE/.test(sql)) {
         ensureTable('exercises');
@@ -54,7 +64,21 @@ function createMockDb() {
           name: params[1] as string,
           normalized_name: params[2] as string,
           is_custom: 0,
+          archived_at: null,
         });
+      }
+      if (/INSERT OR IGNORE INTO exercise_aliases/.test(sql) && params[1] != null) {
+        ensureTable('exercise_aliases');
+        const alias = params[2] as string;
+        if (!tables['exercise_aliases'].some((r) => r.alias === alias)) {
+          tables['exercise_aliases'].push({
+            id: params[0] as string,
+            exercise_id: params[1] as string,
+            alias,
+            source: 'seed',
+            created_at: params[3] as number,
+          });
+        }
       }
       if (/INSERT INTO exercise_metadata/.test(sql) && params[0] != null) {
         ensureTable('exercise_metadata');
@@ -94,7 +118,18 @@ function createMockDb() {
       return null;
     }),
 
-    getAllAsync: jest.fn(async () => [] as Row[]),
+    getAllAsync: jest.fn(async (sql: string) => {
+      if (/FROM sqlite_master/.test(sql)) {
+        return Object.keys(tables).map((name) => ({ name }));
+      }
+      if (/SELECT \* FROM exercises/.test(sql)) {
+        ensureTable('exercises');
+        return [...tables['exercises']].sort((a, b) =>
+          String(a.name).localeCompare(String(b.name)),
+        );
+      }
+      return [] as Row[];
+    }),
     withTransactionAsync: jest.fn(async (task: () => Promise<void>) => task()),
     closeAsync: jest.fn(async () => {}),
   };
@@ -154,6 +189,27 @@ describe('Migration runner', () => {
     expect(migrationSql).toContain('ON exercise_metadata (source, source_id)');
   });
 
+  it('applies the workout set type migration', async () => {
+    await openDb();
+    const setTypeMigration = mockDb._tables['_migrations']?.find(
+      (r) => r.name === '006_workout_set_type',
+    );
+    const migrationSql = mockDb._execCalls.join('\n');
+
+    expect(setTypeMigration).toBeDefined();
+    expect(migrationSql).toContain("ADD COLUMN set_type TEXT NOT NULL DEFAULT 'working'");
+  });
+
+  it('applies the exercise PR migration', async () => {
+    await openDb();
+    const prMigration = mockDb._tables['_migrations']?.find((r) => r.name === '007_exercise_prs');
+    const migrationSql = mockDb._execCalls.join('\n');
+
+    expect(prMigration).toBeDefined();
+    expect(migrationSql).toContain('CREATE TABLE IF NOT EXISTS exercise_prs');
+    expect(migrationSql).toContain('UNIQUE (exercise_id, session_id, record_key)');
+  });
+
   it('does not re-apply migrations on second open', async () => {
     await openDb();
     _resetDbSingleton();
@@ -175,6 +231,28 @@ describe('Migration runner', () => {
     );
     expect(bootstrapCalls.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('repairs a native DB where migration markers exist but app tables are missing', async () => {
+    mockDb._tables._migrations = MIGRATIONS.map((migration) => ({
+      name: migration.name,
+      applied_at: 1,
+    }));
+
+    await openDb();
+
+    expect(mockDb._tables.exercises).toBeDefined();
+    expect(mockDb._tables.exercise_metadata).toBeDefined();
+    expect(mockDb._tables.exercises).toHaveLength(SEED_EXERCISES.length);
+  });
+
+  it('shares one startup promise for concurrent open calls', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const sqlite = require('expo-sqlite') as { openDatabaseAsync: jest.Mock };
+
+    await Promise.all([openDb(), openDb()]);
+
+    expect(sqlite.openDatabaseAsync).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ─── Seed idempotency ─────────────────────────────────────────────────────────
@@ -185,6 +263,45 @@ describe('Seed idempotency', () => {
     const exerciseInserts = mockDb._runCalls.filter((c) => /INSERT INTO exercises/.test(c.sql));
     expect(exerciseInserts.length).toBeGreaterThan(0);
     expect(mockDb._tables.exercises.length).toBeGreaterThan(0);
+  });
+
+  it('openDb seeds all curated exercises', async () => {
+    await openDb();
+
+    expect(mockDb._tables.exercises).toHaveLength(SEED_EXERCISES.length);
+  });
+
+  it('getAllExercises returns seeded rows', async () => {
+    const db = await openDb();
+    const exercises = await getAllExercises(db);
+
+    expect(exercises).toHaveLength(SEED_EXERCISES.length);
+    expect(exercises.map((exercise) => exercise.name)).toContain('Barbell Back Squat');
+  });
+
+  it('repairs missing seed exercises on an existing database', async () => {
+    await openDb();
+    mockDb._tables.exercises = mockDb._tables.exercises.filter(
+      (exercise) => exercise.name !== 'Barbell Back Squat',
+    );
+
+    _resetDbSingleton();
+    await openDb();
+
+    expect(mockDb._tables.exercises.map((exercise) => exercise.name)).toContain(
+      'Barbell Back Squat',
+    );
+    expect(mockDb._tables.exercises).toHaveLength(SEED_EXERCISES.length);
+  });
+
+  it('resetLocalData recreates and reseeds exercises', async () => {
+    await openDb();
+    mockDb._tables.exercises = [];
+
+    await resetLocalData();
+
+    expect(mockDb._tables.exercises).toHaveLength(SEED_EXERCISES.length);
+    expect(mockDb._tables['_migrations']).toHaveLength(MIGRATIONS.length);
   });
 
   it('inserts seed metadata on first open', async () => {

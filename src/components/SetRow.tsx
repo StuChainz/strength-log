@@ -7,10 +7,10 @@ interface SetRowProps {
 }
 
 export function SetRow({ set, index }: SetRowProps) {
-  const weightStr =
-    set.weight !== null ? `${set.weight} ${set.unit}` : '—';
+  const weightStr = set.weight !== null ? `${set.weight} ${set.unit}` : '—';
   const repsStr = set.reps !== null ? `× ${set.reps}` : '';
   const rpeStr = set.rpe !== null ? ` @ RPE ${set.rpe}` : '';
+  const setType = set.set_type === 'warmup' ? 'WARM-UP' : set.set_type.toUpperCase();
 
   return (
     <View style={styles.row} testID={`set-row-${set.id}`}>
@@ -20,6 +20,7 @@ export function SetRow({ set, index }: SetRowProps) {
         {repsStr.length > 0 ? `  ${repsStr}` : ''}
         {rpeStr}
       </Text>
+      <Text style={styles.setType}>{setType}</Text>
     </View>
   );
 }
@@ -44,5 +45,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     flex: 1,
+  },
+  setType: {
+    color: '#777',
+    fontSize: 10,
+    fontWeight: '700',
   },
 });

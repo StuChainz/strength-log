@@ -1,4 +1,4 @@
-import type { Unit } from './types';
+import type { SetType, Unit } from './types';
 
 export interface SessionStartedPayload {
   template_id: string | null;
@@ -13,6 +13,7 @@ export interface SetAddedPayload {
   rpe: number | null;
   unit: Unit;
   is_warmup: 0 | 1;
+  set_type: SetType;
   position: number;
   source: 'tap' | 'voice';
   client_set_id: string;
@@ -25,6 +26,7 @@ export interface SetEditedPayload {
   reps?: number | null;
   rpe?: number | null;
   unit?: Unit;
+  set_type?: SetType;
 }
 
 export interface SetDeletedPayload {

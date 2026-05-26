@@ -579,28 +579,29 @@ export const SEED_EXERCISE_METADATA: SeedExerciseMetadata[] = [
 ];
 
 /**
- * Seed the exercises table. Idempotent: skips entirely if any seed exercises
- * already exist (is_custom = 0). Safe to call on every app launch.
+ * Seed the exercises table. Idempotent and repair-friendly: missing curated
+ * rows/aliases are added without duplicating existing seed exercises.
  */
 export async function seedExercises(db: SQLiteDatabase): Promise<void> {
-  const row = await db.getFirstAsync<{ count: number }>(
-    'SELECT COUNT(*) AS count FROM exercises WHERE is_custom = 0',
-  );
-  if (!row || row.count === 0) {
-    const now = Date.now();
+  const now = Date.now();
 
-    await db.withTransactionAsync(async () => {
-      for (const seed of SEED_EXERCISES) {
-        const exerciseId = newId();
-        const normalised = normalizeName(seed.name);
+  await db.withTransactionAsync(async () => {
+    for (const seed of SEED_EXERCISES) {
+      const normalised = normalizeName(seed.name);
+      let exercise = await db.getFirstAsync<{ id: string }>(
+        'SELECT id FROM exercises WHERE normalized_name = ? AND is_custom = 0',
+        [normalised],
+      );
 
+      if (!exercise) {
+        exercise = { id: newId() };
         await db.runAsync(
           `INSERT INTO exercises
              (id, name, normalized_name, category, primary_muscle, default_unit,
               is_custom, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
           [
-            exerciseId,
+            exercise.id,
             seed.name,
             normalised,
             seed.category,
@@ -610,18 +611,18 @@ export async function seedExercises(db: SQLiteDatabase): Promise<void> {
             now,
           ],
         );
-
-        for (const alias of seed.aliases) {
-          await db.runAsync(
-            `INSERT INTO exercise_aliases
-               (id, exercise_id, alias, source, created_at)
-             VALUES (?, ?, ?, 'seed', ?)`,
-            [newId(), exerciseId, normalizeName(alias), now],
-          );
-        }
       }
-    });
-  }
+
+      for (const alias of seed.aliases) {
+        await db.runAsync(
+          `INSERT OR IGNORE INTO exercise_aliases
+             (id, exercise_id, alias, source, created_at)
+           VALUES (?, ?, ?, 'seed', ?)`,
+          [newId(), exercise.id, normalizeName(alias), now],
+        );
+      }
+    }
+  });
 
   await seedExerciseMetadata(db);
 }

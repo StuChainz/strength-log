@@ -101,6 +101,46 @@ describe('exercises repository metadata', () => {
     expect(exercises[1].metadata).toBeNull();
   });
 
+  it('does not hide exercises if the metadata table is missing', async () => {
+    const baseRow = {
+      id: 'ex-1',
+      name: 'Bench Press',
+      normalized_name: 'bench press',
+      aliases_concat: 'bench',
+      category: 'barbell',
+      primary_muscle: 'chest',
+      default_unit: 'kg',
+      is_custom: 0,
+      archived_at: null,
+      created_at: 1,
+      updated_at: 1,
+      metadata_exercise_id: null,
+      movement_pattern: null,
+      force_type: null,
+      body_region: null,
+      primary_muscles_json: null,
+      secondary_muscles_json: null,
+      equipment_json: null,
+      mechanics: null,
+      laterality: null,
+      difficulty: null,
+      substitution_group: null,
+      source: null,
+      source_id: null,
+      metadata_updated_at: null,
+    };
+    const db = createMockDb([baseRow]);
+    db.getAllAsync.mockImplementationOnce(async () => {
+      throw new Error('no such table: exercise_metadata');
+    });
+
+    const exercises = await getExercisesWithMetadata(db as never);
+
+    expect(exercises).toHaveLength(1);
+    expect(exercises[0].name).toBe('Bench Press');
+    expect(exercises[0].metadata).toBeNull();
+  });
+
   it('supports category, custom, metadata, muscle, equipment, and name or alias filters', async () => {
     const db = createMockDb([]);
 

@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   Modal,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,25 +16,140 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
+import { getPreviousPRDataForExercises } from '@/db/repositories/prs.repo';
 import { useSessionStore } from '@/state/session.store';
 import { ExercisePicker } from '@/components/ExercisePicker';
 import { MicButton } from '@/components/MicButton';
 import ExerciseHistorySheet from '@/screens/ExerciseHistorySheet';
 import VoiceConfirm from '@/screens/VoiceConfirm';
 import { getProgressionSuggestion } from '@/domain/progression';
+import { detectLivePotentialPRs, type LivePotentialPR, type PreviousPRData } from '@/domain/prs';
+import {
+  calculateSessionVolume,
+  calculateWorkingSessionVolume,
+  isWorkingSet,
+} from '@/domain/volume';
 import { normalizeName } from '@/domain/ids';
 import { isStaleCommand } from '@/voice/confidence';
 import { parseVoiceCommand } from '@/voice/parser';
 import { T } from '@/theme/tokens';
 import type { LiveWorkoutNavigationProp, LiveWorkoutRouteProp } from '@/navigation/types';
-import type { WorkoutSet } from '@/domain/types';
+import type { SetType, WorkoutSet } from '@/domain/types';
 import type { IntentResult, ParserContext } from '@/voice/commands';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 const DEFAULT_WEIGHT = 20;
 const DEFAULT_REPS = 5;
 const RPE_VALUES = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10];
+const SET_TYPE_OPTIONS: { value: SetType; label: string; rowLabel: string }[] = [
+  { value: 'warmup', label: 'Warm-up', rowLabel: 'WARM-UP' },
+  { value: 'working', label: 'Working', rowLabel: 'WORKING' },
+  { value: 'drop', label: 'Drop', rowLabel: 'DROP' },
+];
 const ENABLE_TYPED_VOICE_DEBUG = process.env.NODE_ENV !== 'production';
+
+function formatWeightInput(value: number): string {
+  return value % 1 === 0 ? String(value) : value.toFixed(1);
+}
+
+function parseNonNegativeNumber(value: string): number | null {
+  const normalized = value.trim().replace(',', '.');
+  if (normalized.length === 0) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function parsePositiveInteger(value: string): number | null {
+  const normalized = value.trim();
+  if (normalized.length === 0) return null;
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
+}
+
+function formatTargetLine(exercise: {
+  defaultUnit: string | null;
+  targetSets: number | null;
+  targetReps: number | null;
+  targetWeight: number | null;
+  targetRpe: number | null;
+}): string {
+  const hasTarget =
+    exercise.targetSets !== null ||
+    exercise.targetReps !== null ||
+    exercise.targetWeight !== null ||
+    exercise.targetRpe !== null;
+  if (!hasTarget) return 'No programmed target';
+
+  const unit = exercise.defaultUnit ?? 'kg';
+  const parts: string[] = [];
+  if (exercise.targetSets !== null && exercise.targetReps !== null) {
+    parts.push(`${exercise.targetSets} sets × ${exercise.targetReps} reps`);
+  } else if (exercise.targetSets !== null) {
+    parts.push(`${exercise.targetSets} sets`);
+  } else if (exercise.targetReps !== null) {
+    parts.push(`${exercise.targetReps} reps`);
+  }
+
+  if (exercise.targetWeight !== null) {
+    const targetWeight = `${formatWeightInput(exercise.targetWeight)} ${unit}`;
+    if (parts.length > 0) parts[0] = `${parts[0]} @ ${targetWeight}`;
+    else parts.push(targetWeight);
+  }
+
+  if (exercise.targetRpe !== null) parts.push(`RPE ${formatWeightInput(exercise.targetRpe)}`);
+  return parts.join(' · ');
+}
+
+function getSetTypeLabel(setType: SetType, uppercase = false): string {
+  const option = SET_TYPE_OPTIONS.find((item) => item.value === setType);
+  if (!option) return uppercase ? 'WORKING' : 'working';
+  return uppercase ? option.rowLabel : option.label.toLowerCase();
+}
+
+function getCompactTargetLine(exercise: {
+  defaultUnit: string | null;
+  targetSets: number | null;
+  targetReps: number | null;
+  targetWeight: number | null;
+  targetRpe: number | null;
+}): string | null {
+  const hasTarget =
+    exercise.targetSets !== null ||
+    exercise.targetReps !== null ||
+    exercise.targetWeight !== null ||
+    exercise.targetRpe !== null;
+  if (!hasTarget) return null;
+
+  const unit = exercise.defaultUnit ?? 'kg';
+  const parts: string[] = [];
+  if (exercise.targetSets !== null && exercise.targetReps !== null) {
+    parts.push(`${exercise.targetSets} × ${exercise.targetReps}`);
+  } else if (exercise.targetSets !== null) {
+    parts.push(`${exercise.targetSets} sets`);
+  } else if (exercise.targetReps !== null) {
+    parts.push(`${exercise.targetReps} reps`);
+  }
+  if (exercise.targetWeight !== null) {
+    parts.push(`@ ${formatWeightInput(exercise.targetWeight)} ${unit}`);
+  }
+  if (exercise.targetRpe !== null) parts.push(`RPE ${formatWeightInput(exercise.targetRpe)}`);
+  return parts.join(' ');
+}
+
+function getSuggestionReason(label: string): string {
+  if (label === 'No suggestion yet.') return 'No suggestion yet';
+  if (label.startsWith('-10%') || label === 'Same weight, one fewer rep.') {
+    return 'Back off after missed reps';
+  }
+  if (label.startsWith('Add ')) return 'Progress after easy set';
+  if (label === 'Same weight, same reps.') return 'Repeat target';
+  return label.replace(/\.$/, '');
+}
+
+function formatPotentialPRLine(indicators: Pick<LivePotentialPR, 'label'>[]): string {
+  const labels = Array.from(new Set(indicators.map((indicator) => indicator.label)));
+  return `${labels.join(' · ')} · PR pending until workout is saved`;
+}
 
 export default function LiveWorkout() {
   const navigation = useNavigation<LiveWorkoutNavigationProp>();
@@ -61,8 +177,13 @@ export default function LiveWorkout() {
   } = store;
 
   const [weight, setWeight] = useState(DEFAULT_WEIGHT);
+  const [weightInput, setWeightInput] = useState(formatWeightInput(DEFAULT_WEIGHT));
+  const [isWeightInputFocused, setIsWeightInputFocused] = useState(false);
   const [reps, setReps] = useState(DEFAULT_REPS);
+  const [repsInput, setRepsInput] = useState(String(DEFAULT_REPS));
+  const [isRepsInputFocused, setIsRepsInputFocused] = useState(false);
   const [rpe, setRpe] = useState<number | null>(null);
+  const [setType, setSetType] = useState<SetType>('working');
   const [isLogging, setIsLogging] = useState(false);
   const [justLogged, setJustLogged] = useState(false);
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -72,18 +193,65 @@ export default function LiveWorkout() {
   const [editWeight, setEditWeight] = useState(DEFAULT_WEIGHT);
   const [editReps, setEditReps] = useState(DEFAULT_REPS);
   const [editRpe, setEditRpe] = useState<number | null>(null);
+  const [editSetType, setEditSetType] = useState<SetType>('working');
   const [historyVisible, setHistoryVisible] = useState(false);
+  const [summaryVisible, setSummaryVisible] = useState(false);
+  const [previousPRData, setPreviousPRData] = useState<PreviousPRData | null>(null);
   const [voiceText, setVoiceText] = useState('');
   const [voiceResult, setVoiceResult] = useState<IntentResult | null>(null);
   const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
+  const [setDrafts, setSetDrafts] = useState<Record<string, { weight?: string; reps?: string }>>(
+    {},
+  );
   const loggingRef = useRef(false);
   const completedRef = useRef(false);
+  const justLoggedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeExerciseIndex = exercises.findIndex((e) => e.id === activeExerciseId);
   const activeExercise = activeExerciseIndex >= 0 ? exercises[activeExerciseIndex] : null;
   const activeSets = sets.filter(
     (s) => s.exercise_id === activeExerciseId && s.deleted_at === null,
   );
+  const exerciseIdsKey = useMemo(
+    () => [...new Set(exercises.map((exercise) => exercise.id))].sort().join('|'),
+    [exercises],
+  );
+  const liveSummary = useMemo(() => {
+    const visibleSets = sets.filter((set) => set.deleted_at === null);
+    const exercisesWithDone = new Set(visibleSets.map((set) => set.exercise_id));
+    const summaryExercises = exercises
+      .filter((exercise) => session?.template_id || exercisesWithDone.has(exercise.id))
+      .map((exercise) => {
+        const completedSets = visibleSets
+          .filter((set) => set.exercise_id === exercise.id)
+          .sort((a, b) => a.position - b.position);
+        const completedWorkingSets = completedSets.filter(isWorkingSet).length;
+        const remainingSets =
+          exercise.targetSets !== null
+            ? Math.max(0, exercise.targetSets - completedWorkingSets)
+            : null;
+        let state = 'not started';
+        if (completedWorkingSets > 0) {
+          state = remainingSets === 0 ? 'complete' : 'in progress';
+        }
+
+        return {
+          exercise,
+          completedSets,
+          remainingSets,
+          state,
+          target: getCompactTargetLine(exercise),
+        };
+      });
+
+    return {
+      totalSets: visibleSets.length,
+      workingSets: visibleSets.filter(isWorkingSet).length,
+      totalVolume: calculateSessionVolume(visibleSets),
+      workingVolume: calculateWorkingSessionVolume(visibleSets),
+      exercises: summaryExercises,
+    };
+  }, [exercises, session?.template_id, sets]);
   const hasLoggedSets = sets.some((s) => s.deleted_at === null);
   const lastLoggedSet = useMemo(
     () =>
@@ -139,6 +307,44 @@ export default function LiveWorkout() {
       }),
     [activeExercise, lastSets],
   );
+  const potentialPRs = useMemo(
+    () => (previousPRData ? detectLivePotentialPRs(sets, previousPRData) : []),
+    [previousPRData, sets],
+  );
+  const potentialPRsBySetId = useMemo(() => {
+    const bySetId = new Map<string, LivePotentialPR[]>();
+    for (const indicator of potentialPRs) {
+      if (!indicator.set_id) continue;
+      bySetId.set(indicator.set_id, [...(bySetId.get(indicator.set_id) ?? []), indicator]);
+    }
+    return bySetId;
+  }, [potentialPRs]);
+  const activeVolumePR = potentialPRs.find(
+    (indicator) =>
+      indicator.exercise_id === activeExerciseId && indicator.record_type === 'session_volume',
+  );
+
+  useEffect(() => {
+    if (!session || exerciseIdsKey.length === 0) {
+      setPreviousPRData(null);
+      return;
+    }
+
+    setPreviousPRData(null);
+    const exerciseIds = exerciseIdsKey.split('|');
+    let cancelled = false;
+    openDb()
+      .then((db) => getPreviousPRDataForExercises(db, exerciseIds, session.id))
+      .then((data) => {
+        if (!cancelled) setPreviousPRData(data);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviousPRData(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [exerciseIdsKey, session]);
 
   // Elapsed timer
   useEffect(() => {
@@ -158,7 +364,6 @@ export default function LiveWorkout() {
       .sort((a, b) => b.logged_at - a.logged_at)[0];
 
     if (lastSet) {
-      /* eslint-disable react-hooks/set-state-in-effect */
       setWeight(lastSet.weight ?? DEFAULT_WEIGHT);
       setReps(lastSet.reps ?? DEFAULT_REPS);
     } else if (activeExercise.targetWeight !== null) {
@@ -169,8 +374,15 @@ export default function LiveWorkout() {
       setReps(DEFAULT_REPS);
     }
     setRpe(null);
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, [activeExerciseId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isWeightInputFocused) setWeightInput(formatWeightInput(weight));
+  }, [isWeightInputFocused, weight]);
+
+  useEffect(() => {
+    if (!isRepsInputFocused) setRepsInput(String(reps));
+  }, [isRepsInputFocused, reps]);
 
   // Load last-session hint for active exercise
   useEffect(() => {
@@ -203,6 +415,13 @@ export default function LiveWorkout() {
   useEffect(() => {
     if (phase === 'ended' && !completedRef.current) navigation.popToTop();
   }, [phase, navigation]);
+
+  useEffect(
+    () => () => {
+      if (justLoggedTimeoutRef.current) clearTimeout(justLoggedTimeoutRef.current);
+    },
+    [],
+  );
 
   // Prompt resume/start-new
   useEffect(() => {
@@ -241,26 +460,121 @@ export default function LiveWorkout() {
     return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
   };
 
+  const commitWeightInput = useCallback(() => {
+    const parsed = parseNonNegativeNumber(weightInput);
+    if (parsed === null) {
+      setWeightInput(formatWeightInput(weight));
+      return weight;
+    }
+    const nextWeight = parseFloat(parsed.toFixed(2));
+    setWeight(nextWeight);
+    setWeightInput(formatWeightInput(nextWeight));
+    return nextWeight;
+  }, [weight, weightInput]);
+
+  const commitRepsInput = useCallback(() => {
+    const parsed = parsePositiveInteger(repsInput);
+    if (parsed === null) {
+      setRepsInput(String(reps));
+      return reps;
+    }
+    setReps(parsed);
+    setRepsInput(String(parsed));
+    return parsed;
+  }, [reps, repsInput]);
+
+  const updateSetDraft = useCallback((setId: string, field: 'weight' | 'reps', value: string) => {
+    setSetDrafts((prev) => ({
+      ...prev,
+      [setId]: {
+        ...prev[setId],
+        [field]: value,
+      },
+    }));
+  }, []);
+
+  const clearSetDraft = useCallback((setId: string, field: 'weight' | 'reps') => {
+    setSetDrafts((prev) => {
+      const current = prev[setId];
+      if (!current || current[field] === undefined) return prev;
+      const nextForSet = { ...current };
+      delete nextForSet[field];
+      if (nextForSet.weight === undefined && nextForSet.reps === undefined) {
+        const next = { ...prev };
+        delete next[setId];
+        return next;
+      }
+      return { ...prev, [setId]: nextForSet };
+    });
+  }, []);
+
+  const commitSetWeightInput = useCallback(
+    async (set: WorkoutSet) => {
+      const draft = setDrafts[set.id]?.weight;
+      if (draft === undefined) return;
+
+      const trimmed = draft.trim();
+      const nextWeight = trimmed.length === 0 ? null : parseNonNegativeNumber(trimmed);
+      if (trimmed.length > 0 && nextWeight === null) {
+        clearSetDraft(set.id, 'weight');
+        return;
+      }
+
+      const roundedWeight = nextWeight === null ? null : parseFloat(nextWeight.toFixed(2));
+      clearSetDraft(set.id, 'weight');
+      if (roundedWeight === set.weight) return;
+      await store.editSet(set.id, { weight: roundedWeight, unit: set.unit });
+    },
+    [clearSetDraft, setDrafts, store],
+  );
+
+  const commitSetRepsInput = useCallback(
+    async (set: WorkoutSet) => {
+      const draft = setDrafts[set.id]?.reps;
+      if (draft === undefined) return;
+
+      const trimmed = draft.trim();
+      const nextReps = trimmed.length === 0 ? null : parsePositiveInteger(trimmed);
+      if (trimmed.length > 0 && nextReps === null) {
+        clearSetDraft(set.id, 'reps');
+        return;
+      }
+
+      clearSetDraft(set.id, 'reps');
+      if (nextReps === set.reps) return;
+      await store.editSet(set.id, { reps: nextReps, unit: set.unit });
+    },
+    [clearSetDraft, setDrafts, store],
+  );
+
   const handleLogSet = useCallback(async () => {
     if (loggingRef.current || !activeExerciseId) return;
+    const loggedWeight = commitWeightInput();
+    const loggedReps = commitRepsInput();
     loggingRef.current = true;
     setIsLogging(true);
     try {
       await logSet({
         exerciseId: activeExerciseId,
-        weight,
-        reps,
+        weight: loggedWeight,
+        reps: loggedReps,
         rpe,
         unit: activeExercise?.defaultUnit ?? 'kg',
+        setType,
       });
+      if (setType === 'warmup') setSetType('working');
       Vibration.vibrate(10);
       setJustLogged(true);
-      setTimeout(() => setJustLogged(false), 900);
+      if (justLoggedTimeoutRef.current) clearTimeout(justLoggedTimeoutRef.current);
+      justLoggedTimeoutRef.current = setTimeout(() => {
+        setJustLogged(false);
+        justLoggedTimeoutRef.current = null;
+      }, 900);
     } finally {
       loggingRef.current = false;
       setIsLogging(false);
     }
-  }, [activeExerciseId, weight, reps, rpe, activeExercise, logSet]);
+  }, [activeExerciseId, activeExercise, commitRepsInput, commitWeightInput, logSet, rpe, setType]);
 
   const handleEndWorkout = useCallback(() => {
     Alert.alert('End Workout', 'Finish and save this workout?', [
@@ -286,6 +600,7 @@ export default function LiveWorkout() {
     setEditWeight(set.weight ?? DEFAULT_WEIGHT);
     setEditReps(set.reps ?? DEFAULT_REPS);
     setEditRpe(set.rpe);
+    setEditSetType(set.set_type);
   }, []);
 
   const handleSaveEdit = useCallback(async () => {
@@ -295,9 +610,10 @@ export default function LiveWorkout() {
       reps: editReps,
       rpe: editRpe,
       unit: editingSet.unit,
+      set_type: editSetType,
     });
     setEditingSet(null);
-  }, [editReps, editRpe, editWeight, editingSet, store]);
+  }, [editReps, editRpe, editSetType, editWeight, editingSet, store]);
 
   const handleDeleteSet = useCallback(
     (set: WorkoutSet) => {
@@ -400,27 +716,46 @@ export default function LiveWorkout() {
     );
   }
 
-  const wgt = weight % 1 === 0 ? String(weight) : weight.toFixed(1);
+  const wgt = formatWeightInput(weight);
   const logBtnLabel = justLogged ? 'Logged ✓' : `Log set · ${wgt} × ${reps}`;
+  const activeUnit = activeExercise?.defaultUnit ?? 'kg';
+  const targetLine = activeExercise ? formatTargetLine(activeExercise) : 'No programmed target';
+  const targetCompletion =
+    activeExercise?.targetSets !== null && activeExercise?.targetSets !== undefined
+      ? `${Math.min(activeSets.filter(isWorkingSet).length, activeExercise.targetSets)} / ${
+          activeExercise.targetSets
+        } complete`
+      : null;
+  const suggestionHasValue = suggestion.weight !== null || suggestion.reps !== null;
+  const suggestionReason = getSuggestionReason(suggestion.label);
+  const nextSetSummary = `${wgt} ${activeUnit} × ${reps} reps${
+    rpe !== null ? ` · RPE ${formatWeightInput(rpe)}` : ''
+  } · ${getSetTypeLabel(setType)}`;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       {/* ── Top bar ──────────────────────────────────────────── */}
       <View style={styles.topBar}>
         <TouchableOpacity
-          style={styles.iconBtn}
-          onPress={handleEndWorkout}
+          style={styles.topActionBtn}
+          onPress={() => setSummaryVisible(true)}
           hitSlop={8}
-          testID="end-workout-btn"
+          testID="summary-btn"
         >
-          <Ionicons name="chevron-back" size={16} color={T.textDim} />
+          <Ionicons name="stats-chart-outline" size={14} color={T.textDim} />
+          <Text style={styles.topActionText}>Summary</Text>
         </TouchableOpacity>
         <View style={styles.elapsedPill}>
           <View style={styles.liveDot} />
           <Text style={styles.elapsedText}>{formatElapsed(elapsedSecs)}</Text>
         </View>
-        <TouchableOpacity style={styles.iconBtn} hitSlop={8}>
-          <Ionicons name="ellipsis-horizontal" size={16} color={T.textDim} />
+        <TouchableOpacity
+          style={[styles.topActionBtn, styles.finishBtn]}
+          onPress={handleEndWorkout}
+          hitSlop={8}
+          testID="end-workout-btn"
+        >
+          <Text style={[styles.topActionText, styles.finishBtnText]}>Finish</Text>
         </TouchableOpacity>
       </View>
 
@@ -462,11 +797,6 @@ export default function LiveWorkout() {
             <Text style={styles.carouselName} numberOfLines={1}>
               {activeExercise?.name ?? '—'}
             </Text>
-            {activeExercise?.targetSets || activeExercise?.targetReps ? (
-              <Text style={styles.carouselTarget}>
-                Target · {activeExercise.targetSets ?? '?'} × {activeExercise.targetReps ?? '?'}
-              </Text>
-            ) : null}
           </View>
 
           <TouchableOpacity
@@ -511,6 +841,15 @@ export default function LiveWorkout() {
           contentContainerStyle={styles.scrollContent}
           ListHeaderComponent={
             <>
+              {/* Today's target */}
+              <View style={styles.targetCard} testID="todays-target-card">
+                <Text style={styles.targetLabel}>{"TODAY'S TARGET"}</Text>
+                <Text style={styles.targetValue}>{targetLine}</Text>
+                {targetCompletion !== null && (
+                  <Text style={styles.targetCompletion}>{targetCompletion}</Text>
+                )}
+              </View>
+
               {/* Last-time strip */}
               <TouchableOpacity
                 style={styles.lastTimeCard}
@@ -547,6 +886,14 @@ export default function LiveWorkout() {
                   </TouchableOpacity>
                 )}
               </View>
+              {activeVolumePR && (
+                <View style={styles.potentialPrCard} testID="active-volume-pr-pending">
+                  <Ionicons name="sparkles-outline" size={13} color={T.accent} />
+                  <Text style={styles.potentialPrText}>
+                    {formatPotentialPRLine([activeVolumePR])}
+                  </Text>
+                </View>
+              )}
             </>
           }
           ListEmptyComponent={
@@ -556,39 +903,87 @@ export default function LiveWorkout() {
               </Text>
             </View>
           }
-          renderItem={({ item, index }) => (
-            <View style={styles.setRow} testID={`set-row-${item.id}`}>
-              <Text style={styles.setIndex}>#{index + 1}</Text>
-              <Text style={styles.setWeight}>
-                {item.weight ?? '—'}
-                <Text style={styles.setUnit}> {item.unit}</Text>
-              </Text>
-              <Text style={styles.setReps}>
-                {item.reps ?? '—'}
-                <Text style={styles.setUnit}> reps</Text>
-              </Text>
-              <Text style={styles.setRpe}>{item.rpe !== null ? `RPE ${item.rpe}` : '—'}</Text>
-              <View style={styles.setCheck}>
-                <Ionicons name="checkmark" size={14} color={T.success} />
+          renderItem={({ item, index }) => {
+            const rowPotentialPRs = potentialPRsBySetId.get(item.id) ?? [];
+            return (
+              <View style={styles.setRowWrap}>
+                <View style={styles.setRow} testID={`set-row-${item.id}`}>
+                  <Text style={styles.setIndex}>#{index + 1}</Text>
+                  <Text style={styles.setTypeChip} testID={`set-type-${item.id}`}>
+                    {getSetTypeLabel(item.set_type, true)}
+                  </Text>
+                  <View style={styles.setMetric}>
+                    <TextInput
+                      style={styles.setMetricInput}
+                      value={
+                        setDrafts[item.id]?.weight ??
+                        (item.weight !== null ? formatWeightInput(item.weight) : '')
+                      }
+                      onChangeText={(next) => updateSetDraft(item.id, 'weight', next)}
+                      onBlur={() => void commitSetWeightInput(item)}
+                      onSubmitEditing={() => void commitSetWeightInput(item)}
+                      keyboardType="decimal-pad"
+                      returnKeyType="done"
+                      placeholder="—"
+                      placeholderTextColor={T.muted}
+                      selectTextOnFocus
+                      maxLength={7}
+                      testID={`set-weight-input-${item.id}`}
+                    />
+                    <Text style={styles.setUnit}>{item.unit}</Text>
+                  </View>
+                  <View style={styles.setMetric}>
+                    <TextInput
+                      style={styles.setMetricInput}
+                      value={
+                        setDrafts[item.id]?.reps ?? (item.reps !== null ? String(item.reps) : '')
+                      }
+                      onChangeText={(next) => updateSetDraft(item.id, 'reps', next)}
+                      onBlur={() => void commitSetRepsInput(item)}
+                      onSubmitEditing={() => void commitSetRepsInput(item)}
+                      keyboardType="number-pad"
+                      returnKeyType="done"
+                      placeholder="—"
+                      placeholderTextColor={T.muted}
+                      selectTextOnFocus
+                      maxLength={3}
+                      testID={`set-reps-input-${item.id}`}
+                    />
+                    <Text style={styles.setUnit}>reps</Text>
+                  </View>
+                  <Text style={styles.setRpe}>{item.rpe !== null ? `RPE ${item.rpe}` : '—'}</Text>
+                  <View style={styles.setCheck}>
+                    <Ionicons name="checkmark" size={14} color={T.success} />
+                  </View>
+                  <View style={styles.setActions}>
+                    <TouchableOpacity
+                      style={styles.setActionBtn}
+                      onPress={() => openEditSet(item)}
+                      hitSlop={6}
+                      testID={`edit-set-btn-${item.id}`}
+                    >
+                      <Ionicons name="create-outline" size={14} color={T.textDim} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.setActionBtn}
+                      onPress={() => handleDeleteSet(item)}
+                      hitSlop={6}
+                    >
+                      <Ionicons name="trash-outline" size={14} color={T.danger} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                {rowPotentialPRs.length > 0 && (
+                  <View style={styles.potentialPrLine} testID={`potential-pr-${item.id}`}>
+                    <Ionicons name="sparkles-outline" size={12} color={T.accent} />
+                    <Text style={styles.potentialPrText}>
+                      {formatPotentialPRLine(rowPotentialPRs)}
+                    </Text>
+                  </View>
+                )}
               </View>
-              <View style={styles.setActions}>
-                <TouchableOpacity
-                  style={styles.setActionBtn}
-                  onPress={() => openEditSet(item)}
-                  hitSlop={6}
-                >
-                  <Ionicons name="create-outline" size={14} color={T.textDim} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.setActionBtn}
-                  onPress={() => handleDeleteSet(item)}
-                  hitSlop={6}
-                >
-                  <Ionicons name="trash-outline" size={14} color={T.danger} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
+            );
+          }}
           ListFooterComponent={
             <TouchableOpacity
               style={styles.addExSmallBtn}
@@ -639,26 +1034,52 @@ export default function LiveWorkout() {
           {/* Suggestion line */}
           <TouchableOpacity
             style={styles.suggestionRow}
-            disabled={suggestion.weight === null && suggestion.reps === null}
+            disabled={!suggestionHasValue}
             onPress={() => {
               if (suggestion.weight !== null) setWeight(suggestion.weight);
               if (suggestion.reps !== null) setReps(suggestion.reps);
               setRpe(null);
             }}
+            testID="suggestion-row"
           >
             <View style={styles.suggestionDot} />
             <Text style={styles.suggestionText} numberOfLines={1}>
-              {suggestion.weight !== null || suggestion.reps !== null ? 'Suggest · ' : ''}
+              Suggest ·{' '}
               <Text style={styles.suggestionValue}>
-                {suggestion.weight !== null || suggestion.reps !== null
+                {suggestionHasValue
                   ? `${suggestion.weight ?? '—'} × ${suggestion.reps ?? '—'}`
-                  : suggestion.label}
+                  : suggestionReason}
               </Text>
-              {suggestion.weight !== null || suggestion.reps !== null
-                ? `  ·  ${suggestion.label}`
-                : ''}
+              {suggestionHasValue ? ` · ${suggestionReason}` : ''}
             </Text>
           </TouchableOpacity>
+
+          <View style={styles.nextSetHeader}>
+            <Text style={styles.nextSetLabel}>NEXT SET</Text>
+            <Text style={styles.nextSetValue} numberOfLines={1}>
+              {nextSetSummary}
+            </Text>
+          </View>
+
+          <View style={styles.setTypeRow}>
+            {SET_TYPE_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[styles.setTypeBtn, setType === option.value && styles.setTypeBtnActive]}
+                onPress={() => setSetType(option.value)}
+                testID={`set-type-option-${option.value}`}
+              >
+                <Text
+                  style={[
+                    styles.setTypeBtnText,
+                    setType === option.value && styles.setTypeBtnTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
           {/* Steppers */}
           <View style={styles.steppersRow}>
@@ -674,7 +1095,26 @@ export default function LiveWorkout() {
                   <Text style={styles.stepperBtnText}>−</Text>
                 </TouchableOpacity>
                 <View style={styles.stepperValueWrap}>
-                  <Text style={styles.stepperValue}>{wgt}</Text>
+                  <TextInput
+                    style={styles.stepperValueInput}
+                    value={weightInput}
+                    onChangeText={(next) => {
+                      setWeightInput(next);
+                      const parsed = parseNonNegativeNumber(next);
+                      if (parsed !== null) setWeight(parseFloat(parsed.toFixed(2)));
+                    }}
+                    onBlur={() => {
+                      setIsWeightInputFocused(false);
+                      commitWeightInput();
+                    }}
+                    onFocus={() => setIsWeightInputFocused(true)}
+                    onSubmitEditing={commitWeightInput}
+                    keyboardType="decimal-pad"
+                    returnKeyType="done"
+                    selectTextOnFocus
+                    maxLength={7}
+                    testID="weight-input"
+                  />
                   <Text style={styles.stepperUnit}>kg</Text>
                 </View>
                 <TouchableOpacity
@@ -700,7 +1140,26 @@ export default function LiveWorkout() {
                   <Text style={styles.stepperBtnText}>−</Text>
                 </TouchableOpacity>
                 <View style={styles.stepperValueWrap}>
-                  <Text style={styles.stepperValue}>{reps}</Text>
+                  <TextInput
+                    style={styles.stepperValueInput}
+                    value={repsInput}
+                    onChangeText={(next) => {
+                      setRepsInput(next);
+                      const parsed = parsePositiveInteger(next);
+                      if (parsed !== null) setReps(parsed);
+                    }}
+                    onBlur={() => {
+                      setIsRepsInputFocused(false);
+                      commitRepsInput();
+                    }}
+                    onFocus={() => setIsRepsInputFocused(true)}
+                    onSubmitEditing={commitRepsInput}
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    selectTextOnFocus
+                    maxLength={3}
+                    testID="reps-input"
+                  />
                   <Text style={styles.stepperUnit}>rps</Text>
                 </View>
                 <TouchableOpacity
@@ -772,6 +1231,104 @@ export default function LiveWorkout() {
           setRpe(null);
         }}
       />
+
+      <Modal
+        visible={summaryVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSummaryVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.summarySheet} testID="workout-summary-modal">
+            <View style={styles.editHeader}>
+              <Text style={styles.editTitle}>Workout Summary</Text>
+              <TouchableOpacity
+                style={styles.iconBtn}
+                onPress={() => setSummaryVisible(false)}
+                hitSlop={8}
+                testID="summary-close-btn"
+              >
+                <Ionicons name="close" size={16} color={T.textDim} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.summaryGrid}>
+              <View style={styles.summaryStat}>
+                <Text style={styles.summaryStatLabel}>Elapsed</Text>
+                <Text style={styles.summaryStatValue} testID="summary-elapsed">
+                  {formatElapsed(elapsedSecs)}
+                </Text>
+              </View>
+              <View style={styles.summaryStat}>
+                <Text style={styles.summaryStatLabel}>Total Sets</Text>
+                <Text style={styles.summaryStatValue} testID="summary-total-sets">
+                  {liveSummary.totalSets}
+                </Text>
+              </View>
+              <View style={styles.summaryStat}>
+                <Text style={styles.summaryStatLabel}>Working Sets</Text>
+                <Text style={styles.summaryStatValue} testID="summary-working-sets">
+                  {liveSummary.workingSets}
+                </Text>
+              </View>
+              <View style={styles.summaryStat}>
+                <Text style={styles.summaryStatLabel}>Volume</Text>
+                <Text style={styles.summaryStatValue} testID="summary-total-volume">
+                  {liveSummary.totalVolume.toLocaleString()} kg
+                </Text>
+              </View>
+              <View style={styles.summaryStat}>
+                <Text style={styles.summaryStatLabel}>Working Volume</Text>
+                <Text style={styles.summaryStatValue} testID="summary-working-volume">
+                  {liveSummary.workingVolume.toLocaleString()} kg
+                </Text>
+              </View>
+            </View>
+
+            <ScrollView
+              style={styles.summaryScroll}
+              contentContainerStyle={styles.summaryExerciseList}
+            >
+              <Text style={styles.summarySectionLabel}>Exercises</Text>
+              {liveSummary.exercises.length === 0 ? (
+                <Text style={styles.summaryEmpty}>No sets logged yet.</Text>
+              ) : (
+                liveSummary.exercises.map(
+                  ({ exercise, completedSets, remainingSets, state, target }) => (
+                    <View key={exercise.id} style={styles.summaryExerciseCard}>
+                      <View style={styles.summaryExerciseHeader}>
+                        <Text style={styles.summaryExerciseName} numberOfLines={1}>
+                          {exercise.name}
+                        </Text>
+                        <Text style={styles.summaryExerciseState}>{state}</Text>
+                      </View>
+                      {target !== null && (
+                        <Text style={styles.summaryTarget}>Target: {target}</Text>
+                      )}
+                      <Text style={styles.summaryDoneLabel}>Done:</Text>
+                      {completedSets.length === 0 ? (
+                        <Text style={styles.summaryEmpty}>None</Text>
+                      ) : (
+                        completedSets.map((set, index) => (
+                          <Text key={set.id} style={styles.summarySetLine}>
+                            {index + 1}. {set.weight ?? '—'} × {set.reps ?? '—'}{' '}
+                            {getSetTypeLabel(set.set_type)}
+                          </Text>
+                        ))
+                      )}
+                      {remainingSets !== null && (
+                        <Text style={styles.summaryLeft} testID={`summary-left-${exercise.id}`}>
+                          Left: {remainingSets} working {remainingSets === 1 ? 'set' : 'sets'}
+                        </Text>
+                      )}
+                    </View>
+                  ),
+                )
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={editingSet !== null}
@@ -859,7 +1416,37 @@ export default function LiveWorkout() {
               ))}
             </View>
 
-            <TouchableOpacity style={styles.saveEditBtn} onPress={() => void handleSaveEdit()}>
+            <View style={styles.editSetTypeBlock}>
+              <Text style={styles.stepperLabel}>SET TYPE</Text>
+              <View style={styles.setTypeRow}>
+                {SET_TYPE_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.setTypeBtn,
+                      editSetType === option.value && styles.setTypeBtnActive,
+                    ]}
+                    onPress={() => setEditSetType(option.value)}
+                    testID={`edit-set-type-option-${option.value}`}
+                  >
+                    <Text
+                      style={[
+                        styles.setTypeBtnText,
+                        editSetType === option.value && styles.setTypeBtnTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.saveEditBtn}
+              onPress={() => void handleSaveEdit()}
+              testID="save-edit-set-btn"
+            >
               <Text style={styles.saveEditText}>Save Changes</Text>
             </TouchableOpacity>
           </View>
@@ -881,6 +1468,22 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 4,
   },
+  topActionBtn: {
+    minWidth: 86,
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+    paddingHorizontal: 12,
+  },
+  topActionText: { color: T.textDim, fontSize: 12, fontWeight: '700' },
+  finishBtn: { backgroundColor: T.accent, borderColor: T.accent },
+  finishBtnText: { color: T.accentInk },
   iconBtn: {
     width: 32,
     height: 32,
@@ -965,27 +1568,50 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
-  carouselTarget: {
-    fontFamily: 'Courier New',
-    fontSize: 11.5,
-    color: T.muted,
-    marginTop: 3,
-    letterSpacing: 0.4,
-  },
 
   scrollArea: { flex: 1 },
   scrollContent: { paddingHorizontal: 22, paddingTop: 14, paddingBottom: 8 },
+
+  targetCard: {
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 10,
+  },
+  targetLabel: {
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    color: T.accent,
+    letterSpacing: 0,
+    textTransform: 'uppercase',
+    fontWeight: '700',
+  },
+  targetValue: {
+    color: T.text,
+    fontSize: 21,
+    fontWeight: '800',
+    marginTop: 6,
+  },
+  targetCompletion: {
+    fontFamily: 'Courier New',
+    color: T.textDim,
+    fontSize: 12.5,
+    marginTop: 5,
+  },
 
   lastTimeCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: T.surface,
+    backgroundColor: T.bg,
     borderWidth: 1,
     borderColor: T.border,
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 9,
     marginBottom: 16,
   },
   lastTimeBody: { flex: 1, minWidth: 0 },
@@ -1030,6 +1656,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
+  setRowWrap: { marginBottom: 6 },
   setRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1039,17 +1666,39 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: T.border,
     borderRadius: 12,
-    marginBottom: 6,
   },
   setIndex: { fontFamily: 'Courier New', fontSize: 12, color: T.muted, width: 32 },
-  setWeight: {
+  setTypeChip: {
+    width: 62,
+    fontFamily: 'Courier New',
+    fontSize: 9.5,
+    color: T.textDim,
+    textAlign: 'center',
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 7,
+    paddingVertical: 4,
+    marginRight: 8,
+    overflow: 'hidden',
+  },
+  setMetric: {
     flex: 0.9,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 4,
+    minWidth: 0,
+  },
+  setMetricInput: {
+    flexShrink: 1,
+    minWidth: 22,
+    padding: 0,
+    margin: 0,
     fontFamily: 'Courier New',
     fontSize: 15,
     fontWeight: '500',
     color: T.text,
+    lineHeight: 18,
   },
-  setReps: { flex: 0.9, fontFamily: 'Courier New', fontSize: 15, fontWeight: '500', color: T.text },
   setRpe: { flex: 0.8, fontFamily: 'Courier New', fontSize: 12, color: T.textDim },
   setUnit: { fontSize: 10, color: T.muted },
   setCheck: { width: 28, alignItems: 'center' },
@@ -1063,6 +1712,31 @@ const styles = StyleSheet.create({
     borderColor: T.border,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  potentialPrCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  potentialPrLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingTop: 5,
+  },
+  potentialPrText: {
+    flex: 1,
+    color: T.textDim,
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
   },
 
   emptySetRow: {
@@ -1138,6 +1812,46 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   suggestionValue: { color: T.text },
+  nextSetHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  nextSetLabel: {
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    letterSpacing: 0,
+    textTransform: 'uppercase',
+    color: T.text,
+    fontWeight: '700',
+  },
+  nextSetValue: {
+    flex: 1,
+    color: T.textDim,
+    fontFamily: 'Courier New',
+    fontSize: 12,
+    textAlign: 'right',
+  },
+
+  setTypeRow: { flexDirection: 'row', gap: 6 },
+  setTypeBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 9,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+  },
+  setTypeBtnActive: { backgroundColor: T.text, borderColor: T.text },
+  setTypeBtnText: {
+    color: T.textDim,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  setTypeBtnTextActive: { color: T.bg },
 
   steppersRow: { flexDirection: 'row', gap: 8 },
   stepperWrap: { flex: 1, gap: 6 },
@@ -1175,6 +1889,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 12,
     gap: 4,
+  },
+  stepperValueInput: {
+    minWidth: 40,
+    maxWidth: 86,
+    padding: 0,
+    margin: 0,
+    fontFamily: 'Courier New',
+    fontSize: 28,
+    fontWeight: '500',
+    color: T.text,
+    lineHeight: 32,
+    textAlign: 'center',
   },
   stepperValue: {
     fontFamily: 'Courier New',
@@ -1268,12 +1994,88 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     gap: 14,
   },
+  summarySheet: {
+    backgroundColor: T.bg,
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 28,
+    gap: 16,
+    maxHeight: '86%',
+  },
+  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  summaryStat: {
+    width: '31%',
+    minWidth: 96,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+  },
+  summaryStatLabel: {
+    fontFamily: 'Courier New',
+    fontSize: 10,
+    color: T.muted,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  summaryStatValue: {
+    color: T.text,
+    fontSize: 17,
+    fontWeight: '700',
+    marginTop: 5,
+  },
+  summaryScroll: { maxHeight: 420 },
+  summaryExerciseList: { gap: 8 },
+  summarySectionLabel: {
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    color: T.muted,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  summaryEmpty: { color: T.textDim, fontSize: 14 },
+  summaryExerciseCard: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  summaryExerciseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  summaryExerciseName: { flex: 1, color: T.text, fontSize: 14, fontWeight: '600' },
+  summaryExerciseState: {
+    color: T.textDim,
+    fontFamily: 'Courier New',
+    fontSize: 10,
+    textTransform: 'uppercase',
+  },
+  summaryTarget: { color: T.textDim, fontSize: 12 },
+  summaryDoneLabel: {
+    color: T.muted,
+    fontFamily: 'Courier New',
+    fontSize: 10,
+    textTransform: 'uppercase',
+  },
+  summarySetLine: { color: T.text, fontFamily: 'Courier New', fontSize: 12 },
+  summaryLeft: { color: T.textDim, fontSize: 12, fontWeight: '600' },
   editHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   editTitle: { color: T.text, fontSize: 18, fontWeight: '700' },
+  editSetTypeBlock: { gap: 7 },
   saveEditBtn: {
     backgroundColor: T.accent,
     borderRadius: 14,

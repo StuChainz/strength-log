@@ -13,6 +13,10 @@ describe('export schema', () => {
     expect(EXPORT_TABLES).toContain('exercise_metadata');
   });
 
+  it('includes final exercise PR records in v1 exports', () => {
+    expect(EXPORT_TABLES).toContain('exercise_prs');
+  });
+
   it('requires all v1 tables', () => {
     const payload: StrengthLogExport = {
       schemaVersion: 1,

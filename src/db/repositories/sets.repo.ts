@@ -1,5 +1,5 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
-import { type Unit, type WorkoutSet } from '@/domain/types';
+import { type SetType, type Unit, type WorkoutSet } from '@/domain/types';
 import type { SetAddedPayload, SetEditedPayload, SetDeletedPayload } from '@/domain/events';
 
 export interface InsertSetInput {
@@ -12,6 +12,7 @@ export interface InsertSetInput {
   rpe: number | null;
   unit: Unit;
   is_warmup: 0 | 1;
+  set_type: SetType;
   logged_at: number;
   source: 'tap' | 'voice';
   /** Idempotency key — allocate client-side before the DB call. */
@@ -28,8 +29,8 @@ export async function insertSet(db: SQLiteDatabase, input: InsertSetInput): Prom
   await db.runAsync(
     `INSERT OR IGNORE INTO workout_sets
        (id, session_id, exercise_id, position, weight, reps, rpe,
-        unit, is_warmup, logged_at, source, client_set_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        unit, is_warmup, set_type, logged_at, source, client_set_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.id,
       input.session_id,
@@ -40,6 +41,7 @@ export async function insertSet(db: SQLiteDatabase, input: InsertSetInput): Prom
       input.rpe,
       input.unit,
       input.is_warmup,
+      input.set_type,
       input.logged_at,
       input.source,
       input.client_set_id,
@@ -50,15 +52,31 @@ export async function insertSet(db: SQLiteDatabase, input: InsertSetInput): Prom
 export async function updateSet(
   db: SQLiteDatabase,
   id: string,
-  fields: Partial<Pick<WorkoutSet, 'weight' | 'reps' | 'rpe' | 'unit'>>,
+  fields: Partial<Pick<WorkoutSet, 'weight' | 'reps' | 'rpe' | 'unit' | 'set_type'>>,
 ): Promise<void> {
   const sets: string[] = [];
   const values: (number | string | null)[] = [];
 
-  if (fields.weight !== undefined) { sets.push('weight = ?'); values.push(fields.weight); }
-  if (fields.reps !== undefined) { sets.push('reps = ?'); values.push(fields.reps); }
-  if (fields.rpe !== undefined) { sets.push('rpe = ?'); values.push(fields.rpe); }
-  if (fields.unit !== undefined) { sets.push('unit = ?'); values.push(fields.unit); }
+  if (fields.weight !== undefined) {
+    sets.push('weight = ?');
+    values.push(fields.weight);
+  }
+  if (fields.reps !== undefined) {
+    sets.push('reps = ?');
+    values.push(fields.reps);
+  }
+  if (fields.rpe !== undefined) {
+    sets.push('rpe = ?');
+    values.push(fields.rpe);
+  }
+  if (fields.unit !== undefined) {
+    sets.push('unit = ?');
+    values.push(fields.unit);
+  }
+  if (fields.set_type !== undefined) {
+    sets.push('set_type = ?', 'is_warmup = ?');
+    values.push(fields.set_type, fields.set_type === 'warmup' ? 1 : 0);
+  }
   if (sets.length === 0) return;
 
   values.push(id);
@@ -90,12 +108,22 @@ export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promis
         await db.runAsync(
           `INSERT OR IGNORE INTO workout_sets
              (id, session_id, exercise_id, position, weight, reps, rpe,
-              unit, is_warmup, logged_at, source, client_set_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              unit, is_warmup, set_type, logged_at, source, client_set_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            p.set_id, sessionId, p.exercise_id, p.position,
-            p.weight, p.reps, p.rpe, p.unit, p.is_warmup,
-            p.logged_at, p.source, p.client_set_id,
+            p.set_id,
+            sessionId,
+            p.exercise_id,
+            p.position,
+            p.weight,
+            p.reps,
+            p.rpe,
+            p.unit,
+            p.set_type === 'warmup' ? 1 : 0,
+            p.set_type ?? 'working',
+            p.logged_at,
+            p.source,
+            p.client_set_id,
           ],
         );
       } else if (event.event_type === 'set_deleted') {
@@ -108,10 +136,26 @@ export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promis
         const p = JSON.parse(event.payload_json) as SetEditedPayload;
         const setClauses: string[] = [];
         const values: (number | string | null)[] = [];
-        if (p.weight !== undefined) { setClauses.push('weight = ?'); values.push(p.weight); }
-        if (p.reps !== undefined) { setClauses.push('reps = ?'); values.push(p.reps); }
-        if (p.rpe !== undefined) { setClauses.push('rpe = ?'); values.push(p.rpe); }
-        if (p.unit !== undefined) { setClauses.push('unit = ?'); values.push(p.unit); }
+        if (p.weight !== undefined) {
+          setClauses.push('weight = ?');
+          values.push(p.weight);
+        }
+        if (p.reps !== undefined) {
+          setClauses.push('reps = ?');
+          values.push(p.reps);
+        }
+        if (p.rpe !== undefined) {
+          setClauses.push('rpe = ?');
+          values.push(p.rpe);
+        }
+        if (p.unit !== undefined) {
+          setClauses.push('unit = ?');
+          values.push(p.unit);
+        }
+        if (p.set_type !== undefined) {
+          setClauses.push('set_type = ?', 'is_warmup = ?');
+          values.push(p.set_type, p.set_type === 'warmup' ? 1 : 0);
+        }
         if (setClauses.length > 0) {
           values.push(p.set_id);
           await db.runAsync(

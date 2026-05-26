@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -140,9 +142,7 @@ export default function TemplateBuilder() {
     field: keyof Pick<DraftItem, 'target_sets' | 'target_reps' | 'target_weight' | 'target_rpe'>,
     value: string,
   ) => {
-    setItems((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)),
-    );
+    setItems((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
   };
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -211,200 +211,203 @@ export default function TemplateBuilder() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={styles.container}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={12}
     >
-      {/* Template name */}
-      <Text style={styles.label}>Template Name *</Text>
-      <TextInput
-        style={[styles.input, nameError ? styles.inputError : null]}
-        value={templateName}
-        onChangeText={(t) => {
-          setTemplateName(t);
-          if (nameError) setNameError(null);
-        }}
-        placeholder="e.g. Push A"
-        placeholderTextColor="#555"
-        testID="template-name-input"
-        autoCorrect={false}
-        maxLength={100}
-      />
-      {nameError && (
-        <Text style={styles.errorText} testID="name-error">
-          {nameError}
-        </Text>
-      )}
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+      >
+        {/* Template name */}
+        <Text style={styles.label}>Template Name *</Text>
+        <TextInput
+          style={[styles.input, nameError ? styles.inputError : null]}
+          value={templateName}
+          onChangeText={(t) => {
+            setTemplateName(t);
+            if (nameError) setNameError(null);
+          }}
+          placeholder="e.g. Push A"
+          placeholderTextColor="#555"
+          testID="template-name-input"
+          autoCorrect={false}
+          maxLength={100}
+        />
+        {nameError && (
+          <Text style={styles.errorText} testID="name-error">
+            {nameError}
+          </Text>
+        )}
 
-      {/* Notes */}
-      <Text style={styles.label}>Notes (optional)</Text>
-      <TextInput
-        style={[styles.input, styles.notesInput]}
-        value={templateNotes}
-        onChangeText={setTemplateNotes}
-        placeholder="Warm-up notes, focus cues…"
-        placeholderTextColor="#555"
-        testID="template-notes-input"
-        multiline
-        maxLength={500}
-      />
+        {/* Notes */}
+        <Text style={styles.label}>Notes (optional)</Text>
+        <TextInput
+          style={[styles.input, styles.notesInput]}
+          value={templateNotes}
+          onChangeText={setTemplateNotes}
+          placeholder="Warm-up notes, focus cues…"
+          placeholderTextColor="#555"
+          testID="template-notes-input"
+          multiline
+          maxLength={500}
+        />
 
-      {/* Exercise list */}
-      <Text style={styles.label}>Exercises</Text>
-      {items.length === 0 ? (
-        <View style={styles.emptyExercises} testID="empty-exercises">
-          <Text style={styles.emptyExercisesText}>No exercises added yet.</Text>
-        </View>
-      ) : (
-        <View style={styles.itemList}>
-          {items.map((item, index) => (
-            <View key={item.key} style={styles.itemCard} testID={`item-card-${item.key}`}>
-              {/* Item header */}
-              <View style={styles.itemHeader}>
-                <View style={styles.itemTitleGroup}>
-                  <Text style={styles.itemName}>{item.exercise_name}</Text>
-                  <Text style={styles.itemCategory}>{item.exercise_category}</Text>
-                </View>
-                <View style={styles.itemActions}>
-                  <TouchableOpacity
-                    onPress={() => moveUp(index)}
-                    disabled={index === 0}
-                    testID={`move-up-${item.key}`}
-                    hitSlop={6}
-                  >
-                    <Text style={[styles.reorderBtn, index === 0 && styles.reorderBtnDisabled]}>
-                      ▲
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => moveDown(index)}
-                    disabled={index === items.length - 1}
-                    testID={`move-down-${item.key}`}
-                    hitSlop={6}
-                  >
-                    <Text
-                      style={[
-                        styles.reorderBtn,
-                        index === items.length - 1 && styles.reorderBtnDisabled,
-                      ]}
+        {/* Exercise list */}
+        <Text style={styles.label}>Exercises</Text>
+        {items.length === 0 ? (
+          <View style={styles.emptyExercises} testID="empty-exercises">
+            <Text style={styles.emptyExercisesText}>No exercises added yet.</Text>
+          </View>
+        ) : (
+          <View style={styles.itemList}>
+            {items.map((item, index) => (
+              <View key={item.key} style={styles.itemCard} testID={`item-card-${item.key}`}>
+                {/* Item header */}
+                <View style={styles.itemHeader}>
+                  <View style={styles.itemTitleGroup}>
+                    <Text style={styles.itemName}>{item.exercise_name}</Text>
+                    <Text style={styles.itemCategory}>{item.exercise_category}</Text>
+                  </View>
+                  <View style={styles.itemActions}>
+                    <TouchableOpacity
+                      onPress={() => moveUp(index)}
+                      disabled={index === 0}
+                      testID={`move-up-${item.key}`}
+                      hitSlop={6}
                     >
-                      ▼
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => removeItem(index)}
-                    testID={`remove-item-${item.key}`}
-                    hitSlop={6}
-                  >
-                    <Text style={styles.removeBtn}>✕</Text>
-                  </TouchableOpacity>
+                      <Text style={[styles.reorderBtn, index === 0 && styles.reorderBtnDisabled]}>
+                        ▲
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => moveDown(index)}
+                      disabled={index === items.length - 1}
+                      testID={`move-down-${item.key}`}
+                      hitSlop={6}
+                    >
+                      <Text
+                        style={[
+                          styles.reorderBtn,
+                          index === items.length - 1 && styles.reorderBtnDisabled,
+                        ]}
+                      >
+                        ▼
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => removeItem(index)}
+                      testID={`remove-item-${item.key}`}
+                      hitSlop={6}
+                    >
+                      <Text style={styles.removeBtn}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Target fields */}
+                <View style={styles.targetRow}>
+                  <View style={styles.targetField}>
+                    <Text style={styles.targetLabel}>Sets</Text>
+                    <TextInput
+                      style={styles.targetInput}
+                      value={item.target_sets}
+                      onChangeText={(v) => updateItemField(index, 'target_sets', v)}
+                      keyboardType="number-pad"
+                      placeholder="—"
+                      placeholderTextColor="#444"
+                      maxLength={3}
+                      testID={`target-sets-${item.key}`}
+                    />
+                  </View>
+                  <View style={styles.targetField}>
+                    <Text style={styles.targetLabel}>Reps</Text>
+                    <TextInput
+                      style={styles.targetInput}
+                      value={item.target_reps}
+                      onChangeText={(v) => updateItemField(index, 'target_reps', v)}
+                      keyboardType="number-pad"
+                      placeholder="—"
+                      placeholderTextColor="#444"
+                      maxLength={3}
+                      testID={`target-reps-${item.key}`}
+                    />
+                  </View>
+                  <View style={styles.targetField}>
+                    <Text style={styles.targetLabel}>Weight</Text>
+                    <TextInput
+                      style={styles.targetInput}
+                      value={item.target_weight}
+                      onChangeText={(v) => updateItemField(index, 'target_weight', v)}
+                      keyboardType="decimal-pad"
+                      placeholder="—"
+                      placeholderTextColor="#444"
+                      maxLength={7}
+                      testID={`target-weight-${item.key}`}
+                    />
+                  </View>
+                  <View style={styles.targetField}>
+                    <Text style={styles.targetLabel}>RPE</Text>
+                    <TextInput
+                      style={styles.targetInput}
+                      value={item.target_rpe}
+                      onChangeText={(v) => updateItemField(index, 'target_rpe', v)}
+                      keyboardType="decimal-pad"
+                      placeholder="—"
+                      placeholderTextColor="#444"
+                      maxLength={4}
+                      testID={`target-rpe-${item.key}`}
+                    />
+                  </View>
                 </View>
               </View>
+            ))}
+          </View>
+        )}
 
-              {/* Target fields */}
-              <View style={styles.targetRow}>
-                <View style={styles.targetField}>
-                  <Text style={styles.targetLabel}>Sets</Text>
-                  <TextInput
-                    style={styles.targetInput}
-                    value={item.target_sets}
-                    onChangeText={(v) => updateItemField(index, 'target_sets', v)}
-                    keyboardType="number-pad"
-                    placeholder="—"
-                    placeholderTextColor="#444"
-                    maxLength={3}
-                    testID={`target-sets-${item.key}`}
-                  />
-                </View>
-                <View style={styles.targetField}>
-                  <Text style={styles.targetLabel}>Reps</Text>
-                  <TextInput
-                    style={styles.targetInput}
-                    value={item.target_reps}
-                    onChangeText={(v) => updateItemField(index, 'target_reps', v)}
-                    keyboardType="number-pad"
-                    placeholder="—"
-                    placeholderTextColor="#444"
-                    maxLength={3}
-                    testID={`target-reps-${item.key}`}
-                  />
-                </View>
-                <View style={styles.targetField}>
-                  <Text style={styles.targetLabel}>Weight</Text>
-                  <TextInput
-                    style={styles.targetInput}
-                    value={item.target_weight}
-                    onChangeText={(v) => updateItemField(index, 'target_weight', v)}
-                    keyboardType="decimal-pad"
-                    placeholder="—"
-                    placeholderTextColor="#444"
-                    maxLength={7}
-                    testID={`target-weight-${item.key}`}
-                  />
-                </View>
-                <View style={styles.targetField}>
-                  <Text style={styles.targetLabel}>RPE</Text>
-                  <TextInput
-                    style={styles.targetInput}
-                    value={item.target_rpe}
-                    onChangeText={(v) => updateItemField(index, 'target_rpe', v)}
-                    keyboardType="decimal-pad"
-                    placeholder="—"
-                    placeholderTextColor="#444"
-                    maxLength={4}
-                    testID={`target-rpe-${item.key}`}
-                  />
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {/* Add exercise button */}
-      <TouchableOpacity
-        style={styles.addExerciseBtn}
-        onPress={() => setPickerVisible(true)}
-        testID="add-exercise-btn"
-      >
-        <Text style={styles.addExerciseBtnText}>+ Add Exercise</Text>
-      </TouchableOpacity>
-
-      {/* Save */}
-      <TouchableOpacity
-        style={[styles.saveBtn, (!canSave || saving) && styles.saveBtnDisabled]}
-        onPress={handleSave}
-        disabled={!canSave || saving}
-        testID="save-btn"
-      >
-        <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save Template'}</Text>
-      </TouchableOpacity>
-
-      {/* Archive (edit mode only) */}
-      {isEditMode && (
+        {/* Add exercise button */}
         <TouchableOpacity
-          style={styles.archiveBtn}
-          onPress={handleArchive}
-          testID="archive-btn"
+          style={styles.addExerciseBtn}
+          onPress={() => setPickerVisible(true)}
+          testID="add-exercise-btn"
         >
-          <Text style={styles.archiveBtnText}>Archive Template</Text>
+          <Text style={styles.addExerciseBtnText}>+ Add Exercise</Text>
         </TouchableOpacity>
-      )}
 
-      {/* Exercise picker modal */}
-      <ExercisePicker
-        visible={pickerVisible}
-        onSelect={handleExerciseSelected}
-        onClose={() => setPickerVisible(false)}
-      />
-    </ScrollView>
+        {/* Save */}
+        <TouchableOpacity
+          style={[styles.saveBtn, (!canSave || saving) && styles.saveBtnDisabled]}
+          onPress={handleSave}
+          disabled={!canSave || saving}
+          testID="save-btn"
+        >
+          <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save Template'}</Text>
+        </TouchableOpacity>
+
+        {/* Archive (edit mode only) */}
+        {isEditMode && (
+          <TouchableOpacity style={styles.archiveBtn} onPress={handleArchive} testID="archive-btn">
+            <Text style={styles.archiveBtnText}>Archive Template</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Exercise picker modal */}
+        <ExercisePicker
+          visible={pickerVisible}
+          onSelect={handleExerciseSelected}
+          onClose={() => setPickerVisible(false)}
+        />
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 16, paddingBottom: 48 },
+  content: { padding: 16, paddingBottom: 120 },
 
   label: { color: '#888', fontSize: 13, fontWeight: '500', marginTop: 20, marginBottom: 6 },
 

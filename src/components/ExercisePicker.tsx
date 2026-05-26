@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  FlatList,
-  Modal,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { openDb } from '@/db/client';
 import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
 import {
@@ -55,12 +47,10 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
   useEffect(() => {
     if (!visible) return;
     // Intentional: reset UI state when the modal opens.
-    /* eslint-disable react-hooks/set-state-in-effect */
     setSearchQuery('');
     setActiveFilter('all');
     activeFilterRef.current = 'all';
     searchQueryRef.current = '';
-    /* eslint-enable react-hooks/set-state-in-effect */
     void loadExercises('all', '');
   }, [visible, loadExercises]);
 
@@ -129,9 +119,7 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
               onPress={() => handleFilterPress(item.value)}
               testID={`picker-filter-${item.value}`}
             >
-              <Text
-                style={[styles.chipText, activeFilter === item.value && styles.chipTextActive]}
-              >
+              <Text style={[styles.chipText, activeFilter === item.value && styles.chipTextActive]}>
                 {item.label}
               </Text>
             </TouchableOpacity>

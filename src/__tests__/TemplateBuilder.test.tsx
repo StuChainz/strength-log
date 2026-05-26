@@ -41,9 +41,8 @@ jest.mock('@/components/ExercisePicker', () => ({
     onClose: () => void;
   }) => {
     if (!visible) return null;
-    const { Text, TouchableOpacity } = jest.requireActual<typeof import('react-native')>(
-      'react-native',
-    );
+    const { Text, TouchableOpacity } =
+      jest.requireActual<typeof import('react-native')>('react-native');
     return (
       <TouchableOpacity
         testID="mock-picker-select"
@@ -159,6 +158,45 @@ describe('TemplateBuilder — create mode', () => {
     });
   });
 
+  it('still saves template notes and target fields after layout changes', async () => {
+    const { getAllByPlaceholderText, getByTestId } = render(<TemplateBuilder />);
+
+    fireEvent.changeText(getByTestId('template-name-input'), 'Push A');
+    fireEvent.changeText(getByTestId('template-notes-input'), 'Keep elbows tucked');
+    fireEvent.press(getByTestId('add-exercise-btn'));
+    await waitFor(() => expect(getByTestId('mock-picker-select')).toBeTruthy());
+    fireEvent.press(getByTestId('mock-picker-select'));
+
+    await waitFor(() => expect(getAllByPlaceholderText('—')).toHaveLength(4));
+    const [setsInput, repsInput, weightInput, rpeInput] = getAllByPlaceholderText('—');
+    fireEvent.changeText(setsInput!, '3');
+    fireEvent.changeText(repsInput!, '8');
+    fireEvent.changeText(weightInput!, '32.5');
+    fireEvent.changeText(rpeInput!, '8');
+
+    fireEvent.press(getByTestId('save-btn'));
+
+    await waitFor(() => {
+      expect(createTemplate).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          name: 'Push A',
+          notes: 'Keep elbows tucked',
+          items: [
+            {
+              exercise_id: 'ex-bench',
+              target_sets: 3,
+              target_reps: 8,
+              target_weight: 32.5,
+              target_rpe: 8,
+            },
+          ],
+        }),
+      );
+      expect(mockGoBack).toHaveBeenCalled();
+    });
+  });
+
   it('does not show archive button in create mode', () => {
     const { queryByTestId } = render(<TemplateBuilder />);
     expect(queryByTestId('archive-btn')).toBeNull();
@@ -208,9 +246,7 @@ describe('TemplateBuilder — edit mode', () => {
 
   it('calls updateTemplate on save', async () => {
     const { getByTestId } = render(<TemplateBuilder />);
-    await waitFor(() =>
-      expect(getByTestId('template-name-input').props.value).toBe('Push A'),
-    );
+    await waitFor(() => expect(getByTestId('template-name-input').props.value).toBe('Push A'));
 
     fireEvent.press(getByTestId('save-btn'));
 

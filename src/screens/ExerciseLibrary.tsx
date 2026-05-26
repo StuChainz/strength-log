@@ -12,7 +12,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
-import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
+import {
+  getExerciseLibraryDiagnostics,
+  getExercisesWithMetadata,
+  type ExerciseLibraryDiagnostics,
+} from '@/db/repositories/exercises.repo';
 import {
   buildExerciseListFilters,
   LIBRARY_EXERCISE_FILTER_CHIPS,
@@ -30,6 +34,8 @@ export default function ExerciseLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<ExerciseFilterOption>('all');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<ExerciseLibraryDiagnostics | null>(null);
   const [historyExercise, setHistoryExercise] = useState<Exercise | null>(null);
   const dbRef = useRef<Awaited<ReturnType<typeof openDb>> | null>(null);
   const loadRequestIdRef = useRef(0);
@@ -43,12 +49,22 @@ export default function ExerciseLibrary() {
     try {
       const db = dbRef.current ?? (await openDb());
       dbRef.current = db;
-      const result = await getExercisesWithMetadata(
-        db,
-        buildExerciseListFilters(filter, query),
-      );
+      const result = await getExercisesWithMetadata(db, buildExerciseListFilters(filter, query));
+      const nextDiagnostics = __DEV__ ? await getExerciseLibraryDiagnostics(db) : null;
       if (requestId === loadRequestIdRef.current) {
         setExercises(result);
+        setDiagnostics(nextDiagnostics);
+        setLoadError(null);
+      }
+    } catch (error) {
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.error('[ExerciseLibrary] Failed to load exercises', error);
+      }
+      if (requestId === loadRequestIdRef.current) {
+        setExercises([]);
+        setDiagnostics(null);
+        setLoadError(__DEV__ ? formatDevError(error) : null);
       }
     } finally {
       if (requestId === loadRequestIdRef.current) {
@@ -125,6 +141,21 @@ export default function ExerciseLibrary() {
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        {__DEV__ && loadError ? (
+          <View style={styles.devError} testID="exercise-library-db-error">
+            <Text style={styles.devErrorText}>DB load error: {loadError}</Text>
+          </View>
+        ) : null}
+
+        {__DEV__ && diagnostics ? (
+          <View style={styles.devDiagnostics} testID="exercise-library-diagnostics">
+            <Text style={styles.devDiagnosticsText}>
+              DB total: {diagnostics.total} · seed: {diagnostics.seed} · custom:{' '}
+              {diagnostics.custom} · metadata: {diagnostics.metadata ?? 'n/a'}
+            </Text>
+          </View>
+        ) : null}
 
         {/* Count + New */}
         <View style={styles.countRow}>
@@ -316,4 +347,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: T.muted,
   },
+  devError: {
+    marginHorizontal: 22,
+    marginTop: 10,
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#7f1d1d',
+    backgroundColor: '#2a0d0d',
+  },
+  devErrorText: {
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    color: '#fecaca',
+  },
+  devDiagnostics: {
+    marginHorizontal: 22,
+    marginTop: 10,
+  },
+  devDiagnosticsText: {
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    color: T.muted,
+  },
 });
+
+function formatDevError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}

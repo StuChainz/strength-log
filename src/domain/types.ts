@@ -69,6 +69,7 @@ export const LATERALITY_TYPES = [
   'single_side',
   'other',
 ] as const;
+export const SET_TYPES = ['warmup', 'working', 'drop'] as const;
 
 export type Unit = (typeof UNITS)[number];
 export type ExerciseCategory = (typeof EXERCISE_CATEGORIES)[number];
@@ -79,7 +80,9 @@ export type BodyRegion = (typeof BODY_REGIONS)[number];
 export type Equipment = (typeof EQUIPMENT)[number];
 export type Mechanics = (typeof MECHANICS_TYPES)[number];
 export type Laterality = (typeof LATERALITY_TYPES)[number];
+export type SetType = (typeof SET_TYPES)[number];
 export type SessionStatus = 'in_progress' | 'completed' | 'discarded';
+export type ExercisePRRecordType = 'rep_max' | 'estimated_1rm' | 'session_volume';
 export type EventType =
   | 'session_started'
   | 'set_added'
@@ -212,10 +215,26 @@ export interface WorkoutSet {
   rpe: number | null;
   unit: Unit;
   is_warmup: 0 | 1;
+  set_type: SetType;
   logged_at: number;
   source: 'tap' | 'voice';
   client_set_id: string;
   deleted_at: number | null;
+}
+
+export interface ExercisePR {
+  id: string;
+  exercise_id: string;
+  session_id: string;
+  set_id: string | null;
+  record_type: ExercisePRRecordType;
+  record_key: string;
+  reps: number | null;
+  weight: number | null;
+  value: number;
+  unit: Unit;
+  achieved_at: number;
+  created_at: number;
 }
 
 export interface ExerciseHistoryCache {

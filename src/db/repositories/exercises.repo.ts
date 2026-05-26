@@ -56,6 +56,13 @@ export interface ExerciseMetadataFacets {
   sources: string[];
 }
 
+export interface ExerciseLibraryDiagnostics {
+  total: number;
+  seed: number;
+  custom: number;
+  metadata: number | null;
+}
+
 type ExerciseWithMetadataRow = Exercise & {
   aliases_concat: string | null;
   metadata_exercise_id: string | null;
@@ -98,6 +105,40 @@ export async function getAllExercises(db: SQLiteDatabase): Promise<Exercise[]> {
   return db.getAllAsync<Exercise>(
     'SELECT * FROM exercises WHERE archived_at IS NULL ORDER BY name ASC',
   );
+}
+
+export async function getExerciseLibraryDiagnostics(
+  db: SQLiteDatabase,
+): Promise<ExerciseLibraryDiagnostics> {
+  const exerciseCounts = await db.getFirstAsync<{
+    total: number;
+    seed: number | null;
+    custom: number | null;
+  }>(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN is_custom = 0 THEN 1 ELSE 0 END) AS seed,
+       SUM(CASE WHEN is_custom = 1 THEN 1 ELSE 0 END) AS custom
+     FROM exercises
+     WHERE archived_at IS NULL`,
+  );
+
+  let metadata: number | null = null;
+  try {
+    const metadataCount = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM exercise_metadata',
+    );
+    metadata = metadataCount?.count ?? 0;
+  } catch (error) {
+    if (!isMissingMetadataTableError(error)) throw error;
+  }
+
+  return {
+    total: exerciseCounts?.total ?? 0,
+    seed: exerciseCounts?.seed ?? 0,
+    custom: exerciseCounts?.custom ?? 0,
+    metadata,
+  };
 }
 
 export async function getExercisesWithMetadata(
@@ -179,34 +220,40 @@ export async function getExercisesWithMetadata(
     params.push(needle, needle);
   }
 
-  const rows = await db.getAllAsync<ExerciseWithMetadataRow>(
-    `SELECT
-       e.*,
-       (
-         SELECT GROUP_CONCAT(alias_list.alias, char(31))
-         FROM exercise_aliases alias_list
-         WHERE alias_list.exercise_id = e.id
-       ) AS aliases_concat,
-       m.exercise_id AS metadata_exercise_id,
-       m.movement_pattern,
-       m.force_type,
-       m.body_region,
-       m.primary_muscles_json,
-       m.secondary_muscles_json,
-       m.equipment_json,
-       m.mechanics,
-       m.laterality,
-       m.difficulty,
-       m.substitution_group,
-       m.source,
-       m.source_id,
-       m.updated_at AS metadata_updated_at
-     FROM exercises e
-     LEFT JOIN exercise_metadata m ON m.exercise_id = e.id
-     WHERE ${where.join(' AND ')}
-     ORDER BY e.name ASC`,
-    params,
-  );
+  let rows: ExerciseWithMetadataRow[];
+  try {
+    rows = await db.getAllAsync<ExerciseWithMetadataRow>(
+      `SELECT
+         e.*,
+         (
+           SELECT GROUP_CONCAT(alias_list.alias, char(31))
+           FROM exercise_aliases alias_list
+           WHERE alias_list.exercise_id = e.id
+         ) AS aliases_concat,
+         m.exercise_id AS metadata_exercise_id,
+         m.movement_pattern,
+         m.force_type,
+         m.body_region,
+         m.primary_muscles_json,
+         m.secondary_muscles_json,
+         m.equipment_json,
+         m.mechanics,
+         m.laterality,
+         m.difficulty,
+         m.substitution_group,
+         m.source,
+         m.source_id,
+         m.updated_at AS metadata_updated_at
+       FROM exercises e
+       LEFT JOIN exercise_metadata m ON m.exercise_id = e.id
+       WHERE ${where.join(' AND ')}
+       ORDER BY e.name ASC`,
+      params,
+    );
+  } catch (error) {
+    if (!isMissingMetadataTableError(error)) throw error;
+    rows = await getExercisesWithoutMetadataTable(db, filters);
+  }
 
   return rows.map(rowToExerciseWithMetadata);
 }
@@ -418,6 +465,87 @@ function rowToExerciseWithMetadata(row: ExerciseWithMetadataRow): ExerciseWithMe
   };
 
   return { ...exercise, aliases: parseAliasList(row.aliases_concat), metadata };
+}
+
+async function getExercisesWithoutMetadataTable(
+  db: SQLiteDatabase,
+  filters: ExerciseMetadataFilters,
+): Promise<ExerciseWithMetadataRow[]> {
+  if (requiresMetadataTable(filters)) return [];
+
+  const where = ['e.archived_at IS NULL'];
+  const params: (string | number)[] = [];
+
+  if (filters.category) {
+    where.push('e.category = ?');
+    params.push(filters.category);
+  }
+  if (filters.custom !== undefined) {
+    where.push('e.is_custom = ?');
+    params.push(filters.custom ? 1 : 0);
+  }
+  if (filters.query?.trim()) {
+    where.push(
+      `(e.normalized_name LIKE ?
+        OR EXISTS (
+          SELECT 1 FROM exercise_aliases alias_match
+          WHERE alias_match.exercise_id = e.id AND alias_match.alias LIKE ?
+        ))`,
+    );
+    const needle = `%${normalizeName(filters.query)}%`;
+    params.push(needle, needle);
+  }
+
+  return db.getAllAsync<ExerciseWithMetadataRow>(
+    `SELECT
+       e.*,
+       (
+         SELECT GROUP_CONCAT(alias_list.alias, char(31))
+         FROM exercise_aliases alias_list
+         WHERE alias_list.exercise_id = e.id
+       ) AS aliases_concat,
+       NULL AS metadata_exercise_id,
+       NULL AS movement_pattern,
+       NULL AS force_type,
+       NULL AS body_region,
+       NULL AS primary_muscles_json,
+       NULL AS secondary_muscles_json,
+       NULL AS equipment_json,
+       NULL AS mechanics,
+       NULL AS laterality,
+       NULL AS difficulty,
+       NULL AS substitution_group,
+       NULL AS source,
+       NULL AS source_id,
+       NULL AS metadata_updated_at
+     FROM exercises e
+     WHERE ${where.join(' AND ')}
+     ORDER BY e.name ASC`,
+    params,
+  );
+}
+
+function requiresMetadataTable(filters: ExerciseMetadataFilters): boolean {
+  return Boolean(
+    filters.has_metadata === true ||
+    filters.force_type ||
+    filters.movement_pattern ||
+    filters.body_region ||
+    filters.substitution_group ||
+    filters.mechanics ||
+    filters.laterality ||
+    filters.muscle ||
+    filters.primary_muscle ||
+    filters.secondary_muscle ||
+    filters.equipment ||
+    filters.source ||
+    filters.source_id,
+  );
+}
+
+function isMissingMetadataTableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /no such table: .*exercise_metadata/i.test(message);
 }
 
 function parseStringArray<T extends string>(json: string | null): T[] {

@@ -2,6 +2,7 @@ import React from 'react';
 import { act, render, fireEvent, waitFor } from '@testing-library/react-native';
 import ExerciseLibrary from '@/screens/ExerciseLibrary';
 import {
+  getExerciseLibraryDiagnostics,
   getExercisesWithMetadata,
   type ExerciseMetadataFilters,
 } from '@/db/repositories/exercises.repo';
@@ -207,9 +208,13 @@ function filterMockExercises(filters: ExerciseMetadataFilters = {}): ExerciseWit
 
 jest.mock('@/db/client', () => ({ openDb: jest.fn().mockResolvedValue({}) }));
 jest.mock('@/db/repositories/exercises.repo', () => ({
+  getExerciseLibraryDiagnostics: jest.fn(),
   getExercisesWithMetadata: jest.fn(),
 }));
 
+const getExerciseLibraryDiagnosticsMock = getExerciseLibraryDiagnostics as jest.MockedFunction<
+  typeof getExerciseLibraryDiagnostics
+>;
 const getExercisesWithMetadataMock = getExercisesWithMetadata as jest.MockedFunction<
   typeof getExercisesWithMetadata
 >;
@@ -224,6 +229,12 @@ describe('ExerciseLibrary', () => {
     getExercisesWithMetadataMock.mockImplementation((_db, filters) =>
       Promise.resolve(filterMockExercises(filters)),
     );
+    getExerciseLibraryDiagnosticsMock.mockResolvedValue({
+      total: mockExercises.length,
+      seed: mockExercises.filter((exercise) => exercise.is_custom === 0).length,
+      custom: mockExercises.filter((exercise) => exercise.is_custom === 1).length,
+      metadata: mockExercises.filter((exercise) => exercise.metadata).length,
+    });
   });
 
   it('renders all exercises after load', async () => {
@@ -391,5 +402,32 @@ describe('ExerciseLibrary', () => {
     await waitFor(() =>
       expect(getExercisesWithMetadataMock.mock.calls.length).toBeGreaterThan(callsBefore),
     );
+  });
+
+  it('shows dev diagnostics after load', async () => {
+    const { getByTestId } = render(<ExerciseLibrary />);
+
+    await waitFor(() => {
+      expect(getByTestId('exercise-library-diagnostics')).toBeTruthy();
+    });
+  });
+
+  it('shows a dev-visible error instead of silently empty data when DB loading fails', async () => {
+    const error = new Error('native sqlite failed');
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    getExercisesWithMetadataMock.mockRejectedValueOnce(error);
+
+    const { getByTestId, getByText } = render(<ExerciseLibrary />);
+
+    await waitFor(() => {
+      expect(getByTestId('exercise-library-db-error')).toBeTruthy();
+      expect(getByText('DB load error: native sqlite failed')).toBeTruthy();
+    });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      '[ExerciseLibrary] Failed to load exercises',
+      error,
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 });

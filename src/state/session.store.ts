@@ -20,8 +20,9 @@ import {
   updateExerciseHistoryCache,
   updateSessionExerciseHistoryCache,
 } from '@/db/repositories/history.repo';
+import { detectAndInsertFinalPrsForSession } from '@/db/repositories/prs.repo';
 import { calculateSessionVolume } from '@/domain/volume';
-import type { WorkoutSession, WorkoutSet, ExerciseCategory, Unit } from '@/domain/types';
+import type { WorkoutSession, WorkoutSet, ExerciseCategory, Unit, SetType } from '@/domain/types';
 import type { SetAddedPayload, SetDeletedPayload, SetEditedPayload } from '@/domain/events';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
@@ -33,6 +34,7 @@ export interface SessionExercise {
   targetSets: number | null;
   targetReps: number | null;
   targetWeight: number | null;
+  targetRpe: number | null;
 }
 
 export interface LogSetParams {
@@ -41,6 +43,7 @@ export interface LogSetParams {
   reps: number | null;
   rpe: number | null;
   unit: Unit;
+  setType?: SetType;
   source?: 'tap' | 'voice';
 }
 
@@ -56,7 +59,10 @@ export interface UseSessionStoreReturn {
   activeExerciseId: string | null;
   setActiveExerciseId: (id: string) => void;
   logSet: (params: LogSetParams) => Promise<void>;
-  editSet: (setId: string, fields: Partial<Pick<WorkoutSet, 'weight' | 'reps' | 'rpe' | 'unit'>>) => Promise<void>;
+  editSet: (
+    setId: string,
+    fields: Partial<Pick<WorkoutSet, 'weight' | 'reps' | 'rpe' | 'unit' | 'set_type'>>,
+  ) => Promise<void>;
   deleteSet: (setId: string) => Promise<void>;
   undoLastSet: () => Promise<void>;
   endWorkout: () => Promise<void>;
@@ -65,7 +71,12 @@ export interface UseSessionStoreReturn {
   endExisting: () => Promise<void>;
   discardExisting: () => Promise<void>;
   discardAndStart: () => Promise<void>;
-  addExercise: (exercise: { id: string; name: string; category: ExerciseCategory; default_unit: Unit | null }) => void;
+  addExercise: (exercise: {
+    id: string;
+    name: string;
+    category: ExerciseCategory;
+    default_unit: Unit | null;
+  }) => void;
 }
 
 async function loadExercisesForTemplate(
@@ -81,6 +92,7 @@ async function loadExercisesForTemplate(
     targetSets: item.target_sets,
     targetReps: item.target_reps,
     targetWeight: item.target_weight,
+    targetRpe: item.target_rpe,
   }));
 }
 
@@ -90,7 +102,7 @@ async function loadExercisesFromSets(
 ): Promise<SessionExercise[]> {
   return db.getAllAsync<SessionExercise>(
     `SELECT e.id, e.name, e.category, e.default_unit AS defaultUnit,
-            NULL AS targetSets, NULL AS targetReps, NULL AS targetWeight
+            NULL AS targetSets, NULL AS targetReps, NULL AS targetWeight, NULL AS targetRpe
      FROM (
        SELECT exercise_id, MIN(position) AS min_pos
        FROM workout_sets
@@ -103,6 +115,18 @@ async function loadExercisesFromSets(
   );
 }
 
+async function recordFinalPrsSafely(db: SQLiteDatabase, sessionId: string): Promise<void> {
+  try {
+    await detectAndInsertFinalPrsForSession(db, sessionId);
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      // Workout completion is the source of truth; PR indexing can be retried.
+      // eslint-disable-next-line no-console
+      console.warn('Final PR detection failed', error);
+    }
+  }
+}
+
 export function useSessionStore(templateId: string | undefined): UseSessionStoreReturn {
   const [phase, setPhase] = useState<StorePhase>('loading');
   const [session, setSession] = useState<WorkoutSession | null>(null);
@@ -113,25 +137,22 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
   const dbRef = useRef<SQLiteDatabase | null>(null);
 
-  const initSession = useCallback(
-    async (sess: WorkoutSession, db: SQLiteDatabase) => {
-      await rebuildSets(db, sess.id);
-      const loadedSets = await getSetsBySession(db, sess.id);
-      setSets(loadedSets);
+  const initSession = useCallback(async (sess: WorkoutSession, db: SQLiteDatabase) => {
+    await rebuildSets(db, sess.id);
+    const loadedSets = await getSetsBySession(db, sess.id);
+    setSets(loadedSets);
 
-      let exs: SessionExercise[] = [];
-      if (sess.template_id) {
-        exs = await loadExercisesForTemplate(db, sess.template_id);
-      } else {
-        exs = await loadExercisesFromSets(db, sess.id);
-      }
-      setExercises(exs);
-      setActiveExerciseId(exs[0]?.id ?? null);
-      setSession(sess);
-      setPhase('active');
-    },
-    [],
-  );
+    let exs: SessionExercise[] = [];
+    if (sess.template_id) {
+      exs = await loadExercisesForTemplate(db, sess.template_id);
+    } else {
+      exs = await loadExercisesFromSets(db, sess.id);
+    }
+    setExercises(exs);
+    setActiveExerciseId(exs[0]?.id ?? null);
+    setSession(sess);
+    setPhase('active');
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -168,7 +189,9 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
       }
     })().catch(() => {});
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [templateId]);
 
   const resumeExisting = useCallback(async () => {
@@ -184,6 +207,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     if (!db || !existingSession) return;
     await dbEndSession(db, existingSession.id, null);
     await updateSessionExerciseHistoryCache(db, existingSession.id);
+    await recordFinalPrsSafely(db, existingSession.id);
     setExistingSession(null);
     setPhase('ended');
   }, [existingSession]);
@@ -221,6 +245,8 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
       const setId = newId();
       const clientEventId = newId();
       const now = Date.now();
+      const setType = params.setType ?? 'working';
+      const isWarmup: 0 | 1 = setType === 'warmup' ? 1 : 0;
 
       const existingForExercise = sets.filter(
         (s) => s.exercise_id === params.exerciseId && s.deleted_at === null,
@@ -234,7 +260,8 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
         reps: params.reps,
         rpe: params.rpe,
         unit: params.unit,
-        is_warmup: 0,
+        is_warmup: isWarmup,
+        set_type: setType,
         position,
         source: params.source ?? 'tap',
         client_set_id: clientSetId,
@@ -258,7 +285,8 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
           reps: params.reps,
           rpe: params.rpe,
           unit: params.unit,
-          is_warmup: 0,
+          is_warmup: isWarmup,
+          set_type: setType,
           logged_at: now,
           source: params.source ?? 'tap',
           client_set_id: clientSetId,
@@ -274,7 +302,8 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
         reps: params.reps,
         rpe: params.rpe,
         unit: params.unit,
-        is_warmup: 0,
+        is_warmup: isWarmup,
+        set_type: setType,
         logged_at: now,
         source: params.source ?? 'tap',
         client_set_id: clientSetId,
@@ -288,7 +317,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
   const editSet = useCallback(
     async (
       setId: string,
-      fields: Partial<Pick<WorkoutSet, 'weight' | 'reps' | 'rpe' | 'unit'>>,
+      fields: Partial<Pick<WorkoutSet, 'weight' | 'reps' | 'rpe' | 'unit' | 'set_type'>>,
     ) => {
       const db = dbRef.current;
       if (!db || !session) return;
@@ -298,6 +327,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
       if (fields.reps !== undefined) payload.reps = fields.reps;
       if (fields.rpe !== undefined) payload.rpe = fields.rpe;
       if (fields.unit !== undefined) payload.unit = fields.unit;
+      if (fields.set_type !== undefined) payload.set_type = fields.set_type;
       if (Object.keys(payload).length === 1) return;
 
       await db.withTransactionAsync(async () => {
@@ -311,9 +341,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
         await updateSet(db, setId, fields);
       });
 
-      setSets((prev) =>
-        prev.map((set) => (set.id === setId ? { ...set, ...fields } : set)),
-      );
+      setSets((prev) => prev.map((set) => (set.id === setId ? { ...set, ...fields } : set)));
 
       const edited = sets.find((set) => set.id === setId);
       if (edited) await updateExerciseHistoryCache(db, edited.exercise_id);
@@ -363,6 +391,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     const totalVolume = calculateSessionVolume(sets.filter((set) => set.deleted_at === null));
     await dbEndSession(db, session.id, totalVolume);
     await updateSessionExerciseHistoryCache(db, session.id);
+    await recordFinalPrsSafely(db, session.id);
     setPhase('ended');
   }, [session, sets]);
 
@@ -374,7 +403,12 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
   }, [session]);
 
   const addExercise = useCallback(
-    (exercise: { id: string; name: string; category: ExerciseCategory; default_unit: Unit | null }) => {
+    (exercise: {
+      id: string;
+      name: string;
+      category: ExerciseCategory;
+      default_unit: Unit | null;
+    }) => {
       setExercises((prev) => {
         if (prev.some((e) => e.id === exercise.id)) return prev;
         const next: SessionExercise = {
@@ -385,6 +419,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
           targetSets: null,
           targetReps: null,
           targetWeight: null,
+          targetRpe: null,
         };
         return [...prev, next];
       });

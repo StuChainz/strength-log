@@ -3,6 +3,26 @@ import { MIGRATIONS } from './migrations';
 import { seedExercises } from './seed/exercises';
 
 let _db: SQLiteDatabase | null = null;
+let _openingDb: Promise<SQLiteDatabase> | null = null;
+
+const REQUIRED_TABLES = [
+  'users',
+  'exercises',
+  'exercise_aliases',
+  'templates',
+  'template_items',
+  'workout_sessions',
+  'workout_events',
+  'workout_sets',
+  'exercise_prs',
+  'exercise_history_cache',
+  'post_session_tags',
+  'session_notes',
+  'metric_samples',
+  'weekly_insight_cards',
+  'app_settings',
+  'exercise_metadata',
+] as const;
 
 /**
  * Open (or return the cached) SQLite database.
@@ -10,11 +30,24 @@ let _db: SQLiteDatabase | null = null;
  */
 export async function openDb(): Promise<SQLiteDatabase> {
   if (_db) return _db;
-  const db = await openDatabaseAsync('strengthlog.db');
-  await runMigrations(db);
-  await seedExercises(db);
-  _db = db;
-  return _db;
+  if (_openingDb) return _openingDb;
+
+  _openingDb = (async () => {
+    const db = await openDatabaseAsync('strengthlog.db');
+    await runMigrations(db);
+    await seedExercises(db);
+    _db = db;
+    return db;
+  })();
+
+  try {
+    return await _openingDb;
+  } catch (error) {
+    _openingDb = null;
+    throw error;
+  } finally {
+    if (_db) _openingDb = null;
+  }
 }
 
 /**
@@ -22,6 +55,7 @@ export async function openDb(): Promise<SQLiteDatabase> {
  */
 export function _resetDbSingleton(): void {
   _db = null;
+  _openingDb = null;
 }
 
 export async function resetLocalData(): Promise<void> {
@@ -33,6 +67,7 @@ export async function resetLocalData(): Promise<void> {
     DROP TABLE IF EXISTS session_notes;
     DROP TABLE IF EXISTS post_session_tags;
     DROP TABLE IF EXISTS exercise_history_cache;
+    DROP TABLE IF EXISTS exercise_prs;
     DROP TABLE IF EXISTS workout_sets;
     DROP TABLE IF EXISTS workout_events;
     DROP TABLE IF EXISTS workout_sessions;
@@ -74,5 +109,39 @@ async function runMigrations(db: SQLiteDatabase): Promise<void> {
         Date.now(),
       ]);
     });
+  }
+
+  await repairMissingRequiredTables(db);
+}
+
+async function getMissingRequiredTables(db: SQLiteDatabase): Promise<string[]> {
+  const rows = await db.getAllAsync<{ name: string }>(
+    `SELECT name
+       FROM sqlite_master
+      WHERE type = 'table'
+        AND name IN (${REQUIRED_TABLES.map(() => '?').join(', ')})`,
+    [...REQUIRED_TABLES],
+  );
+  const existing = new Set(rows.map((row) => row.name));
+  return REQUIRED_TABLES.filter((table) => !existing.has(table));
+}
+
+async function repairMissingRequiredTables(db: SQLiteDatabase): Promise<void> {
+  const missing = await getMissingRequiredTables(db);
+  if (missing.length === 0) return;
+
+  for (const migration of MIGRATIONS) {
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(migration.sql);
+      await db.runAsync('INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)', [
+        migration.name,
+        Date.now(),
+      ]);
+    });
+  }
+
+  const stillMissing = await getMissingRequiredTables(db);
+  if (stillMissing.length > 0) {
+    throw new Error(`Database schema repair failed. Missing tables: ${stillMissing.join(', ')}`);
   }
 }

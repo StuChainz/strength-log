@@ -1,4 +1,5 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
+import { getFinalPRsBySession, type ExercisePRWithExercise } from './prs.repo';
 import { calculateSessionVolume } from '@/domain/volume';
 import type { WorkoutSession, WorkoutSet } from '@/domain/types';
 
@@ -8,6 +9,7 @@ export interface WorkoutSummary {
   volume: number;
   durationMin: number;
   prCount: number;
+  prs: ExercisePRWithExercise[];
 }
 
 export async function getWorkoutSummary(
@@ -26,6 +28,7 @@ export async function getWorkoutSummary(
         AND deleted_at IS NULL`,
     [sessionId],
   );
+  const prs = await getFinalPRsBySession(db, sessionId);
 
   const endedAt = session.ended_at ?? Date.now();
   return {
@@ -33,6 +36,7 @@ export async function getWorkoutSummary(
     setCount: sets.length,
     volume: calculateSessionVolume(sets),
     durationMin: Math.max(0, Math.round((endedAt - session.started_at) / 60000)),
-    prCount: 0,
+    prCount: prs.length,
+    prs,
   };
 }

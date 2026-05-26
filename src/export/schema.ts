@@ -8,6 +8,7 @@ export const EXPORT_TABLES = [
   'workout_sessions',
   'workout_events',
   'workout_sets',
+  'exercise_prs',
   'exercise_history_cache',
   'post_session_tags',
   'session_notes',

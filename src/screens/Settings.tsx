@@ -37,7 +37,6 @@ export default function Settings() {
 
   useEffect(() => {
     // Loading local settings on mount is the screen's external synchronization point.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 

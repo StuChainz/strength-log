@@ -1,12 +1,33 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getWorkoutSummary, type WorkoutSummary } from '@/db/repositories/sessionSummary.repo';
 import { T } from '@/theme/tokens';
-import type { EndWorkoutSummaryNavigationProp, EndWorkoutSummaryRouteProp } from '@/navigation/types';
+import type {
+  EndWorkoutSummaryNavigationProp,
+  EndWorkoutSummaryRouteProp,
+} from '@/navigation/types';
+import type { ExercisePRWithExercise } from '@/db/repositories/prs.repo';
+
+function formatPR(pr: ExercisePRWithExercise): string {
+  if (pr.record_type === 'rep_max') {
+    return `${pr.exercise_name}: ${pr.weight ?? pr.value}${pr.unit} × ${pr.reps ?? '—'} rep PR`;
+  }
+  if (pr.record_type === 'estimated_1rm') {
+    return `${pr.exercise_name}: ${pr.value.toFixed(1)}${pr.unit} estimated 1RM`;
+  }
+  return `${pr.exercise_name}: ${Math.round(pr.value)}${pr.unit} session volume`;
+}
 
 export default function EndWorkoutSummary() {
   const navigation = useNavigation<EndWorkoutSummaryNavigationProp>();
@@ -47,24 +68,40 @@ export default function EndWorkoutSummary() {
           </View>
         </View>
 
-        <View style={styles.grid}>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricValue}>{summary.setCount}</Text>
-            <Text style={styles.metricLabel}>sets</Text>
+        <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+          <View style={styles.grid}>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricValue}>{summary.setCount}</Text>
+              <Text style={styles.metricLabel}>sets</Text>
+            </View>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricValue}>{Math.round(summary.volume)}</Text>
+              <Text style={styles.metricLabel}>kg volume</Text>
+            </View>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricValue}>{summary.durationMin}</Text>
+              <Text style={styles.metricLabel}>minutes</Text>
+            </View>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricValue}>{summary.prCount}</Text>
+              <Text style={styles.metricLabel}>PRs</Text>
+            </View>
           </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricValue}>{Math.round(summary.volume)}</Text>
-            <Text style={styles.metricLabel}>kg volume</Text>
+
+          <View style={styles.prBlock}>
+            <Text style={styles.sectionLabel}>NEW PRs</Text>
+            {summary.prs.length === 0 ? (
+              <Text style={styles.noPrText}>No new PRs</Text>
+            ) : (
+              summary.prs.map((pr) => (
+                <View key={pr.id} style={styles.prRow}>
+                  <Ionicons name="sparkles-outline" size={14} color={T.accent} />
+                  <Text style={styles.prText}>{formatPR(pr)}</Text>
+                </View>
+              ))
+            )}
           </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricValue}>{summary.durationMin}</Text>
-            <Text style={styles.metricLabel}>minutes</Text>
-          </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricValue}>{summary.prCount}</Text>
-            <Text style={styles.metricLabel}>PRs</Text>
-          </View>
-        </View>
+        </ScrollView>
 
         <TouchableOpacity
           style={styles.primaryBtn}
@@ -103,6 +140,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  body: { flex: 1 },
+  bodyContent: { paddingBottom: 18 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 28 },
   metricCard: {
     width: '48%',
@@ -120,6 +159,24 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginTop: 5,
   },
+  prBlock: {
+    marginTop: 22,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    backgroundColor: T.surface,
+    padding: 14,
+  },
+  sectionLabel: {
+    color: T.muted,
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  prRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 7 },
+  prText: { flex: 1, color: T.text, fontSize: 13, lineHeight: 18 },
+  noPrText: { color: T.textDim, fontSize: 13 },
   primaryBtn: {
     marginTop: 'auto',
     flexDirection: 'row',

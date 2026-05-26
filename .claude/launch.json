@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "expo-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "dist-web", "--listen", "8081", "--no-clipboard"],
+      "port": 8081
+    }
+  ]
+}
