@@ -349,13 +349,29 @@ describe('LiveWorkout screen core flow', () => {
     fireEvent.press(getByTestId('manual-rest-60'));
     expect(getByTestId('rest-timer-remaining').props.children).toBe('01:00');
 
-    fireEvent.press(getByTestId('rest-add-30'));
-    expect(getByTestId('rest-timer-remaining').props.children).toBe('01:30');
+    fireEvent.press(getByTestId('rest-add-15'));
+    expect(getByTestId('rest-timer-remaining').props.children).toBe('01:15');
 
     fireEvent.press(getByTestId('rest-stop'));
     expect(queryByTestId('rest-timer-remaining')).toBeNull();
     expect(getByTestId('manual-rest-60')).toBeTruthy();
     expect(store.logSet).not.toHaveBeenCalled();
+  });
+
+  it('uses the selected manual rest for future sets of the active exercise', async () => {
+    const store = activeStore({ sets: [] });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId } = render(<LiveWorkout />);
+
+    fireEvent.press(getByTestId('manual-rest-90'));
+    expect(getByTestId('rest-timer-remaining').props.children).toBe('01:30');
+
+    fireEvent.press(getByTestId('rest-stop'));
+    fireEvent.press(getByTestId('log-set-btn'));
+
+    await waitFor(() => expect(store.logSet).toHaveBeenCalledTimes(1));
+    expect(getByTestId('rest-timer-remaining').props.children).toBe('01:30');
   });
 
   it('shows rest done when the foreground timer reaches zero', async () => {

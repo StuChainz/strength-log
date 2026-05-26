@@ -58,6 +58,7 @@ const SET_TYPE_OPTIONS: { value: SetType; label: string; rowLabel: string }[] = 
   { value: 'drop', label: 'Drop', rowLabel: 'DROP' },
 ];
 const REST_TIMER_PRESETS_SECONDS = [60, 90, 120, 180] as const;
+const REST_TIMER_INCREMENT_SECONDS = 15;
 const ENABLE_TYPED_VOICE_DEBUG = process.env.NODE_ENV !== 'production';
 
 type RestTimerState = {
@@ -225,6 +226,9 @@ export default function LiveWorkout() {
   );
   const [restTimer, setRestTimer] = useState<RestTimerState | null>(null);
   const [restNow, setRestNow] = useState(Date.now());
+  const [exerciseRestSecondsById, setExerciseRestSecondsById] = useState<
+    Record<string, number | null>
+  >({});
   const loggingRef = useRef(false);
   const completedRef = useRef(false);
   const completedRestTimerKeyRef = useRef<string | null>(null);
@@ -354,6 +358,16 @@ export default function LiveWorkout() {
     exercises.find((exercise) => exercise.id === restTimer?.exerciseId)?.name ??
     activeExercise?.name ??
     null;
+  const getExerciseRestSeconds = useCallback(
+    (exercise: { id: string; restSeconds: number | null }): number | null => {
+      if (Object.prototype.hasOwnProperty.call(exerciseRestSecondsById, exercise.id)) {
+        return exerciseRestSecondsById[exercise.id] ?? null;
+      }
+      return exercise.restSeconds;
+    },
+    [exerciseRestSecondsById],
+  );
+  const activeRestSeconds = activeExercise ? getExerciseRestSeconds(activeExercise) : null;
 
   useEffect(() => {
     if (!session || exerciseIdsKey.length === 0) {
@@ -609,7 +623,7 @@ export default function LiveWorkout() {
   const handleAddRestTime = useCallback(() => {
     if (!restTimer) return;
     const nextTimer: RestTimerState = {
-      ...addRestTimerSeconds(restTimer, 30),
+      ...addRestTimerSeconds(restTimer, REST_TIMER_INCREMENT_SECONDS),
       exerciseId: restTimer.exerciseId,
       exerciseName: restTimer.exerciseName,
       status: 'running',
@@ -623,6 +637,20 @@ export default function LiveWorkout() {
       exercise_id: nextTimer.exerciseId,
     });
   }, [appendRestTimerEvent, restTimer]);
+
+  const handleManualRestStart = useCallback(
+    (seconds: number) => {
+      if (!activeExercise) return;
+      setExerciseRestSecondsById((prev) => ({ ...prev, [activeExercise.id]: seconds }));
+      startRestTimer(seconds, activeExercise);
+    },
+    [activeExercise, startRestTimer],
+  );
+
+  const handleClearExerciseRest = useCallback(() => {
+    if (!activeExercise) return;
+    setExerciseRestSecondsById((prev) => ({ ...prev, [activeExercise.id]: null }));
+  }, [activeExercise]);
 
   const handleStopRestTimer = useCallback(() => {
     if (!restTimer) return;
@@ -725,8 +753,9 @@ export default function LiveWorkout() {
         unit: activeExercise?.defaultUnit ?? 'kg',
         setType,
       });
-      if (activeExercise?.restSeconds) {
-        startRestTimer(activeExercise.restSeconds, activeExercise);
+      const restSeconds = activeExercise ? getExerciseRestSeconds(activeExercise) : null;
+      if (restSeconds) {
+        startRestTimer(restSeconds, activeExercise);
       }
       if (setType === 'warmup') setSetType('working');
       Vibration.vibrate(10);
@@ -745,6 +774,7 @@ export default function LiveWorkout() {
     activeExercise,
     commitRepsInput,
     commitWeightInput,
+    getExerciseRestSeconds,
     logSet,
     rpe,
     setType,
@@ -822,7 +852,8 @@ export default function LiveWorkout() {
           source: 'voice',
         });
         const loggedExercise = exercises.find((exercise) => exercise.id === exerciseId);
-        if (loggedExercise?.restSeconds) startRestTimer(loggedExercise.restSeconds, loggedExercise);
+        const restSeconds = loggedExercise ? getExerciseRestSeconds(loggedExercise) : null;
+        if (loggedExercise && restSeconds) startRestTimer(restSeconds, loggedExercise);
         setVoiceMessage('Logged from typed voice.');
         return;
       }
@@ -850,7 +881,11 @@ export default function LiveWorkout() {
       }
 
       if (parsed.intent === 'start_rest_timer') {
-        startRestTimer(parsed.args.seconds as number, activeExercise);
+        const seconds = parsed.args.seconds as number;
+        if (activeExercise) {
+          setExerciseRestSecondsById((prev) => ({ ...prev, [activeExercise.id]: seconds }));
+        }
+        startRestTimer(seconds, activeExercise);
         setVoiceMessage('Rest timer started.');
         return;
       }
@@ -863,6 +898,7 @@ export default function LiveWorkout() {
       activeExercise,
       activeExerciseIndex,
       exercises,
+      getExerciseRestSeconds,
       handleEndWorkout,
       logSet,
       setActiveExerciseId,
@@ -1029,9 +1065,9 @@ export default function LiveWorkout() {
                 <TouchableOpacity
                   style={styles.restTimerActionBtn}
                   onPress={handleAddRestTime}
-                  testID="rest-add-30"
+                  testID="rest-add-15"
                 >
-                  <Text style={styles.restTimerActionText}>+30s</Text>
+                  <Text style={styles.restTimerActionText}>+15s</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.restTimerActionBtn}
@@ -1046,20 +1082,44 @@ export default function LiveWorkout() {
             </>
           ) : (
             <>
-              <Text style={styles.manualRestLabel}>Rest</Text>
+              <Text style={styles.manualRestLabel}>
+                {activeRestSeconds ? `Rest ${formatElapsed(activeRestSeconds)}` : 'Rest'}
+              </Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.manualRestOptions}
               >
+                <TouchableOpacity
+                  style={[styles.manualRestBtn, activeRestSeconds === null && styles.manualRestBtnActive]}
+                  onPress={handleClearExerciseRest}
+                  testID="manual-rest-off"
+                >
+                  <Text
+                    style={[
+                      styles.manualRestBtnText,
+                      activeRestSeconds === null && styles.manualRestBtnTextActive,
+                    ]}
+                  >
+                    Off
+                  </Text>
+                </TouchableOpacity>
                 {REST_TIMER_PRESETS_SECONDS.map((seconds) => (
                   <TouchableOpacity
                     key={seconds}
-                    style={styles.manualRestBtn}
-                    onPress={() => startRestTimer(seconds, activeExercise)}
+                    style={[
+                      styles.manualRestBtn,
+                      activeRestSeconds === seconds && styles.manualRestBtnActive,
+                    ]}
+                    onPress={() => handleManualRestStart(seconds)}
                     testID={`manual-rest-${seconds}`}
                   >
-                    <Text style={styles.manualRestBtnText}>
+                    <Text
+                      style={[
+                        styles.manualRestBtnText,
+                        activeRestSeconds === seconds && styles.manualRestBtnTextActive,
+                      ]}
+                    >
                       {seconds >= 60 ? `${seconds / 60}m` : `${seconds}s`}
                     </Text>
                   </TouchableOpacity>
@@ -1885,6 +1945,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   manualRestBtnText: { color: T.textDim, fontSize: 12, fontWeight: '700' },
+  manualRestBtnActive: { backgroundColor: T.text, borderColor: T.text },
+  manualRestBtnTextActive: { color: T.bg },
 
   scrollArea: { flex: 1 },
   scrollContent: { paddingHorizontal: 22, paddingTop: 14, paddingBottom: 8 },

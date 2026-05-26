@@ -39,10 +39,10 @@ Use this checklist for the native Expo Go pass. Keep it short and record only cl
 3. Type `32.5` directly into the weight field and confirm the log button reflects the value.
 4. Tap the weight `+` and `-` controls and confirm they still change weight in the existing quick increments.
 5. Log a set for the exercise with `90s` rest and confirm a 90s timer starts.
-6. Press `+30s` and confirm the timer updates.
+6. Press `+15s` and confirm the timer updates.
 7. Stop/skip the timer.
-8. Manually start a 60s timer.
-9. Log a set for the exercise with no rest configured and confirm no auto-timer starts.
+8. Manually start a 60s timer, stop it, then log another set for that exercise and confirm the 60s timer starts again.
+9. Set rest to `Off` for the exercise with no rest configured, log a set, and confirm no auto-timer starts.
 10. Select `Warm-up`, log a set, and confirm the row shows `WARM-UP`.
 11. Select `Working`, log a set after the direct weight edit, and confirm the row records the typed weight and shows `WORKING`.
 12. Select `Drop`, log a set, and confirm the row shows `DROP`.
