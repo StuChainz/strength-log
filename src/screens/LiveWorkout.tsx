@@ -167,6 +167,31 @@ function getSuggestionReason(label: string): string {
   return label.replace(/\.$/, '');
 }
 
+function getRecentHistoryBuckets(sets: WorkoutSet[]): {
+  recentSets: WorkoutSet[];
+  previousSessionSets: WorkoutSet[];
+} {
+  const visibleSets = sets.filter((set) => set.deleted_at === null);
+  const recentSessionId = visibleSets[0]?.session_id ?? null;
+  const previousSessionId =
+    visibleSets.find((set) => set.session_id !== recentSessionId)?.session_id ?? null;
+
+  return {
+    recentSets:
+      recentSessionId === null
+        ? []
+        : visibleSets
+            .filter((set) => set.session_id === recentSessionId)
+            .sort((a, b) => a.position - b.position),
+    previousSessionSets:
+      previousSessionId === null
+        ? []
+        : visibleSets
+            .filter((set) => set.session_id === previousSessionId)
+            .sort((a, b) => a.position - b.position),
+  };
+}
+
 function formatPotentialPRLine(indicators: Pick<LivePotentialPR, 'label'>[]): string {
   const labels = Array.from(new Set(indicators.map((indicator) => indicator.label)));
   return `${labels.join(' · ')} · PR pending until workout is saved`;
@@ -311,27 +336,23 @@ export default function LiveWorkout() {
     [activeExercise, activeExerciseId, exercises, lastLoggedSet],
   );
   const suggestion = useMemo(
-    () =>
-      getProgressionSuggestion({
-        category: activeExercise?.category ?? 'barbell',
-        targetReps: activeExercise?.targetReps ?? null,
-        lastSet: lastSets[0]
-          ? {
-              weight: lastSets[0].weight,
-              reps: lastSets[0].reps,
-              rpe: lastSets[0].rpe,
-              unit: lastSets[0].unit,
-            }
-          : null,
-        previousSet: lastSets[1]
-          ? {
-              weight: lastSets[1].weight,
-              reps: lastSets[1].reps,
-              rpe: lastSets[1].rpe,
-              unit: lastSets[1].unit,
-            }
-          : null,
-      }),
+    () => {
+      const { recentSets, previousSessionSets } = getRecentHistoryBuckets(lastSets);
+      return getProgressionSuggestion({
+        exercise: activeExercise?.progressionExercise ?? {
+          category: activeExercise?.category ?? 'barbell',
+        },
+        templateTarget: {
+          targetSets: activeExercise?.targetSets ?? null,
+          targetReps: activeExercise?.targetReps ?? null,
+          targetWeight: activeExercise?.targetWeight ?? null,
+          unit: activeExercise?.defaultUnit ?? 'kg',
+        },
+        progressionRule: activeExercise?.progressionRule ?? { rule: 'none' },
+        recentSets,
+        previousSessionSets,
+      });
+    },
     [activeExercise, lastSets],
   );
   const potentialPRs = useMemo(
@@ -486,8 +507,8 @@ export default function LiveWorkout() {
              AND ws.session_id != ?
              AND ws.deleted_at IS NULL
              AND sess.status = 'completed'
-           ORDER BY ws.logged_at DESC
-           LIMIT 5`,
+           ORDER BY sess.started_at DESC, ws.position ASC
+           LIMIT 12`,
           [activeExerciseId, session.id],
         ),
       )
@@ -951,7 +972,7 @@ export default function LiveWorkout() {
         } complete`
       : null;
   const suggestionHasValue = suggestion.weight !== null || suggestion.reps !== null;
-  const suggestionReason = getSuggestionReason(suggestion.label);
+  const suggestionReason = suggestion.reason || getSuggestionReason(suggestion.label);
   const nextSetSummary = `${wgt} ${activeUnit} × ${reps} reps${
     rpe !== null ? ` · RPE ${formatWeightInput(rpe)}` : ''
   } · ${getSetTypeLabel(setType)}`;
@@ -1533,9 +1554,18 @@ export default function LiveWorkout() {
         exerciseId={activeExercise?.id ?? null}
         exerciseName={activeExercise?.name ?? ''}
         category={activeExercise?.category ?? 'barbell'}
-        targetReps={activeExercise?.targetReps ?? null}
-        onClose={() => setHistoryVisible(false)}
-        onApplySuggestion={(next) => {
+            targetReps={activeExercise?.targetReps ?? null}
+            targetSets={activeExercise?.targetSets ?? null}
+            targetWeight={activeExercise?.targetWeight ?? null}
+            progressionRule={activeExercise?.progressionRule ?? { rule: 'none' }}
+            progressionExercise={
+              activeExercise?.progressionExercise ?? {
+                category: activeExercise?.category ?? 'barbell',
+              }
+            }
+            defaultUnit={activeExercise?.defaultUnit ?? 'kg'}
+            onClose={() => setHistoryVisible(false)}
+            onApplySuggestion={(next) => {
           if (next.weight !== null) setWeight(next.weight);
           if (next.reps !== null) setReps(next.reps);
           setRpe(null);

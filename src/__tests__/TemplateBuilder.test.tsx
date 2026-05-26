@@ -183,18 +183,118 @@ describe('TemplateBuilder — create mode', () => {
           name: 'Push A',
           notes: 'Keep elbows tucked',
           items: [
-            {
+            expect.objectContaining({
               exercise_id: 'ex-bench',
               target_sets: 3,
               target_reps: 8,
               target_weight: 32.5,
               target_rpe: 8,
               rest_seconds: null,
-            },
+              progression_rule: 'none',
+            }),
           ],
         }),
       );
       expect(mockGoBack).toHaveBeenCalled();
+    });
+  });
+
+  it('renders progression rule selector', async () => {
+    const { getByTestId } = render(<TemplateBuilder />);
+
+    fireEvent.press(getByTestId('add-exercise-btn'));
+    await waitFor(() => expect(getByTestId('mock-picker-select')).toBeTruthy());
+    fireEvent.press(getByTestId('mock-picker-select'));
+
+    await waitFor(() => expect(getByTestId(/^progression-rule-none-/)).toBeTruthy());
+  });
+
+  it('saves a linear progression rule', async () => {
+    const { getByTestId } = render(<TemplateBuilder />);
+
+    fireEvent.changeText(getByTestId('template-name-input'), 'Push A');
+    fireEvent.press(getByTestId('add-exercise-btn'));
+    await waitFor(() => expect(getByTestId('mock-picker-select')).toBeTruthy());
+    fireEvent.press(getByTestId('mock-picker-select'));
+
+    const linearRule = await waitFor(() => getByTestId(/^progression-rule-linear-/));
+    fireEvent.press(linearRule);
+    fireEvent.changeText(getByTestId(/^progression-increment-/), '2.5');
+    fireEvent.press(getByTestId('save-btn'));
+
+    await waitFor(() => {
+      expect(createTemplate).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          items: [
+            expect.objectContaining({
+              progression_rule: 'linear',
+              increment_kg: 2.5,
+              increment_lb: null,
+            }),
+          ],
+        }),
+      );
+    });
+  });
+
+  it('saves a double progression rule', async () => {
+    const { getByTestId } = render(<TemplateBuilder />);
+
+    fireEvent.changeText(getByTestId('template-name-input'), 'Upper A');
+    fireEvent.press(getByTestId('add-exercise-btn'));
+    await waitFor(() => expect(getByTestId('mock-picker-select')).toBeTruthy());
+    fireEvent.press(getByTestId('mock-picker-select'));
+
+    fireEvent.press(await waitFor(() => getByTestId(/^progression-rule-double-/)));
+    fireEvent.changeText(getByTestId(/^progression-rep-min-/), '8');
+    fireEvent.changeText(getByTestId(/^progression-rep-max-/), '12');
+    fireEvent.changeText(getByTestId(/^progression-increment-/), '2.5');
+    fireEvent.press(getByTestId('save-btn'));
+
+    await waitFor(() => {
+      expect(createTemplate).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          items: [
+            expect.objectContaining({
+              progression_rule: 'double',
+              rep_range_min: 8,
+              rep_range_max: 12,
+              increment_kg: 2.5,
+            }),
+          ],
+        }),
+      );
+    });
+  });
+
+  it('saves an RPE-gated progression rule', async () => {
+    const { getByTestId } = render(<TemplateBuilder />);
+
+    fireEvent.changeText(getByTestId('template-name-input'), 'Strength A');
+    fireEvent.press(getByTestId('add-exercise-btn'));
+    await waitFor(() => expect(getByTestId('mock-picker-select')).toBeTruthy());
+    fireEvent.press(getByTestId('mock-picker-select'));
+
+    fireEvent.press(await waitFor(() => getByTestId(/^progression-rule-rpe_gated-/)));
+    fireEvent.changeText(getByTestId(/^progression-rpe-cap-/), '8.5');
+    fireEvent.changeText(getByTestId(/^progression-increment-/), '2.5');
+    fireEvent.press(getByTestId('save-btn'));
+
+    await waitFor(() => {
+      expect(createTemplate).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          items: [
+            expect.objectContaining({
+              progression_rule: 'rpe_gated',
+              rpe_cap: 8.5,
+              increment_kg: 2.5,
+            }),
+          ],
+        }),
+      );
     });
   });
 

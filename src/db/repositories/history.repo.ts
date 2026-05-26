@@ -1,6 +1,6 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import { calculateSessionVolume, estimateOneRepMax } from '@/domain/volume';
-import type { Unit, WorkoutSet } from '@/domain/types';
+import type { SetType, Unit, WorkoutSet } from '@/domain/types';
 
 export interface HistorySet {
   id: string;
@@ -8,6 +8,7 @@ export interface HistorySet {
   reps: number | null;
   rpe: number | null;
   unit: Unit;
+  set_type: SetType;
   logged_at: number;
   position: number;
 }
@@ -32,6 +33,7 @@ interface HistoryRow {
   reps: number | null;
   rpe: number | null;
   unit: Unit;
+  set_type: SetType;
   logged_at: number;
   position: number;
 }
@@ -72,6 +74,7 @@ function toHistorySessions(rows: HistoryRow[]): ExerciseHistorySession[] {
       reps: row.reps,
       rpe: row.rpe,
       unit: row.unit,
+      set_type: row.set_type,
       logged_at: row.logged_at,
       position: row.position,
     });
@@ -98,7 +101,7 @@ export async function getExerciseHistory(
 ): Promise<ExerciseHistorySession[]> {
   const rows = await db.getAllAsync<HistoryRow>(
     `SELECT sess.id AS session_id, sess.started_at, sess.ended_at,
-            ws.id AS set_id, ws.weight, ws.reps, ws.rpe, ws.unit,
+            ws.id AS set_id, ws.weight, ws.reps, ws.rpe, ws.unit, ws.set_type,
             ws.logged_at, ws.position
        FROM workout_sets ws
        JOIN workout_sessions sess ON sess.id = ws.session_id

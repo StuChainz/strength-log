@@ -44,10 +44,13 @@ jest.mock('@/db/repositories/events.repo', () => ({
 jest.mock('@/domain/progression', () => ({
   getProgressionSuggestion: jest.fn(() => ({
     label: 'No suggestion yet.',
+    reason: 'No suggestion yet',
     weight: null,
     reps: null,
     rpe: null,
     unit: 'kg',
+    source: 'fallback',
+    rule: 'none',
   })),
 }));
 
@@ -149,10 +152,13 @@ describe('LiveWorkout screen core flow', () => {
     });
     getProgressionSuggestionMock.mockReturnValue({
       label: 'No suggestion yet.',
+      reason: 'No suggestion yet',
       weight: null,
       reps: null,
       rpe: null,
       unit: 'kg',
+      source: 'fallback',
+      rule: 'none',
     });
     useSessionStoreMock.mockReturnValue(activeStore());
   });
@@ -201,10 +207,13 @@ describe('LiveWorkout screen core flow', () => {
   it('renders suggestion copy with a short reason label', () => {
     getProgressionSuggestionMock.mockReturnValue({
       label: 'Same weight, same reps.',
+      reason: 'Repeat target',
       weight: 80,
       reps: 5,
       rpe: null,
       unit: 'kg',
+      source: 'template_rule',
+      rule: 'linear',
     });
     const store = activeStore({ sets: [] });
     useSessionStoreMock.mockReturnValue(store);
@@ -213,6 +222,29 @@ describe('LiveWorkout screen core flow', () => {
 
     expect(getByText(/Repeat target/)).toBeTruthy();
     expect(getByText(/Suggest ·/)).toBeTruthy();
+  });
+
+  it('renders suggestion reason from a template rule and tapping only fills the logger', async () => {
+    getProgressionSuggestionMock.mockReturnValue({
+      label: 'Linear: target hit',
+      reason: 'Linear: target hit',
+      weight: 82.5,
+      reps: 5,
+      rpe: null,
+      unit: 'kg',
+      source: 'template_rule',
+      rule: 'linear',
+    });
+    const store = activeStore({ sets: [] });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId, getByText } = render(<LiveWorkout />);
+
+    expect(getByText(/Linear: target hit/)).toBeTruthy();
+    fireEvent.press(getByTestId('suggestion-row'));
+
+    await waitFor(() => expect(getByText('Log set · 82.5 × 5')).toBeTruthy());
+    expect(store.logSet).not.toHaveBeenCalled();
   });
 
   it('shows the active exercise, set rows, log button, and undo control', async () => {

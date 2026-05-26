@@ -454,6 +454,163 @@ describe('core app flow repository acceptance', () => {
     ).rejects.toThrow('rest_seconds must be a positive integer when set');
   });
 
+  it('persists and reloads template progression fields', async () => {
+    db = await setupDb();
+    const bench = await exerciseByName(db, 'Barbell Bench Press');
+
+    const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(template_items)');
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'progression_rule' }),
+        expect.objectContaining({ name: 'increment_kg' }),
+        expect.objectContaining({ name: 'increment_lb' }),
+        expect.objectContaining({ name: 'rep_range_min' }),
+        expect.objectContaining({ name: 'rep_range_max' }),
+        expect.objectContaining({ name: 'rpe_cap' }),
+      ]),
+    );
+
+    const template = await createTemplate(db as never, {
+      name: 'Progression template',
+      notes: null,
+      items: [
+        {
+          exercise_id: bench.id,
+          target_sets: 3,
+          target_reps: 5,
+          target_weight: 80,
+          target_rpe: null,
+          rest_seconds: null,
+          progression_rule: 'linear',
+          increment_kg: 2.5,
+          increment_lb: null,
+          rep_range_min: null,
+          rep_range_max: null,
+          rpe_cap: null,
+        },
+      ],
+    });
+
+    expect(await getTemplateItemsWithExercise(db as never, template.id)).toEqual([
+      expect.objectContaining({
+        exercise_id: bench.id,
+        progression_rule: 'linear',
+        increment_kg: 2.5,
+        increment_lb: null,
+        rep_range_min: null,
+        rep_range_max: null,
+        rpe_cap: null,
+        exercise_movement_pattern: 'horizontal_push',
+        exercise_mechanics: 'compound',
+      }),
+    ]);
+
+    await updateTemplate(db as never, template.id, {
+      name: 'Progression template',
+      notes: null,
+      items: [
+        {
+          exercise_id: bench.id,
+          target_sets: 3,
+          target_reps: null,
+          target_weight: 20,
+          target_rpe: null,
+          rest_seconds: null,
+          progression_rule: 'double',
+          increment_kg: 2.5,
+          increment_lb: null,
+          rep_range_min: 8,
+          rep_range_max: 12,
+          rpe_cap: null,
+        },
+      ],
+    });
+
+    expect(await getTemplateItemsWithExercise(db as never, template.id)).toEqual([
+      expect.objectContaining({
+        progression_rule: 'double',
+        rep_range_min: 8,
+        rep_range_max: 12,
+      }),
+    ]);
+  });
+
+  it('loads old-style template item inputs as progression none', async () => {
+    db = await setupDb();
+    const bench = await exerciseByName(db, 'Barbell Bench Press');
+
+    const template = await createTemplate(db as never, {
+      name: 'Old template',
+      notes: null,
+      items: [
+        {
+          exercise_id: bench.id,
+          target_sets: null,
+          target_reps: null,
+          target_weight: null,
+          target_rpe: null,
+          rest_seconds: null,
+        },
+      ],
+    });
+
+    expect(await getTemplateItemsWithExercise(db as never, template.id)).toEqual([
+      expect.objectContaining({
+        progression_rule: 'none',
+        increment_kg: null,
+        rep_range_min: null,
+        rpe_cap: null,
+      }),
+    ]);
+  });
+
+  it('rejects invalid template progression ranges and RPE caps', async () => {
+    db = await setupDb();
+    const bench = await exerciseByName(db, 'Barbell Bench Press');
+    const baseItem = {
+      exercise_id: bench.id,
+      target_sets: 3,
+      target_reps: 8,
+      target_weight: 20,
+      target_rpe: null,
+      rest_seconds: null,
+      increment_kg: null,
+      increment_lb: null,
+    };
+
+    await expect(
+      createTemplate(db as never, {
+        name: 'Bad double',
+        notes: null,
+        items: [
+          {
+            ...baseItem,
+            progression_rule: 'double',
+            rep_range_min: 12,
+            rep_range_max: 8,
+            rpe_cap: null,
+          },
+        ],
+      }),
+    ).rejects.toThrow('rep_range_min must be less than or equal to rep_range_max');
+
+    await expect(
+      createTemplate(db as never, {
+        name: 'Bad RPE',
+        notes: null,
+        items: [
+          {
+            ...baseItem,
+            progression_rule: 'rpe_gated',
+            rep_range_min: null,
+            rep_range_max: null,
+            rpe_cap: 11,
+          },
+        ],
+      }),
+    ).rejects.toThrow('rpe_cap must be between 1 and 10 when set');
+  });
+
   it('adds set_type to workout_sets with a working default', async () => {
     db = await setupDb();
 
@@ -783,9 +940,21 @@ describe('core app flow repository acceptance', () => {
     );
 
     const suggestion = getProgressionSuggestion({
-      category: bench.category,
-      targetReps: 5,
-      lastSet: { weight: 100, reps: 5, rpe: 7, unit: 'kg' },
+      exercise: {
+        category: bench.category,
+        movementPattern: 'horizontal_push',
+        bodyRegion: 'upper_body',
+        mechanics: 'compound',
+        equipment: ['barbell'],
+      },
+      templateTarget: {
+        targetSets: null,
+        targetReps: 5,
+        targetWeight: null,
+        unit: 'kg',
+      },
+      progressionRule: { rule: 'none' },
+      recentSets: [{ weight: 100, reps: 5, rpe: 7, unit: 'kg', set_type: 'working' }],
     });
     expect(suggestion).toEqual(expect.objectContaining({ weight: 102.5, reps: 5 }));
     expect(await getSetsBySession(db as never, session.id)).toEqual(

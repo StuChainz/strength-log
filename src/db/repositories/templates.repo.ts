@@ -1,11 +1,23 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
-import { type Template, type TemplateItem, type ExerciseCategory } from '@/domain/types';
+import {
+  type Template,
+  type TemplateItem,
+  type ExerciseCategory,
+  type Mechanics,
+  type MovementPattern,
+  type BodyRegion,
+  type ProgressionRule,
+} from '@/domain/types';
 import { newId } from '@/domain/ids';
 
 export interface TemplateItemWithExercise extends TemplateItem {
   exercise_name: string;
   exercise_category: ExerciseCategory;
   exercise_default_unit: 'kg' | 'lb' | null;
+  exercise_movement_pattern: MovementPattern | null;
+  exercise_body_region: BodyRegion | null;
+  exercise_mechanics: Mechanics | null;
+  exercise_equipment_json: string | null;
 }
 
 export interface TemplateSummary {
@@ -25,12 +37,91 @@ export interface DraftItemInput {
   target_weight: number | null;
   target_rpe: number | null;
   rest_seconds: number | null;
+  progression_rule?: ProgressionRule | null;
+  increment_kg?: number | null;
+  increment_lb?: number | null;
+  rep_range_min?: number | null;
+  rep_range_max?: number | null;
+  rpe_cap?: number | null;
+}
+
+interface NormalizedDraftItemInput extends Required<DraftItemInput> {
+  progression_rule: ProgressionRule;
 }
 
 function assertValidRestSeconds(value: number | null): void {
   if (value !== null && (!Number.isInteger(value) || value <= 0)) {
     throw new RangeError('rest_seconds must be a positive integer when set');
   }
+}
+
+function assertPositiveNumber(value: number | null, field: string): void {
+  if (value !== null && (!Number.isFinite(value) || value <= 0)) {
+    throw new RangeError(`${field} must be a positive number when set`);
+  }
+}
+
+function assertPositiveInteger(value: number | null, field: string): void {
+  if (value !== null && (!Number.isInteger(value) || value <= 0)) {
+    throw new RangeError(`${field} must be a positive integer when set`);
+  }
+}
+
+function normalizeDraftItem(item: DraftItemInput): NormalizedDraftItemInput {
+  const progressionRule = item.progression_rule ?? 'none';
+  if (!['none', 'linear', 'double', 'rpe_gated'].includes(progressionRule)) {
+    throw new RangeError('progression_rule must be none, linear, double, or rpe_gated');
+  }
+
+  const normalized: NormalizedDraftItemInput = {
+    exercise_id: item.exercise_id,
+    target_sets: item.target_sets,
+    target_reps: item.target_reps,
+    target_weight: item.target_weight,
+    target_rpe: item.target_rpe,
+    rest_seconds: item.rest_seconds,
+    progression_rule: progressionRule,
+    increment_kg: item.increment_kg ?? null,
+    increment_lb: item.increment_lb ?? null,
+    rep_range_min: item.rep_range_min ?? null,
+    rep_range_max: item.rep_range_max ?? null,
+    rpe_cap: item.rpe_cap ?? null,
+  };
+
+  assertValidRestSeconds(normalized.rest_seconds);
+  assertPositiveNumber(normalized.increment_kg, 'increment_kg');
+  assertPositiveNumber(normalized.increment_lb, 'increment_lb');
+  assertPositiveInteger(normalized.rep_range_min, 'rep_range_min');
+  assertPositiveInteger(normalized.rep_range_max, 'rep_range_max');
+
+  if (
+    normalized.rep_range_min !== null &&
+    normalized.rep_range_max !== null &&
+    normalized.rep_range_min > normalized.rep_range_max
+  ) {
+    throw new RangeError('rep_range_min must be less than or equal to rep_range_max');
+  }
+
+  if (
+    normalized.rpe_cap !== null &&
+    (!Number.isFinite(normalized.rpe_cap) || normalized.rpe_cap < 1 || normalized.rpe_cap > 10)
+  ) {
+    throw new RangeError('rpe_cap must be between 1 and 10 when set');
+  }
+
+  if (normalized.progression_rule !== 'double') {
+    normalized.rep_range_min = null;
+    normalized.rep_range_max = null;
+  }
+  if (normalized.progression_rule !== 'rpe_gated') {
+    normalized.rpe_cap = null;
+  }
+  if (normalized.progression_rule === 'none') {
+    normalized.increment_kg = null;
+    normalized.increment_lb = null;
+  }
+
+  return normalized;
 }
 
 export async function getAllTemplates(db: SQLiteDatabase): Promise<Template[]> {
@@ -63,9 +154,14 @@ export async function getTemplateItemsWithExercise(
 ): Promise<TemplateItemWithExercise[]> {
   return db.getAllAsync<TemplateItemWithExercise>(
     `SELECT ti.*, e.name AS exercise_name, e.category AS exercise_category,
-            e.default_unit AS exercise_default_unit
+            e.default_unit AS exercise_default_unit,
+            em.movement_pattern AS exercise_movement_pattern,
+            em.body_region AS exercise_body_region,
+            em.mechanics AS exercise_mechanics,
+            em.equipment_json AS exercise_equipment_json
      FROM template_items ti
      JOIN exercises e ON e.id = ti.exercise_id
+     LEFT JOIN exercise_metadata em ON em.exercise_id = e.id
      WHERE ti.template_id = ?
      ORDER BY ti.position ASC`,
     [templateId],
@@ -86,12 +182,13 @@ export async function createTemplate(
       [id, data.name, data.notes, now, now],
     );
     for (let i = 0; i < data.items.length; i++) {
-      const item = data.items[i]!;
-      assertValidRestSeconds(item.rest_seconds);
+      const item = normalizeDraftItem(data.items[i]!);
       await db.runAsync(
         `INSERT INTO template_items
-           (id, template_id, exercise_id, position, target_sets, target_reps, target_weight, target_rpe, rest_seconds)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, template_id, exercise_id, position, target_sets, target_reps, target_weight,
+            target_rpe, rest_seconds, progression_rule, increment_kg, increment_lb,
+            rep_range_min, rep_range_max, rpe_cap)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newId(),
           id,
@@ -102,6 +199,12 @@ export async function createTemplate(
           item.target_weight,
           item.target_rpe,
           item.rest_seconds,
+          item.progression_rule,
+          item.increment_kg,
+          item.increment_lb,
+          item.rep_range_min,
+          item.rep_range_max,
+          item.rpe_cap,
         ],
       );
     }
@@ -131,12 +234,13 @@ export async function updateTemplate(
     );
     await db.runAsync(`DELETE FROM template_items WHERE template_id = ?`, [id]);
     for (let i = 0; i < data.items.length; i++) {
-      const item = data.items[i]!;
-      assertValidRestSeconds(item.rest_seconds);
+      const item = normalizeDraftItem(data.items[i]!);
       await db.runAsync(
         `INSERT INTO template_items
-           (id, template_id, exercise_id, position, target_sets, target_reps, target_weight, target_rpe, rest_seconds)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, template_id, exercise_id, position, target_sets, target_reps, target_weight,
+            target_rpe, rest_seconds, progression_rule, increment_kg, increment_lb,
+            rep_range_min, rep_range_max, rpe_cap)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newId(),
           id,
@@ -147,6 +251,12 @@ export async function updateTemplate(
           item.target_weight,
           item.target_rpe,
           item.rest_seconds,
+          item.progression_rule,
+          item.increment_kg,
+          item.increment_lb,
+          item.rep_range_min,
+          item.rep_range_max,
+          item.rpe_cap,
         ],
       );
     }

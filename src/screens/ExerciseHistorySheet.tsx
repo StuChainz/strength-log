@@ -11,7 +11,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getExerciseHistory, type ExerciseHistorySession } from '@/db/repositories/history.repo';
-import { getProgressionSuggestion, type ProgressionSuggestion } from '@/domain/progression';
+import {
+  getProgressionSuggestion,
+  type ProgressionExercise,
+  type ProgressionRuleConfig,
+  type ProgressionSuggestion,
+} from '@/domain/progression';
 import { T } from '@/theme/tokens';
 import type { ExerciseCategory, Unit } from '@/domain/types';
 
@@ -20,7 +25,12 @@ interface ExerciseHistorySheetProps {
   exerciseId: string | null;
   exerciseName: string;
   category: ExerciseCategory;
+  defaultUnit: Unit;
+  targetSets: number | null;
   targetReps: number | null;
+  targetWeight: number | null;
+  progressionRule: ProgressionRuleConfig;
+  progressionExercise: ProgressionExercise;
   onClose: () => void;
   onApplySuggestion?: (suggestion: ProgressionSuggestion) => void;
 }
@@ -45,7 +55,12 @@ export default function ExerciseHistorySheet({
   exerciseId,
   exerciseName,
   category,
+  defaultUnit,
+  targetSets,
   targetReps,
+  targetWeight,
+  progressionRule,
+  progressionExercise,
   onClose,
   onApplySuggestion,
 }: ExerciseHistorySheetProps) {
@@ -70,29 +85,28 @@ export default function ExerciseHistorySheet({
   }, [exerciseId, visible]);
 
   const suggestion = useMemo(() => {
-    const last = history[0]?.sets[0] ?? null;
-    const previous = history[1]?.sets[0] ?? null;
     return getProgressionSuggestion({
-      category,
-      targetReps,
-      lastSet: last
-        ? {
-            weight: last.weight,
-            reps: last.reps,
-            rpe: last.rpe,
-            unit: last.unit as Unit,
-          }
-        : null,
-      previousSet: previous
-        ? {
-            weight: previous.weight,
-            reps: previous.reps,
-            rpe: previous.rpe,
-            unit: previous.unit as Unit,
-          }
-        : null,
+      exercise: progressionExercise ?? { category },
+      templateTarget: {
+        targetSets,
+        targetReps,
+        targetWeight,
+        unit: defaultUnit,
+      },
+      progressionRule,
+      recentSets: history[0]?.sets ?? [],
+      previousSessionSets: history[1]?.sets ?? [],
     });
-  }, [category, history, targetReps]);
+  }, [
+    category,
+    defaultUnit,
+    history,
+    progressionExercise,
+    progressionRule,
+    targetReps,
+    targetSets,
+    targetWeight,
+  ]);
 
   const canApply = suggestion.weight !== null || suggestion.reps !== null;
 
@@ -126,7 +140,7 @@ export default function ExerciseHistorySheet({
                 styles.suggestionLabel,
                 (!canApply || !onApplySuggestion) && styles.suggestionTextDisabled,
               ]}>
-                {suggestion.label}
+                {suggestion.reason}
               </Text>
               {canApply ? (
                 <Text style={[

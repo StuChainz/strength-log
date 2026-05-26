@@ -25,7 +25,7 @@ import {
 import { formatExerciseMetadataSummary } from '@/domain/exerciseMetadata';
 import ExerciseHistorySheet from '@/screens/ExerciseHistorySheet';
 import { T } from '@/theme/tokens';
-import type { Exercise, ExerciseWithMetadata } from '@/domain/types';
+import type { ExerciseWithMetadata } from '@/domain/types';
 import type { ExerciseLibraryNavigationProp } from '@/navigation/types';
 
 export default function ExerciseLibrary() {
@@ -36,7 +36,7 @@ export default function ExerciseLibrary() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<ExerciseLibraryDiagnostics | null>(null);
-  const [historyExercise, setHistoryExercise] = useState<Exercise | null>(null);
+  const [historyExercise, setHistoryExercise] = useState<ExerciseWithMetadata | null>(null);
   const dbRef = useRef<Awaited<ReturnType<typeof openDb>> | null>(null);
   const loadRequestIdRef = useRef(0);
   const activeFilterRef = useRef<ExerciseFilterOption>('all');
@@ -220,7 +220,18 @@ export default function ExerciseLibrary() {
         exerciseId={historyExercise?.id ?? null}
         exerciseName={historyExercise?.name ?? ''}
         category={historyExercise?.category ?? 'barbell'}
+        defaultUnit={historyExercise?.default_unit ?? 'kg'}
+        targetSets={null}
         targetReps={null}
+        targetWeight={null}
+        progressionRule={{ rule: 'none' }}
+        progressionExercise={{
+          category: historyExercise?.category ?? 'barbell',
+          movementPattern: historyExercise?.metadata?.movement_pattern ?? null,
+          bodyRegion: historyExercise?.metadata?.body_region ?? null,
+          mechanics: historyExercise?.metadata?.mechanics ?? null,
+          equipment: historyExercise?.metadata?.equipment ?? [],
+        }}
         onClose={() => setHistoryExercise(null)}
       />
     </SafeAreaView>

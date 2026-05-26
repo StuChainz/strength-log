@@ -23,6 +23,7 @@ import {
 import { detectAndInsertFinalPrsForSession } from '@/db/repositories/prs.repo';
 import { calculateSessionVolume } from '@/domain/volume';
 import type { WorkoutSession, WorkoutSet, ExerciseCategory, Unit, SetType } from '@/domain/types';
+import type { ProgressionExercise, ProgressionRuleConfig } from '@/domain/progression';
 import type { SetAddedPayload, SetDeletedPayload, SetEditedPayload } from '@/domain/events';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
@@ -36,6 +37,8 @@ export interface SessionExercise {
   targetWeight: number | null;
   targetRpe: number | null;
   restSeconds: number | null;
+  progressionRule?: ProgressionRuleConfig;
+  progressionExercise?: ProgressionExercise;
 }
 
 export interface LogSetParams {
@@ -85,24 +88,56 @@ async function loadExercisesForTemplate(
   templateId: string,
 ): Promise<SessionExercise[]> {
   const items = await getTemplateItemsWithExercise(db, templateId);
-  return items.map((item) => ({
-    id: item.exercise_id,
-    name: item.exercise_name,
-    category: item.exercise_category,
-    defaultUnit: item.exercise_default_unit,
-    targetSets: item.target_sets,
-    targetReps: item.target_reps,
-    targetWeight: item.target_weight,
-    targetRpe: item.target_rpe,
-    restSeconds: item.rest_seconds,
-  }));
+  return items.map((item) => {
+    const equipment =
+      item.exercise_equipment_json !== null
+        ? (JSON.parse(item.exercise_equipment_json) as string[])
+        : [];
+
+    return {
+      id: item.exercise_id,
+      name: item.exercise_name,
+      category: item.exercise_category,
+      defaultUnit: item.exercise_default_unit,
+      targetSets: item.target_sets,
+      targetReps: item.target_reps,
+      targetWeight: item.target_weight,
+      targetRpe: item.target_rpe,
+      restSeconds: item.rest_seconds,
+      progressionRule: {
+        rule: item.progression_rule ?? 'none',
+        incrementKg: item.increment_kg,
+        incrementLb: item.increment_lb,
+        repRangeMin: item.rep_range_min,
+        repRangeMax: item.rep_range_max,
+        rpeCap: item.rpe_cap,
+      },
+      progressionExercise: {
+        category: item.exercise_category,
+        movementPattern: item.exercise_movement_pattern,
+        bodyRegion: item.exercise_body_region,
+        mechanics: item.exercise_mechanics,
+        equipment,
+      },
+    };
+  });
 }
 
 async function loadExercisesFromSets(
   db: SQLiteDatabase,
   sessionId: string,
 ): Promise<SessionExercise[]> {
-  return db.getAllAsync<SessionExercise>(
+  const rows = await db.getAllAsync<{
+    id: string;
+    name: string;
+    category: ExerciseCategory;
+    defaultUnit: Unit | null;
+    targetSets: null;
+    targetReps: null;
+    targetWeight: null;
+    targetRpe: null;
+    restSeconds: null;
+  }>(
     `SELECT e.id, e.name, e.category, e.default_unit AS defaultUnit,
             NULL AS targetSets, NULL AS targetReps, NULL AS targetWeight, NULL AS targetRpe,
             NULL AS restSeconds
@@ -116,6 +151,12 @@ async function loadExercisesFromSets(
      ORDER BY ws.min_pos ASC`,
     [sessionId],
   );
+
+  return rows.map((row) => ({
+    ...row,
+    progressionRule: { rule: 'none' },
+    progressionExercise: { category: row.category },
+  }));
 }
 
 async function recordFinalPrsSafely(db: SQLiteDatabase, sessionId: string): Promise<void> {
@@ -424,6 +465,8 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
           targetWeight: null,
           targetRpe: null,
           restSeconds: null,
+          progressionRule: { rule: 'none' },
+          progressionExercise: { category: exercise.category },
         };
         return [...prev, next];
       });

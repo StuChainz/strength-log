@@ -20,7 +20,7 @@ import {
   getTemplateItemsWithExercise,
 } from '@/db/repositories/templates.repo';
 import { ExercisePicker } from '@/components/ExercisePicker';
-import type { Exercise, ExerciseCategory } from '@/domain/types';
+import type { Exercise, ExerciseCategory, ProgressionRule, Unit } from '@/domain/types';
 import type { TemplateBuilderNavigationProp, TemplateBuilderRouteProp } from '@/navigation/types';
 
 // ── Draft types ───────────────────────────────────────────────────────────────
@@ -30,14 +30,26 @@ type DraftItem = {
   exercise_id: string;
   exercise_name: string;
   exercise_category: ExerciseCategory;
+  exercise_default_unit: Unit | null;
   target_sets: string;
   target_reps: string;
   target_weight: string;
   target_rpe: string;
   rest_seconds: string;
+  progression_rule: ProgressionRule;
+  increment: string;
+  rep_range_min: string;
+  rep_range_max: string;
+  rpe_cap: string;
 };
 
 const REST_PRESETS_SECONDS = [60, 90, 120, 180] as const;
+const PROGRESSION_OPTIONS: { value: ProgressionRule; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'linear', label: 'Linear' },
+  { value: 'double', label: 'Double' },
+  { value: 'rpe_gated', label: 'RPE-gated' },
+];
 
 let draftKeyCounter = 0;
 const nextKey = () => String(++draftKeyCounter);
@@ -98,11 +110,24 @@ export default function TemplateBuilder() {
           exercise_id: it.exercise_id,
           exercise_name: it.exercise_name,
           exercise_category: it.exercise_category,
+          exercise_default_unit: it.exercise_default_unit,
           target_sets: it.target_sets != null ? String(it.target_sets) : '',
           target_reps: it.target_reps != null ? String(it.target_reps) : '',
           target_weight: it.target_weight != null ? String(it.target_weight) : '',
           target_rpe: it.target_rpe != null ? String(it.target_rpe) : '',
           rest_seconds: it.rest_seconds != null ? String(it.rest_seconds) : '',
+          progression_rule: it.progression_rule ?? 'none',
+          increment:
+            it.exercise_default_unit === 'lb'
+              ? it.increment_lb != null
+                ? String(it.increment_lb)
+                : ''
+              : it.increment_kg != null
+                ? String(it.increment_kg)
+                : '',
+          rep_range_min: it.rep_range_min != null ? String(it.rep_range_min) : '',
+          rep_range_max: it.rep_range_max != null ? String(it.rep_range_max) : '',
+          rpe_cap: it.rpe_cap != null ? String(it.rpe_cap) : '',
         })),
       );
     })();
@@ -117,11 +142,17 @@ export default function TemplateBuilder() {
         exercise_id: exercise.id,
         exercise_name: exercise.name,
         exercise_category: exercise.category,
+        exercise_default_unit: exercise.default_unit,
         target_sets: '',
         target_reps: '',
         target_weight: '',
         target_rpe: '',
         rest_seconds: '',
+        progression_rule: 'none',
+        increment: '',
+        rep_range_min: '',
+        rep_range_max: '',
+        rpe_cap: '',
       },
     ]);
   };
@@ -153,11 +184,35 @@ export default function TemplateBuilder() {
     index: number,
     field: keyof Pick<
       DraftItem,
-      'target_sets' | 'target_reps' | 'target_weight' | 'target_rpe' | 'rest_seconds'
+      | 'target_sets'
+      | 'target_reps'
+      | 'target_weight'
+      | 'target_rpe'
+      | 'rest_seconds'
+      | 'increment'
+      | 'rep_range_min'
+      | 'rep_range_max'
+      | 'rpe_cap'
     >,
     value: string,
   ) => {
     setItems((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
+  };
+
+  const updateItemRule = (index: number, progressionRule: ProgressionRule) => {
+    setItems((prev) =>
+      prev.map((item, i) =>
+        i === index
+          ? {
+              ...item,
+              progression_rule: progressionRule,
+              rep_range_min: progressionRule === 'double' ? item.rep_range_min : '',
+              rep_range_max: progressionRule === 'double' ? item.rep_range_max : '',
+              rpe_cap: progressionRule === 'rpe_gated' ? item.rpe_cap : '',
+            }
+          : item,
+      ),
+    );
   };
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -174,14 +229,25 @@ export default function TemplateBuilder() {
 
     try {
       const db = await getDb();
-      const draftItems = items.map((it) => ({
-        exercise_id: it.exercise_id,
-        target_sets: parseOptionalInt(it.target_sets),
-        target_reps: parseOptionalInt(it.target_reps),
-        target_weight: parseOptionalFloat(it.target_weight),
-        target_rpe: parseOptionalFloat(it.target_rpe),
-        rest_seconds: parseOptionalRestSeconds(it.rest_seconds),
-      }));
+      const draftItems = items.map((it) => {
+        const increment = parseOptionalFloat(it.increment);
+        return {
+          exercise_id: it.exercise_id,
+          target_sets: parseOptionalInt(it.target_sets),
+          target_reps: parseOptionalInt(it.target_reps),
+          target_weight: parseOptionalFloat(it.target_weight),
+          target_rpe: parseOptionalFloat(it.target_rpe),
+          rest_seconds: parseOptionalRestSeconds(it.rest_seconds),
+          progression_rule: it.progression_rule,
+          increment_kg: it.exercise_default_unit === 'lb' ? null : increment,
+          increment_lb: it.exercise_default_unit === 'lb' ? increment : null,
+          rep_range_min:
+            it.progression_rule === 'double' ? parseOptionalInt(it.rep_range_min) : null,
+          rep_range_max:
+            it.progression_rule === 'double' ? parseOptionalInt(it.rep_range_max) : null,
+          rpe_cap: it.progression_rule === 'rpe_gated' ? parseOptionalFloat(it.rpe_cap) : null,
+        };
+      });
 
       if (isEditMode && templateId) {
         await updateTemplate(db, templateId, {
@@ -432,6 +498,95 @@ export default function TemplateBuilder() {
                     />
                   </View>
                 </View>
+
+                {/* Progression */}
+                <View style={styles.progressionBlock}>
+                  <Text style={styles.progressionLabel}>Progression</Text>
+                  <View style={styles.progressionOptions}>
+                    {PROGRESSION_OPTIONS.map((option) => {
+                      const active = item.progression_rule === option.value;
+                      return (
+                        <TouchableOpacity
+                          key={option.value}
+                          style={[styles.progressionChip, active && styles.progressionChipActive]}
+                          onPress={() => updateItemRule(index, option.value)}
+                          testID={`progression-rule-${option.value}-${item.key}`}
+                        >
+                          <Text
+                            style={[
+                              styles.progressionChipText,
+                              active && styles.progressionChipTextActive,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {item.progression_rule !== 'none' && (
+                    <View style={styles.progressionFields}>
+                      {item.progression_rule === 'double' && (
+                        <>
+                          <View style={styles.progressionField}>
+                            <Text style={styles.targetLabel}>Min reps</Text>
+                            <TextInput
+                              style={styles.targetInput}
+                              value={item.rep_range_min}
+                              onChangeText={(v) => updateItemField(index, 'rep_range_min', v)}
+                              keyboardType="number-pad"
+                              placeholder="—"
+                              placeholderTextColor="#444"
+                              maxLength={3}
+                              testID={`progression-rep-min-${item.key}`}
+                            />
+                          </View>
+                          <View style={styles.progressionField}>
+                            <Text style={styles.targetLabel}>Max reps</Text>
+                            <TextInput
+                              style={styles.targetInput}
+                              value={item.rep_range_max}
+                              onChangeText={(v) => updateItemField(index, 'rep_range_max', v)}
+                              keyboardType="number-pad"
+                              placeholder="—"
+                              placeholderTextColor="#444"
+                              maxLength={3}
+                              testID={`progression-rep-max-${item.key}`}
+                            />
+                          </View>
+                        </>
+                      )}
+                      {item.progression_rule === 'rpe_gated' && (
+                        <View style={styles.progressionField}>
+                          <Text style={styles.targetLabel}>RPE cap</Text>
+                          <TextInput
+                            style={styles.targetInput}
+                            value={item.rpe_cap}
+                            onChangeText={(v) => updateItemField(index, 'rpe_cap', v)}
+                            keyboardType="decimal-pad"
+                            placeholder="8.5"
+                            placeholderTextColor="#444"
+                            maxLength={4}
+                            testID={`progression-rpe-cap-${item.key}`}
+                          />
+                        </View>
+                      )}
+                      <View style={styles.progressionField}>
+                        <Text style={styles.targetLabel}>Increment</Text>
+                        <TextInput
+                          style={styles.targetInput}
+                          value={item.increment}
+                          onChangeText={(v) => updateItemField(index, 'increment', v)}
+                          keyboardType="decimal-pad"
+                          placeholder="Auto"
+                          placeholderTextColor="#444"
+                          maxLength={6}
+                          testID={`progression-increment-${item.key}`}
+                        />
+                      </View>
+                    </View>
+                  )}
+                </View>
               </View>
             ))}
           </View>
@@ -589,6 +744,39 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a2a2a',
   },
+  progressionBlock: {
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  progressionLabel: {
+    color: '#777',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  progressionOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  progressionChip: {
+    minHeight: 30,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressionChipActive: { backgroundColor: '#7c5cfc', borderColor: '#7c5cfc' },
+  progressionChipText: { color: '#888', fontSize: 12, fontWeight: '600' },
+  progressionChipTextActive: { color: '#fff' },
+  progressionFields: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  progressionField: { flex: 1, alignItems: 'center' },
 
   addExerciseBtn: {
     marginTop: 12,

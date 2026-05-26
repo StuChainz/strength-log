@@ -70,6 +70,7 @@ export const LATERALITY_TYPES = [
   'other',
 ] as const;
 export const SET_TYPES = ['warmup', 'working', 'drop'] as const;
+export const PROGRESSION_RULES = ['none', 'linear', 'double', 'rpe_gated'] as const;
 
 export type Unit = (typeof UNITS)[number];
 export type ExerciseCategory = (typeof EXERCISE_CATEGORIES)[number];
@@ -81,6 +82,7 @@ export type Equipment = (typeof EQUIPMENT)[number];
 export type Mechanics = (typeof MECHANICS_TYPES)[number];
 export type Laterality = (typeof LATERALITY_TYPES)[number];
 export type SetType = (typeof SET_TYPES)[number];
+export type ProgressionRule = (typeof PROGRESSION_RULES)[number];
 export type SessionStatus = 'in_progress' | 'completed' | 'discarded';
 export type ExercisePRRecordType = 'rep_max' | 'estimated_1rm' | 'session_volume';
 export type EventType =
@@ -186,6 +188,12 @@ export interface TemplateItem {
   target_weight: number | null;
   target_rpe: number | null;
   rest_seconds: number | null;
+  progression_rule: ProgressionRule;
+  increment_kg: number | null;
+  increment_lb: number | null;
+  rep_range_min: number | null;
+  rep_range_max: number | null;
+  rpe_cap: number | null;
 }
 
 export interface WorkoutSession {

@@ -238,6 +238,30 @@ ALTER TABLE template_items
   CHECK (rest_seconds IS NULL OR rest_seconds > 0);
 `;
 
+const MIGRATION_009 = `
+ALTER TABLE template_items
+  ADD COLUMN progression_rule TEXT NOT NULL DEFAULT 'none'
+  CHECK (progression_rule IN ('none','linear','double','rpe_gated'));
+
+ALTER TABLE template_items
+  ADD COLUMN increment_kg REAL;
+
+ALTER TABLE template_items
+  ADD COLUMN increment_lb REAL;
+
+ALTER TABLE template_items
+  ADD COLUMN rep_range_min INTEGER
+  CHECK (rep_range_min IS NULL OR rep_range_min > 0);
+
+ALTER TABLE template_items
+  ADD COLUMN rep_range_max INTEGER
+  CHECK (rep_range_max IS NULL OR rep_range_max > 0);
+
+ALTER TABLE template_items
+  ADD COLUMN rpe_cap REAL
+  CHECK (rpe_cap IS NULL OR (rpe_cap >= 1 AND rpe_cap <= 10));
+`;
+
 export const MIGRATIONS: Migration[] = [
   { name: '001_init', sql: MIGRATION_001 },
   { name: '002_app_settings', sql: MIGRATION_002 },
@@ -247,4 +271,5 @@ export const MIGRATIONS: Migration[] = [
   { name: '006_workout_set_type', sql: MIGRATION_006 },
   { name: '007_exercise_prs', sql: MIGRATION_007 },
   { name: '008_template_item_rest_seconds', sql: MIGRATION_008 },
+  { name: '009_template_item_progression_rules', sql: MIGRATION_009 },
 ];
