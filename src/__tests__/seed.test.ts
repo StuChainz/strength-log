@@ -26,8 +26,9 @@ const REQUIRED_METADATA_MOVEMENT_PATTERNS: MovementPattern[] = [
 const REQUIRED_METADATA_FORCE_TYPES: ForceType[] = ['push', 'pull', 'legs', 'hinge', 'core'];
 
 describe('SEED_EXERCISES', () => {
-  it('contains at least 35 exercises', () => {
-    expect(SEED_EXERCISES.length).toBeGreaterThanOrEqual(35);
+  it('contains a curated beta-sized exercise library', () => {
+    expect(SEED_EXERCISES.length).toBeGreaterThanOrEqual(120);
+    expect(SEED_EXERCISES.length).toBeLessThanOrEqual(180);
   });
 
   it('every exercise has a non-empty name', () => {
@@ -40,6 +41,27 @@ describe('SEED_EXERCISES', () => {
     const valid = new Set(['barbell', 'dumbbell', 'machine', 'bodyweight', 'cable', 'other']);
     SEED_EXERCISES.forEach((e) => {
       expect(valid.has(e.category)).toBe(true);
+    });
+  });
+
+  it('all exercise names are unique after normalisation', () => {
+    const seen = new Set<string>();
+    const duplicates: string[] = [];
+
+    SEED_EXERCISES.forEach((exercise) => {
+      const normalised = normalizeName(exercise.name);
+      if (seen.has(normalised)) {
+        duplicates.push(exercise.name);
+      }
+      seen.add(normalised);
+    });
+
+    expect(duplicates).toEqual([]);
+  });
+
+  it('every exercise has a primary muscle for list summaries and filtering', () => {
+    SEED_EXERCISES.forEach((exercise) => {
+      expect(exercise.primary_muscle?.trim().length).toBeGreaterThan(0);
     });
   });
 
@@ -77,9 +99,8 @@ describe('SEED_EXERCISES', () => {
 });
 
 describe('SEED_EXERCISE_METADATA', () => {
-  it('contains a small curated fixture of around 20 exercises', () => {
-    expect(SEED_EXERCISE_METADATA.length).toBeGreaterThanOrEqual(18);
-    expect(SEED_EXERCISE_METADATA.length).toBeLessThanOrEqual(24);
+  it('has complete metadata for every curated seed exercise', () => {
+    expect(SEED_EXERCISE_METADATA).toHaveLength(SEED_EXERCISES.length);
   });
 
   it('only references existing seed exercises by name', () => {
@@ -88,6 +109,20 @@ describe('SEED_EXERCISE_METADATA', () => {
     SEED_EXERCISE_METADATA.forEach((metadata) => {
       expect(exerciseNames.has(metadata.exerciseName)).toBe(true);
     });
+  });
+
+  it('uses a unique stable source_id for every metadata entry', () => {
+    const seen = new Set<string>();
+    const duplicates: string[] = [];
+
+    SEED_EXERCISE_METADATA.forEach((metadata) => {
+      if (seen.has(metadata.source_id)) {
+        duplicates.push(metadata.source_id);
+      }
+      seen.add(metadata.source_id);
+    });
+
+    expect(duplicates).toEqual([]);
   });
 
   it('covers the required movement patterns', () => {
@@ -134,13 +169,13 @@ describe('SEED_EXERCISE_METADATA', () => {
     expect(audit.counts.metadata).toBe(SEED_EXERCISE_METADATA.length);
   });
 
-  it('summarizes current metadata coverage without expanding the seed phase', () => {
+  it('summarizes complete metadata coverage for the beta seed phase', () => {
     const coverage = summarizeExerciseMetadataCoverage(SEED_EXERCISES, SEED_EXERCISE_METADATA);
 
     expect(coverage.totalExercises).toBe(SEED_EXERCISES.length);
     expect(coverage.annotatedExercises).toBe(SEED_EXERCISE_METADATA.length);
-    expect(coverage.unannotatedExercises).toBeGreaterThan(0);
-    expect(coverage.unannotated.map((exercise) => exercise.name)).toContain('Good Morning');
+    expect(coverage.unannotatedExercises).toBe(0);
+    expect(coverage.unannotated).toEqual([]);
   });
 
   it('summarizes substitution groups for later substitution curation', () => {
@@ -149,9 +184,14 @@ describe('SEED_EXERCISE_METADATA', () => {
     const singletonGroupNames = summary.singletonGroups.map((group) => group.group);
 
     expect(multiExerciseGroupNames).toEqual(
-      expect.arrayContaining(['horizontal_press', 'horizontal_row', 'vertical_pull']),
+      expect.arrayContaining([
+        'core_anti_extension',
+        'horizontal_press',
+        'horizontal_row',
+        'vertical_pull',
+      ]),
     );
-    expect(singletonGroupNames).toContain('core_anti_extension');
+    expect(singletonGroupNames).toContain('good_morning');
     expect(summary.groups.length).toBeGreaterThan(summary.multiExerciseGroups.length);
   });
 });

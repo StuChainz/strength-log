@@ -39,7 +39,7 @@ import { exportDatabase } from '@/db/repositories/export.repo';
 import { EXPORT_TABLES } from '@/export/schema';
 import { getProgressionSuggestion } from '@/domain/progression';
 import { estimateOneRepMax } from '@/domain/volume';
-import { newId } from '@/domain/ids';
+import { newId, normalizeName } from '@/domain/ids';
 import { PostSessionTagSchema } from '@/domain/validation';
 import { parseVoiceCommand } from '@/voice/parser';
 import type { SetAddedPayload, SetDeletedPayload, SetEditedPayload } from '@/domain/events';
@@ -301,7 +301,9 @@ describe('core app flow repository acceptance', () => {
   });
 
   it('seeds the exercise library and keeps custom exercises visible without metadata', async () => {
+    const setupStart = performance.now();
     db = await setupDb();
+    expect(performance.now() - setupStart).toBeLessThan(1500);
 
     expect(await getExerciseCount(db as never)).toBe(SEED_EXERCISES.length);
     expect(await getExerciseLibraryDiagnostics(db as never)).toEqual({
@@ -325,20 +327,129 @@ describe('core app flow repository acceptance', () => {
     const customRows = await getExercisesWithMetadata(db as never, { custom: true });
     expect(customRows.map((exercise) => exercise.id)).toEqual([custom.id]);
 
-    await expect(searchExercises(db as never, 'bench')).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: 'Barbell Bench Press' }),
-        expect.objectContaining({ name: 'Dumbbell Bench Press' }),
-      ]),
-    );
-    await expect(searchExercises(db as never, 'dl')).resolves.toEqual(
-      expect.arrayContaining([expect.objectContaining({ name: 'Barbell Deadlift' })]),
-    );
+    await seedExercises(db as never);
+    expect(await getExerciseLibraryDiagnostics(db as never)).toEqual({
+      total: SEED_EXERCISES.length + 1,
+      seed: SEED_EXERCISES.length,
+      custom: 1,
+      metadata: SEED_EXERCISE_METADATA.length,
+    });
+    await expect(getExercisesWithMetadata(db as never, { custom: true })).resolves.toEqual([
+      expect.objectContaining({ id: custom.id, name: 'Garage Sled Push', metadata: null }),
+    ]);
 
+    const expectedSearches = [
+      ['bench', 'Barbell Bench Press'],
+      ['squat', 'Barbell Back Squat'],
+      ['deadlift', 'Barbell Deadlift'],
+      ['rdl', 'Romanian Deadlift'],
+      ['pulldown', 'Lat Pulldown'],
+      ['row', 'Barbell Row'],
+      ['curl', 'Dumbbell Bicep Curl'],
+      ['pushdown', 'Cable Tricep Pushdown'],
+      ['lateral raise', 'Dumbbell Lateral Raise'],
+      ['leg extension', 'Leg Extension'],
+      ['leg curl', 'Leg Curl'],
+      ['plank', 'Plank'],
+    ] as const;
+
+    for (const [query, expectedName] of expectedSearches) {
+      await expect(searchExercises(db as never, query)).resolves.toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: expectedName })]),
+      );
+    }
+
+    const minimumFilterCounts = { push: 20, pull: 20, legs: 20, hinge: 10, core: 10 } as const;
     for (const forceType of ['push', 'pull', 'legs', 'hinge', 'core'] as const) {
       const rows = await getExercisesWithMetadata(db as never, { force_type: forceType });
-      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.length).toBeGreaterThanOrEqual(minimumFilterCounts[forceType]);
       expect(rows.every((exercise) => exercise.metadata?.force_type === forceType)).toBe(true);
+    }
+  });
+
+  it('upgrades an old seed-shaped database without duplicating existing seed rows', async () => {
+    db = await setupDb();
+    const legacySeedNames = [
+      'Barbell Back Squat',
+      'Barbell Front Squat',
+      'Barbell Deadlift',
+      'Romanian Deadlift',
+      'Barbell Bench Press',
+      'Incline Barbell Bench Press',
+      'Overhead Press',
+      'Barbell Row',
+      'Barbell Hip Thrust',
+      'Good Morning',
+      'Dumbbell Bench Press',
+      'Dumbbell Shoulder Press',
+      'Single-Arm Dumbbell Row',
+      'Dumbbell Bicep Curl',
+      'Dumbbell Lateral Raise',
+      'Dumbbell Romanian Deadlift',
+      'Dumbbell Lunge',
+      'Dumbbell Fly',
+      'Dumbbell Tricep Extension',
+      'Pull Up',
+      'Chin Up',
+      'Push Up',
+      'Dip',
+      'Plank',
+      'Bodyweight Squat',
+      'Glute Bridge',
+      'Hanging Leg Raise',
+      'Leg Press',
+      'Leg Curl',
+      'Leg Extension',
+      'Lat Pulldown',
+      'Seated Row Machine',
+      'Cable Tricep Pushdown',
+      'Cable Lateral Raise',
+      'Cable Fly',
+    ];
+    const legacyNormalizedNames = legacySeedNames.map(normalizeName);
+    const placeholders = legacyNormalizedNames.map(() => '?').join(', ');
+    const legacyRowsBefore = await db.getAllAsync<{ id: string; name: string }>(
+      `SELECT id, name FROM exercises WHERE normalized_name IN (${placeholders})`,
+      legacyNormalizedNames,
+    );
+
+    expect(legacyRowsBefore).toHaveLength(legacySeedNames.length);
+
+    await db.runAsync(
+      `DELETE FROM exercise_aliases
+       WHERE exercise_id IN (
+         SELECT id FROM exercises WHERE normalized_name NOT IN (${placeholders})
+       )`,
+      legacyNormalizedNames,
+    );
+    await db.runAsync(
+      `DELETE FROM exercise_metadata
+       WHERE exercise_id IN (
+         SELECT id FROM exercises WHERE normalized_name NOT IN (${placeholders})
+       )`,
+      legacyNormalizedNames,
+    );
+    await db.runAsync(
+      `DELETE FROM exercises WHERE normalized_name NOT IN (${placeholders})`,
+      legacyNormalizedNames,
+    );
+
+    await seedExercises(db as never);
+
+    expect(await getExerciseCount(db as never)).toBe(SEED_EXERCISES.length);
+    const duplicateSeedNames = await db.getAllAsync<{ normalized_name: string; count: number }>(
+      `SELECT normalized_name, COUNT(*) AS count
+       FROM exercises
+       WHERE is_custom = 0
+       GROUP BY normalized_name
+       HAVING COUNT(*) > 1`,
+    );
+    expect(duplicateSeedNames).toEqual([]);
+
+    for (const rowBefore of legacyRowsBefore) {
+      await expect(exerciseByName(db, rowBefore.name)).resolves.toEqual(
+        expect.objectContaining({ id: rowBefore.id }),
+      );
     }
   });
 

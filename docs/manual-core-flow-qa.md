@@ -2,6 +2,21 @@
 
 Use this checklist for the native Expo Go pass. Keep it short and record only clear pass/fail notes.
 
+## Friend Beta Acceptance Script
+
+Use this once before giving the app to friends. It should take one focused personal test workout.
+
+1. Start the app with `pnpm dev`, open it in Expo Go, wipe local data in Settings, then relaunch once.
+2. Open Exercise Library and confirm seeded exercises load. Search `bench`, `squat`, `rdl`, `pulldown`, `row`, `curl`, `pushdown`, `lateral raise`, `leg extension`, `leg curl`, and `plank`; tap Push, Pull, Legs, Hinge, and Core.
+3. Create a custom exercise named `QA Carry`, return to Exercise Library, tap Custom, and confirm it appears.
+4. Create a template named `QA Push` with at least two exercises, targets, one rest timer, and one progression rule. Save, reopen, and confirm everything persisted.
+5. Start a workout from `QA Push`. Confirm target, last-time/next-set context, set type selector, and Finish button are visible.
+6. Log one warm-up set, one working set, and one drop set. Edit weight/reps/RPE/set type, delete a set, then use Undo.
+7. Confirm the configured rest timer starts after a set. Try `+15s`, `-15s`, manual timer start, and skip/clear.
+8. Force close Expo Go mid-workout, reopen, resume, and confirm sets, set types, and any running timer recover sensibly.
+9. Finish the workout and confirm summary duration, total volume, set count, and final PR/no-PR state look correct.
+10. Save post-session tags, energy rating, and a short note. Reopen export in Settings and confirm export completes.
+
 ## Setup
 
 1. Start the app with `pnpm dev`.
@@ -12,15 +27,19 @@ Use this checklist for the native Expo Go pass. Keep it short and record only cl
 ## Exercise Library
 
 1. Open Exercise Library.
-2. Confirm the seeded library count is present and seeded rows render.
+2. Confirm the seeded library count is beta-sized and seeded rows render without a long blank/loading state.
 3. On iPhone, confirm filter chips are compact horizontal pills under the search bar.
 4. Scroll the filter chip row horizontally.
 5. Tap Push, Pull, Legs, Hinge, and Core chips and confirm each returns relevant rows.
 6. Confirm the exercise list remains visible while changing filters.
 7. Search `bench` and confirm bench exercises appear.
-8. Search `dl` and confirm Deadlift appears through alias search.
-9. Create a custom exercise with minimal metadata, such as `QA Carry`, category `Other`, no muscle, no unit.
-10. Return to Exercise Library, tap Custom, and confirm `QA Carry` appears and does not crash the list.
+8. Search `squat`, `deadlift`, `rdl`, `pulldown`, `row`, `curl`, `pushdown`, `lateral raise`, `leg extension`, `leg curl`, and `plank`; confirm each returns relevant common exercises.
+9. Search `dl` and confirm Deadlift appears through alias search.
+10. Create a template using common seeded exercises from at least two categories, such as Barbell Bench Press, Lat Pulldown, Leg Extension, and Plank.
+11. Create a custom exercise with minimal metadata, such as `QA Carry`, category `Other`, no muscle, no unit.
+12. Return to Exercise Library, tap Custom, and confirm `QA Carry` appears and does not crash the list.
+13. Fully close and reopen the app without wiping data; confirm `QA Carry` is still present after normal startup reseeding.
+14. If using Settings wipe local data, expect custom exercises, templates, and history to be deleted because the reset path recreates the local database from scratch.
 
 ## Templates
 

@@ -5,6 +5,7 @@ import {
   getExercisesWithMetadata,
   type ExerciseMetadataFilters,
 } from '@/db/repositories/exercises.repo';
+import { SEED_EXERCISES, SEED_EXERCISE_METADATA } from '@/db/seed/exercises';
 import { normalizeName } from '@/domain/ids';
 import type { ExerciseWithMetadata } from '@/domain/types';
 
@@ -113,8 +114,11 @@ const mockExercises: ExerciseWithMetadata[] = [
   },
 ];
 
-function filterMockExercises(filters: ExerciseMetadataFilters = {}): ExerciseWithMetadata[] {
-  return mockExercises.filter((exercise) => {
+function filterExercises(
+  exercises: ExerciseWithMetadata[],
+  filters: ExerciseMetadataFilters = {},
+): ExerciseWithMetadata[] {
+  return exercises.filter((exercise) => {
     if (filters.category && exercise.category !== filters.category) return false;
     if (filters.force_type && exercise.metadata?.force_type !== filters.force_type) return false;
     if (filters.query?.trim()) {
@@ -125,6 +129,46 @@ function filterMockExercises(filters: ExerciseMetadataFilters = {}): ExerciseWit
       );
     }
     return true;
+  });
+}
+
+function buildExpandedSeedRows(): ExerciseWithMetadata[] {
+  const metadataByName = new Map(
+    SEED_EXERCISE_METADATA.map((metadata) => [metadata.exerciseName, metadata]),
+  );
+
+  return SEED_EXERCISES.map((exercise, index) => {
+    const metadata = metadataByName.get(exercise.name);
+    if (!metadata) {
+      throw new Error(`Missing test metadata for ${exercise.name}`);
+    }
+
+    return {
+      ...exercise,
+      id: `seed-${index}`,
+      normalized_name: normalizeName(exercise.name),
+      aliases: exercise.aliases.map(normalizeName),
+      is_custom: 0,
+      archived_at: null,
+      created_at: 1,
+      updated_at: 1,
+      metadata: {
+        exercise_id: `seed-${index}`,
+        movement_pattern: metadata.movement_pattern,
+        force_type: metadata.force_type,
+        body_region: metadata.body_region,
+        primary_muscles: metadata.primary_muscles,
+        secondary_muscles: metadata.secondary_muscles,
+        equipment: metadata.equipment,
+        mechanics: metadata.mechanics,
+        laterality: metadata.laterality,
+        difficulty: metadata.difficulty,
+        substitution_group: metadata.substitution_group,
+        source: 'curated_seed',
+        source_id: metadata.source_id,
+        updated_at: 1,
+      },
+    };
   });
 }
 
@@ -149,7 +193,7 @@ describe('ExercisePicker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     getExercisesWithMetadataMock.mockImplementation((_db, filters) =>
-      Promise.resolve(filterMockExercises(filters)),
+      Promise.resolve(filterExercises(mockExercises, filters)),
     );
   });
 
@@ -217,6 +261,26 @@ describe('ExercisePicker', () => {
     });
     expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
       query: 'pushup',
+    });
+  });
+
+  it('renders and searches the expanded seed library', async () => {
+    const expandedSeedRows = buildExpandedSeedRows();
+    getExercisesWithMetadataMock.mockImplementation((_db, filters) =>
+      Promise.resolve(filterExercises(expandedSeedRows, filters)),
+    );
+
+    const { getByTestId, getByText, queryByText } = render(<ExercisePicker {...defaultProps} />);
+    await waitFor(() => expect(getByText('Barbell Back Squat')).toBeTruthy());
+
+    fireEvent.changeText(getByTestId('picker-search-input'), 'lateral raise');
+
+    await waitFor(() => {
+      expect(getByText('Dumbbell Lateral Raise')).toBeTruthy();
+      expect(queryByText('Barbell Back Squat')).toBeNull();
+    });
+    expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+      query: 'lateral raise',
     });
   });
 
