@@ -659,6 +659,24 @@ export default function LiveWorkout() {
     });
   }, [appendRestTimerEvent, restTimer]);
 
+  const handleSubtractRestTime = useCallback(() => {
+    if (!restTimer) return;
+    const nextTimer: RestTimerState = {
+      ...addRestTimerSeconds(restTimer, -REST_TIMER_INCREMENT_SECONDS),
+      exerciseId: restTimer.exerciseId,
+      exerciseName: restTimer.exerciseName,
+      status: 'running',
+    };
+    completedRestTimerKeyRef.current = null;
+    setRestNow(Date.now());
+    setRestTimer(nextTimer);
+    void appendRestTimerEvent('rest_timer_started', {
+      duration_seconds: nextTimer.durationSeconds,
+      started_at: nextTimer.startedAt,
+      exercise_id: nextTimer.exerciseId,
+    });
+  }, [appendRestTimerEvent, restTimer]);
+
   const handleManualRestStart = useCallback(
     (seconds: number) => {
       if (!activeExercise) return;
@@ -1083,6 +1101,13 @@ export default function LiveWorkout() {
                 )}
               </View>
               <View style={styles.restTimerActions}>
+                <TouchableOpacity
+                  style={styles.restTimerActionBtn}
+                  onPress={handleSubtractRestTime}
+                  testID="rest-subtract-15"
+                >
+                  <Text style={styles.restTimerActionText}>-15s</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.restTimerActionBtn}
                   onPress={handleAddRestTime}

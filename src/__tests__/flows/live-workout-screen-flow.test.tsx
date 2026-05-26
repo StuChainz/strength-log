@@ -384,6 +384,9 @@ describe('LiveWorkout screen core flow', () => {
     fireEvent.press(getByTestId('rest-add-15'));
     expect(getByTestId('rest-timer-remaining').props.children).toBe('01:15');
 
+    fireEvent.press(getByTestId('rest-subtract-15'));
+    expect(getByTestId('rest-timer-remaining').props.children).toBe('01:00');
+
     fireEvent.press(getByTestId('rest-stop'));
     expect(queryByTestId('rest-timer-remaining')).toBeNull();
     expect(getByTestId('manual-rest-60')).toBeTruthy();
