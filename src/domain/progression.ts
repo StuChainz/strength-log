@@ -15,6 +15,7 @@ export interface ProgressionSet {
   unit: Unit;
   set_type?: SetType;
   is_warmup?: 0 | 1;
+  deleted_at?: number | null;
 }
 
 export interface ProgressionExercise {
@@ -47,6 +48,7 @@ export interface ProgressionInput {
   progressionRule: ProgressionRuleConfig;
   recentSets: ProgressionSet[];
   previousSessionSets?: ProgressionSet[];
+  currentSessionSets?: ProgressionSet[];
 }
 
 export interface ProgressionSuggestion {
@@ -56,7 +58,7 @@ export interface ProgressionSuggestion {
   reps: number | null;
   rpe: number | null;
   unit: Unit;
-  source: 'template_rule' | 'fallback';
+  source: 'current_session' | 'template_rule' | 'fallback';
   rule: ProgressionRule;
 }
 
@@ -65,7 +67,9 @@ function roundWeight(weight: number): number {
 }
 
 function isNonWarmupSet(set: ProgressionSet): boolean {
-  return set.is_warmup !== 1 && (set.set_type ?? 'working') !== 'warmup';
+  return (
+    set.deleted_at == null && set.is_warmup !== 1 && (set.set_type ?? 'working') !== 'warmup'
+  );
 }
 
 function workingSets(sets: ProgressionSet[], targetSets: number | null): ProgressionSet[] {
@@ -193,6 +197,31 @@ function repeatTargetSuggestion(
     rpe: null,
     unit: target.unit,
     source: rule === 'none' ? 'fallback' : 'template_rule',
+    rule,
+  };
+}
+
+function hasTemplateTarget(target: ProgressionTemplateTarget): boolean {
+  return target.targetWeight !== null || target.targetReps !== null || target.targetSets !== null;
+}
+
+function liveTargetSuggestion(
+  target: ProgressionTemplateTarget,
+  sets: ProgressionSet[],
+  previousSets: ProgressionSet[],
+  rule: ProgressionRule,
+  reason: string,
+  source: ProgressionSuggestion['source'],
+): ProgressionSuggestion {
+  const referenceSets = sets.length > 0 ? sets : previousSets;
+  return {
+    label: reason,
+    reason,
+    weight: target.targetWeight ?? lastWorkingSet(referenceSets)?.weight ?? null,
+    reps: target.targetReps ?? lastWorkingSet(referenceSets)?.reps ?? null,
+    rpe: null,
+    unit: target.unit,
+    source,
     rule,
   };
 }
@@ -422,7 +451,93 @@ function fallbackSuggestion(input: ProgressionInput): ProgressionSuggestion {
   };
 }
 
+function liveCurrentSessionSuggestion(
+  input: ProgressionInput,
+  currentSessionSets: ProgressionSet[],
+): ProgressionSuggestion {
+  const { templateTarget, progressionRule } = input;
+  const currentWorkingSets = workingSets(currentSessionSets, null);
+  const lastSet = currentWorkingSets[currentWorkingSets.length - 1] ?? null;
+
+  if (!lastSet) {
+    if (hasTemplateTarget(templateTarget)) {
+      return liveTargetSuggestion(
+        templateTarget,
+        [],
+        input.recentSets,
+        progressionRule.rule,
+        'Continue plan',
+        'template_rule',
+      );
+    }
+
+    return getProgressionSuggestion({ ...input, currentSessionSets: undefined });
+  }
+
+  if (templateTarget.targetReps !== null && lastSet.reps !== null) {
+    if (lastSet.reps >= templateTarget.targetReps) {
+      return liveTargetSuggestion(
+        templateTarget,
+        currentWorkingSets,
+        [],
+        progressionRule.rule,
+        lastSet.reps > templateTarget.targetReps ? 'Target exceeded' : 'Continue plan',
+        'current_session',
+      );
+    }
+
+    const latestTwo = currentWorkingSets.slice(-2);
+    const missedTwice =
+      latestTwo.length >= 2 &&
+      latestTwo.every((set) => missedTarget(set, templateTarget.targetReps));
+    if (missedTwice) {
+      const weight = templateTarget.targetWeight ?? lastSet.weight;
+      return {
+        label: 'Back off after missed reps',
+        reason: 'Back off after missed reps',
+        weight: weight !== null ? roundWeight(weight * 0.95) : null,
+        reps: templateTarget.targetReps,
+        rpe: null,
+        unit: templateTarget.unit,
+        source: 'current_session',
+        rule: progressionRule.rule,
+      };
+    }
+
+    return liveTargetSuggestion(
+      templateTarget,
+      currentWorkingSets,
+      [],
+      progressionRule.rule,
+      'Repeat target',
+      'current_session',
+    );
+  }
+
+  if (hasTemplateTarget(templateTarget)) {
+    return liveTargetSuggestion(
+      templateTarget,
+      currentWorkingSets,
+      [],
+      progressionRule.rule,
+      'Continue plan',
+      'current_session',
+    );
+  }
+
+  return fallbackSuggestion({
+    ...input,
+    recentSets: currentWorkingSets,
+    previousSessionSets: [],
+    currentSessionSets: undefined,
+  });
+}
+
 export function getProgressionSuggestion(input: ProgressionInput): ProgressionSuggestion {
+  if (input.currentSessionSets) {
+    return liveCurrentSessionSuggestion(input, input.currentSessionSets);
+  }
+
   switch (input.progressionRule.rule) {
     case 'linear':
       return linearSuggestion(input);

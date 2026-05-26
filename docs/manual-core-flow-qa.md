@@ -46,28 +46,35 @@ Use this checklist for the native Expo Go pass. Keep it short and record only cl
 7. For an RPE-gated exercise, confirm the suggestion copy explains easy, moderate, or high effort behavior.
 8. Tap a suggestion and confirm it only fills the next set controls; it must not log a set.
 9. Manually override the suggested weight or reps, log the set, and confirm the manual values are recorded.
-10. Log a set for the exercise with `90s` rest and confirm a 90s timer starts.
-11. Press `+15s` and confirm the timer updates.
-12. Stop/skip the timer.
-13. Manually start a 60s timer, stop it, then log another set for that exercise and confirm the 60s timer starts again.
-14. Set rest to `Off` for the exercise with no rest configured, log a set, and confirm no auto-timer starts.
-15. Select `Warm-up`, log a set, and confirm the row shows `WARM-UP`.
-16. Select `Working`, log a set after the direct weight edit, and confirm the row records the typed weight and shows `WORKING`.
-17. Select `Drop`, log a set, and confirm the row shows `DROP`.
-18. Edit the first set, change its set type, save, and confirm the row updates.
-19. Force close Expo Go, reopen, resume the workout, and verify workout data and set types persist.
-20. If a rest timer was running before reopen, confirm remaining time is sensible after resume.
-21. Open the workout summary and verify elapsed time, total sets, working sets, total volume, working volume, completed set details, and left-to-do target sets.
-22. Delete the second set.
-23. Use Undo and confirm the remaining latest set is removed according to current app behavior.
-24. Add another exercise to the live workout.
-25. Type a supported typed voice command such as `80 for 5` and confirm it logs a set.
-26. Type `rest 3 minutes` in the typed voice debug field and confirm the real timer starts.
-27. Log a first workout set and confirm a subtle potential PR appears live.
-28. Log a stronger set and confirm a live pending PR appears.
-29. Edit the stronger set lower and confirm the pending PR disappears.
-30. Delete the stronger set and confirm the pending PR disappears.
-31. Change a qualifying set to `Warm-up` and confirm the pending PR disappears.
+10. Start a template workout with a squat target of `3 × 5 @ 100kg`.
+11. Confirm the initial suggestion uses the template or previous session.
+12. Log `100 × 15`.
+13. Confirm the suggestion updates to `100 × 5` and does not say `Back off after missed reps`.
+14. Delete the set or edit it lower.
+15. Confirm the suggestion updates again.
+16. Force close Expo Go, reopen, resume the workout, and confirm the suggestion remains consistent after recovery.
+17. Log a set for the exercise with `90s` rest and confirm a 90s timer starts.
+18. Press `+15s` and confirm the timer updates.
+19. Stop/skip the timer.
+20. Manually start a 60s timer, stop it, then log another set for that exercise and confirm the 60s timer starts again.
+21. Set rest to `Off` for the exercise with no rest configured, log a set, and confirm no auto-timer starts.
+22. Select `Warm-up`, log a set, and confirm the row shows `WARM-UP`.
+23. Select `Working`, log a set after the direct weight edit, and confirm the row records the typed weight and shows `WORKING`.
+24. Select `Drop`, log a set, and confirm the row shows `DROP`.
+25. Edit the first set, change its set type, save, and confirm the row updates.
+26. Force close Expo Go, reopen, resume the workout, and verify workout data and set types persist.
+27. If a rest timer was running before reopen, confirm remaining time is sensible after resume.
+28. Open the workout summary and verify elapsed time, total sets, working sets, total volume, working volume, completed set details, and left-to-do target sets.
+29. Delete the second set.
+30. Use Undo and confirm the remaining latest set is removed according to current app behavior.
+31. Add another exercise to the live workout.
+32. Type a supported typed voice command such as `80 for 5` and confirm it logs a set.
+33. Type `rest 3 minutes` in the typed voice debug field and confirm the real timer starts.
+34. Log a first workout set and confirm a subtle potential PR appears live.
+35. Log a stronger set and confirm a live pending PR appears.
+36. Edit the stronger set lower and confirm the pending PR disappears.
+37. Delete the stronger set and confirm the pending PR disappears.
+38. Change a qualifying set to `Warm-up` and confirm the pending PR disappears.
 
 ## Recovery
 

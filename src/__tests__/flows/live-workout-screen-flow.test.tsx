@@ -247,6 +247,87 @@ describe('LiveWorkout screen core flow', () => {
     expect(store.logSet).not.toHaveBeenCalled();
   });
 
+  it('updates live suggestion from current-session sets after a logged overshoot', () => {
+    getProgressionSuggestionMock.mockImplementation((input) => {
+      const currentSet = input.currentSessionSets?.find((set) => set.deleted_at === null);
+      if (currentSet?.reps === 15) {
+        return {
+          label: 'Target exceeded',
+          reason: 'Target exceeded',
+          weight: 100,
+          reps: 5,
+          rpe: null,
+          unit: 'kg',
+          source: 'current_session',
+          rule: 'none',
+        };
+      }
+
+      return {
+        label: 'Back off after missed reps',
+        reason: 'Back off after missed reps',
+        weight: 95,
+        reps: 5,
+        rpe: null,
+        unit: 'kg',
+        source: 'fallback',
+        rule: 'none',
+      };
+    });
+
+    let store = activeStore({
+      exercises: [
+        {
+          ...activeStore().exercises[0]!,
+          id: 'squat',
+          name: 'Back Squat',
+          targetWeight: 100,
+          targetReps: 5,
+        },
+      ],
+      sets: [],
+      activeExerciseId: 'squat',
+    });
+    useSessionStoreMock.mockImplementation(() => store);
+
+    const screen = render(<LiveWorkout />);
+
+    expect(screen.getByText(/Back off after missed reps/)).toBeTruthy();
+
+    store = activeStore({
+      exercises: [
+        {
+          ...activeStore().exercises[0]!,
+          id: 'squat',
+          name: 'Back Squat',
+          targetWeight: 100,
+          targetReps: 5,
+        },
+      ],
+      sets: [
+        {
+          ...activeStore().sets[0]!,
+          id: 'squat-set-1',
+          session_id: 'session-1',
+          exercise_id: 'squat',
+          weight: 100,
+          reps: 15,
+          deleted_at: null,
+        },
+      ],
+      activeExerciseId: 'squat',
+    });
+    screen.rerender(<LiveWorkout />);
+
+    expect(screen.queryByText(/Back off after missed reps/)).toBeNull();
+    expect(screen.getByText(/Target exceeded/)).toBeTruthy();
+    expect(getProgressionSuggestionMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        currentSessionSets: [expect.objectContaining({ exercise_id: 'squat', reps: 15 })],
+      }),
+    );
+  });
+
   it('shows the active exercise, set rows, log button, and undo control', async () => {
     const store = activeStore();
     useSessionStoreMock.mockReturnValue(store);

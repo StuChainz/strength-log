@@ -230,4 +230,120 @@ describe('getProgressionSuggestion', () => {
     expect(set).toEqual(baseSet);
     expect(next).not.toHaveProperty('apply');
   });
+
+  it('live suggestion can use previous completed session before current-session sets exist', () => {
+    const next = suggestion({
+      templateTarget: { targetSets: null, targetReps: null, targetWeight: null, unit: 'kg' },
+      recentSets: [{ ...baseSet, weight: 100, reps: 5, rpe: 7 }],
+      currentSessionSets: [],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({
+        weight: 102.5,
+        reps: 5,
+        reason: 'Progress after easy set',
+      }),
+    );
+  });
+
+  it('live suggestion uses current-session sets over previous completed session', () => {
+    const next = suggestion({
+      templateTarget: { ...baseTarget, targetWeight: 100 },
+      recentSets: [{ ...baseSet, weight: 100, reps: 3 }],
+      currentSessionSets: [{ ...baseSet, weight: 100, reps: 5 }],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({
+        weight: 100,
+        reps: 5,
+        reason: 'Continue plan',
+        source: 'current_session',
+      }),
+    );
+  });
+
+  it('live suggestion clears stale previous missed-rep reasoning after current hit', () => {
+    const next = suggestion({
+      templateTarget: { ...baseTarget, targetWeight: 100 },
+      recentSets: [{ ...baseSet, weight: 100, reps: 4 }],
+      previousSessionSets: [{ ...baseSet, weight: 100, reps: 4 }],
+      currentSessionSets: [{ ...baseSet, weight: 100, reps: 5 }],
+    });
+
+    expect(next.reason).toBe('Continue plan');
+    expect(next.reason).not.toMatch(/Back off|missed/i);
+  });
+
+  it('live suggestion keeps target weight and explains exceeded reps', () => {
+    const next = suggestion({
+      templateTarget: { ...baseTarget, targetWeight: 100 },
+      progressionRule: { rule: 'linear' },
+      recentSets: [{ ...baseSet, weight: 100, reps: 4 }],
+      currentSessionSets: [{ ...baseSet, weight: 100, reps: 15 }],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({
+        weight: 100,
+        reps: 5,
+        reason: 'Target exceeded',
+        source: 'current_session',
+      }),
+    );
+  });
+
+  it('live suggestion repeats target after one current-session miss', () => {
+    const next = suggestion({
+      templateTarget: { ...baseTarget, targetWeight: 100 },
+      currentSessionSets: [{ ...baseSet, weight: 100, reps: 4 }],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({
+        weight: 100,
+        reps: 5,
+        reason: 'Repeat target',
+      }),
+    );
+  });
+
+  it('live suggestion ignores deleted current-session sets', () => {
+    const next = suggestion({
+      templateTarget: { ...baseTarget, targetWeight: 100 },
+      recentSets: [{ ...baseSet, weight: 100, reps: 4 }],
+      currentSessionSets: [{ ...baseSet, weight: 100, reps: 15, deleted_at: 123 }],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({
+        weight: 100,
+        reps: 5,
+        reason: 'Continue plan',
+        source: 'template_rule',
+      }),
+    );
+  });
+
+  it('live suggestion ignores warm-up sets and includes drop sets', () => {
+    const warmupOnly = suggestion({
+      templateTarget: { ...baseTarget, targetWeight: 100 },
+      currentSessionSets: [{ ...baseSet, weight: 100, reps: 15, set_type: 'warmup', is_warmup: 1 }],
+    });
+    const withDrop = suggestion({
+      templateTarget: { ...baseTarget, targetWeight: 100 },
+      currentSessionSets: [
+        { ...baseSet, weight: 100, reps: 15, set_type: 'warmup', is_warmup: 1 },
+        { ...baseSet, weight: 100, reps: 15, set_type: 'drop', is_warmup: 0 },
+      ],
+    });
+
+    expect(warmupOnly).toEqual(
+      expect.objectContaining({ reason: 'Continue plan', source: 'template_rule' }),
+    );
+    expect(withDrop).toEqual(
+      expect.objectContaining({ reason: 'Target exceeded', source: 'current_session' }),
+    );
+  });
 });

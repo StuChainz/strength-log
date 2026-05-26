@@ -338,6 +338,15 @@ export default function LiveWorkout() {
   const suggestion = useMemo(
     () => {
       const { recentSets, previousSessionSets } = getRecentHistoryBuckets(lastSets);
+      const currentSessionSets =
+        session === null || activeExerciseId === null
+          ? []
+          : sets
+              .filter(
+                (set) => set.session_id === session.id && set.exercise_id === activeExerciseId,
+              )
+              .sort((a, b) => a.position - b.position);
+
       return getProgressionSuggestion({
         exercise: activeExercise?.progressionExercise ?? {
           category: activeExercise?.category ?? 'barbell',
@@ -351,9 +360,10 @@ export default function LiveWorkout() {
         progressionRule: activeExercise?.progressionRule ?? { rule: 'none' },
         recentSets,
         previousSessionSets,
+        currentSessionSets,
       });
     },
-    [activeExercise, lastSets],
+    [activeExercise, activeExerciseId, lastSets, session, sets],
   );
   const potentialPRs = useMemo(
     () => (previousPRData ? detectLivePotentialPRs(sets, previousPRData) : []),
