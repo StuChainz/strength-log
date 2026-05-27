@@ -97,7 +97,7 @@ export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promis
     payload_json: string;
     created_at: number;
   }>(
-    'SELECT event_type, payload_json, created_at FROM workout_events WHERE session_id = ? ORDER BY created_at ASC',
+    'SELECT event_type, payload_json, created_at FROM workout_events WHERE session_id = ? ORDER BY created_at ASC, rowid ASC',
     [sessionId],
   );
 
@@ -105,11 +105,26 @@ export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promis
     for (const event of events) {
       if (event.event_type === 'set_added') {
         const p = JSON.parse(event.payload_json) as SetAddedPayload;
+        const setType = p.set_type ?? (p.is_warmup === 1 ? 'warmup' : 'working');
         await db.runAsync(
-          `INSERT OR IGNORE INTO workout_sets
+          `INSERT INTO workout_sets
              (id, session_id, exercise_id, position, weight, reps, rpe,
               unit, is_warmup, set_type, logged_at, source, client_set_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             session_id = excluded.session_id,
+             exercise_id = excluded.exercise_id,
+             position = excluded.position,
+             weight = excluded.weight,
+             reps = excluded.reps,
+             rpe = excluded.rpe,
+             unit = excluded.unit,
+             is_warmup = excluded.is_warmup,
+             set_type = excluded.set_type,
+             logged_at = excluded.logged_at,
+             source = excluded.source,
+             client_set_id = excluded.client_set_id,
+             deleted_at = NULL`,
           [
             p.set_id,
             sessionId,
@@ -119,8 +134,8 @@ export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promis
             p.reps,
             p.rpe,
             p.unit,
-            p.set_type === 'warmup' ? 1 : 0,
-            p.set_type ?? 'working',
+            setType === 'warmup' ? 1 : 0,
+            setType,
             p.logged_at,
             p.source,
             p.client_set_id,
