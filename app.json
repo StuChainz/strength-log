@@ -1,13 +1,17 @@
 {
   "expo": {
-    "name": "Strength Log",
+    "name": "Set - strength workout logger",
     "slug": "strength-log",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.strengthlog.app"
+      "bundleIdentifier": "com.stuchainz.strengthlog",
+      "buildNumber": "2",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.strengthlog.app"
@@ -15,6 +19,13 @@
     "web": {
       "bundler": "metro"
     },
-    "plugins": ["expo-sqlite"]
+    "plugins": [
+      "expo-sqlite"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f8aab41b-550c-4027-9c6e-6d5b45689521"
+      }
+    }
   }
 }
