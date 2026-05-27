@@ -6,6 +6,8 @@ import ExerciseLibrary from '@/screens/ExerciseLibrary';
 import ExerciseEdit from '@/screens/ExerciseEdit';
 import TemplateList from '@/screens/TemplateList';
 import TemplateBuilder from '@/screens/TemplateBuilder';
+import ProgramLibrary from '@/screens/ProgramLibrary';
+import ProgramPreview from '@/screens/ProgramPreview';
 import LiveWorkout from '@/screens/LiveWorkout';
 import EndWorkoutSummary from '@/screens/EndWorkoutSummary';
 import PostSessionTags from '@/screens/PostSessionTags';
@@ -104,6 +106,8 @@ export function RootNavigator() {
           headerTitleStyle: { fontWeight: '600' },
         })}
       />
+      <Stack.Screen name="ProgramLibrary" component={ProgramLibrary} />
+      <Stack.Screen name="ProgramPreview" component={ProgramPreview} />
       <Stack.Screen
         name="ExerciseEdit"
         component={ExerciseEdit}

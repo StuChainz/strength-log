@@ -64,6 +64,22 @@ export default function TemplateList() {
           </View>
         </View>
 
+        {/* Browse presets */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.browseCard}
+            onPress={() => navigation.navigate('ProgramLibrary')}
+            activeOpacity={0.8}
+            testID="browse-presets-btn"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.emptyCardTitle}>Browse programmes</Text>
+              <Text style={styles.emptyCardSub}>Import a built-in preset</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={T.muted} />
+          </TouchableOpacity>
+        </View>
+
         {/* Empty workout card */}
         <View style={styles.section}>
           <TouchableOpacity
@@ -178,6 +194,16 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
+  browseCard: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   emptyCard: {
     backgroundColor: T.surface,
     borderWidth: 1,

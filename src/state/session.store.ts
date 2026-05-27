@@ -37,6 +37,7 @@ export interface SessionExercise {
   targetWeight: number | null;
   targetRpe: number | null;
   restSeconds: number | null;
+  amrapLastSet?: boolean;
   progressionRule?: ProgressionRuleConfig;
   progressionExercise?: ProgressionExercise;
 }
@@ -104,6 +105,7 @@ async function loadExercisesForTemplate(
       targetWeight: item.target_weight,
       targetRpe: item.target_rpe,
       restSeconds: item.rest_seconds,
+      amrapLastSet: item.amrap_last_set === 1,
       progressionRule: {
         rule: item.progression_rule ?? 'none',
         incrementKg: item.increment_kg,

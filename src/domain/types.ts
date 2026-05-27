@@ -194,6 +194,7 @@ export interface TemplateItem {
   rep_range_min: number | null;
   rep_range_max: number | null;
   rpe_cap: number | null;
+  amrap_last_set: 0 | 1;
 }
 
 export interface WorkoutSession {

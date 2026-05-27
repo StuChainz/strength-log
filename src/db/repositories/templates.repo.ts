@@ -43,10 +43,12 @@ export interface DraftItemInput {
   rep_range_min?: number | null;
   rep_range_max?: number | null;
   rpe_cap?: number | null;
+  amrap_last_set?: boolean | 0 | 1 | null;
 }
 
-interface NormalizedDraftItemInput extends Required<DraftItemInput> {
+interface NormalizedDraftItemInput extends Required<Omit<DraftItemInput, 'amrap_last_set'>> {
   progression_rule: ProgressionRule;
+  amrap_last_set: 0 | 1;
 }
 
 function assertValidRestSeconds(value: number | null): void {
@@ -86,6 +88,7 @@ function normalizeDraftItem(item: DraftItemInput): NormalizedDraftItemInput {
     rep_range_min: item.rep_range_min ?? null,
     rep_range_max: item.rep_range_max ?? null,
     rpe_cap: item.rpe_cap ?? null,
+    amrap_last_set: item.amrap_last_set ? 1 : 0,
   };
 
   assertValidRestSeconds(normalized.rest_seconds);
@@ -187,8 +190,8 @@ export async function createTemplate(
         `INSERT INTO template_items
            (id, template_id, exercise_id, position, target_sets, target_reps, target_weight,
             target_rpe, rest_seconds, progression_rule, increment_kg, increment_lb,
-            rep_range_min, rep_range_max, rpe_cap)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            rep_range_min, rep_range_max, rpe_cap, amrap_last_set)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newId(),
           id,
@@ -205,6 +208,7 @@ export async function createTemplate(
           item.rep_range_min,
           item.rep_range_max,
           item.rpe_cap,
+          item.amrap_last_set,
         ],
       );
     }
@@ -239,8 +243,8 @@ export async function updateTemplate(
         `INSERT INTO template_items
            (id, template_id, exercise_id, position, target_sets, target_reps, target_weight,
             target_rpe, rest_seconds, progression_rule, increment_kg, increment_lb,
-            rep_range_min, rep_range_max, rpe_cap)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            rep_range_min, rep_range_max, rpe_cap, amrap_last_set)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newId(),
           id,
@@ -257,6 +261,7 @@ export async function updateTemplate(
           item.rep_range_min,
           item.rep_range_max,
           item.rpe_cap,
+          item.amrap_last_set,
         ],
       );
     }

@@ -1,5 +1,6 @@
 import type {
   BodyRegion,
+  ConfidenceLabel,
   ExerciseCategory,
   Mechanics,
   MovementPattern,
@@ -30,6 +31,7 @@ export interface ProgressionTemplateTarget {
   targetReps: number | null;
   targetWeight: number | null;
   unit: Unit;
+  amrapLastSet?: boolean;
 }
 
 export interface ProgressionRuleConfig {
@@ -39,6 +41,22 @@ export interface ProgressionRuleConfig {
   repRangeMin?: number | null;
   repRangeMax?: number | null;
   rpeCap?: number | null;
+  /**
+   * Linear rule: number of consecutive sessions (recent + previous) that may
+   * miss the rep target before the engine suggests a deload. Defaults to 2.
+   * Set to null to disable deload entirely.
+   */
+  failureThreshold?: number | null;
+  /** Multiplier applied to the last working weight when a deload is suggested. Defaults to 0.9. */
+  deloadFactor?: number | null;
+  /**
+   * AMRAP threshold (in extra reps above `targetReps`). When the template has
+   * `amrapLastSet` and the previous session's AMRAP set cleared this threshold,
+   * the engine suggests a weight bump on the next session. Otherwise it
+   * suggests repeating the target. Only consulted when `recentSets` is empty
+   * (i.e. computing the first set of the next session).
+   */
+  amrapThresholdReps?: number | null;
 }
 
 export interface ProgressionInput {
@@ -58,6 +76,27 @@ export interface ProgressionSuggestion {
   unit: Unit;
   source: 'template_rule' | 'fallback';
   rule: ProgressionRule;
+  /**
+   * True when the upcoming set is the AMRAP set of an `amrapLastSet` item.
+   * Callers should render reps as "AMRAP" and treat `reps` (which will be
+   * null) as no fixed target.
+   */
+  isAmrap?: boolean;
+  /** Minimum reps for the AMRAP set (the template's targetReps, if set). */
+  amrapMinReps?: number | null;
+  /**
+   * Confidence in the suggestion. `high` when the signal is clean (target
+   * cleanly hit, or threshold cleanly met). `medium` for routine repeats.
+   * `low` when there is insufficient history or the data is ambiguous.
+   */
+  confidence?: ConfidenceLabel;
+  /**
+   * True when the suggestion is a non-routine change the user should
+   * consciously approve — e.g. a deload or an AMRAP-driven weight bump.
+   * Tap-to-fill UI may surface this more prominently. The suggestion is
+   * still never auto-applied.
+   */
+  requiresUserAction?: boolean;
 }
 
 function roundWeight(weight: number): number {
@@ -194,6 +233,83 @@ function repeatTargetSuggestion(
     unit: target.unit,
     source: rule === 'none' ? 'fallback' : 'template_rule',
     rule,
+    confidence: 'medium',
+    requiresUserAction: false,
+  };
+}
+
+function deloadIfTriggered(input: ProgressionInput): ProgressionSuggestion | null {
+  const { templateTarget, progressionRule, recentSets, previousSessionSets = [] } = input;
+  const threshold = progressionRule.failureThreshold ?? 2;
+  if (threshold === null || threshold <= 0) return null;
+
+  const sessions: ProgressionSet[][] = [];
+  if (recentSets.length > 0) sessions.push(recentSets);
+  if (previousSessionSets.length > 0) sessions.push(previousSessionSets);
+  if (sessions.length < threshold) return null;
+
+  const missedCount = sessions
+    .slice(0, threshold)
+    .filter((sets) => anySetMissedReps(sets, templateTarget)).length;
+  if (missedCount < threshold) return null;
+
+  const baseWeight = targetWeightOrLast(templateTarget, recentSets) ?? targetWeightOrLast(templateTarget, previousSessionSets);
+  if (baseWeight === null) return null;
+  const factor = progressionRule.deloadFactor ?? 0.9;
+
+  return {
+    label: 'Linear: deload',
+    reason: `Linear: deload after ${threshold} missed sessions`,
+    weight: roundWeight(baseWeight * factor),
+    reps: templateTarget.targetReps,
+    rpe: null,
+    unit: templateTarget.unit,
+    source: 'template_rule',
+    rule: 'linear',
+    confidence: 'high',
+    requiresUserAction: true,
+  };
+}
+
+function amrapThresholdSuggestion(input: ProgressionInput): ProgressionSuggestion | null {
+  const { templateTarget, progressionRule, recentSets, previousSessionSets = [] } = input;
+  if (!templateTarget.amrapLastSet) return null;
+  if (progressionRule.amrapThresholdReps == null) return null;
+  if (recentSets.length > 0) return null;
+  const lastAmrap = lastWorkingSet(previousSessionSets);
+  if (!lastAmrap || lastAmrap.reps === null) return null;
+  const minReps = templateTarget.targetReps ?? 0;
+  const required = minReps + progressionRule.amrapThresholdReps;
+  const baseWeight = lastAmrap.weight ?? templateTarget.targetWeight;
+  if (baseWeight === null) return null;
+
+  if (lastAmrap.reps >= required) {
+    const increment = incrementFor(input);
+    return {
+      label: 'AMRAP: threshold cleared',
+      reason: `AMRAP: ${lastAmrap.reps} reps cleared threshold of ${required}`,
+      weight: roundWeight(baseWeight + increment),
+      reps: templateTarget.targetReps,
+      rpe: null,
+      unit: templateTarget.unit,
+      source: 'template_rule',
+      rule: progressionRule.rule,
+      confidence: 'high',
+      requiresUserAction: true,
+    };
+  }
+
+  return {
+    label: 'AMRAP: hold target',
+    reason: `AMRAP: ${lastAmrap.reps} reps under threshold of ${required}`,
+    weight: roundWeight(baseWeight),
+    reps: templateTarget.targetReps,
+    rpe: null,
+    unit: templateTarget.unit,
+    source: 'template_rule',
+    rule: progressionRule.rule,
+    confidence: 'medium',
+    requiresUserAction: false,
   };
 }
 
@@ -214,8 +330,13 @@ function linearSuggestion(input: ProgressionInput): ProgressionSuggestion {
       unit: templateTarget.unit,
       source: 'template_rule',
       rule: 'linear',
+      confidence: 'high',
+      requiresUserAction: false,
     };
   }
+
+  const deload = deloadIfTriggered(input);
+  if (deload) return deload;
 
   const reason = lastSetRpe !== null && lastSetRpe > 8.5 ? 'Linear: high effort' : 'Repeat target';
   return repeatTargetSuggestion(templateTarget, recentSets, 'linear', reason, reason);
@@ -422,16 +543,67 @@ function fallbackSuggestion(input: ProgressionInput): ProgressionSuggestion {
   };
 }
 
+function isNextSetTheAmrapSet(input: ProgressionInput): boolean {
+  const { templateTarget, recentSets } = input;
+  if (!templateTarget.amrapLastSet) return false;
+  if (templateTarget.targetSets === null || templateTarget.targetSets <= 0) return false;
+  const workingCount = recentSets.filter(isNonWarmupSet).length;
+  return workingCount === templateTarget.targetSets - 1;
+}
+
+function withAmrapOverride(
+  input: ProgressionInput,
+  suggestion: ProgressionSuggestion,
+): ProgressionSuggestion {
+  if (!isNextSetTheAmrapSet(input)) return suggestion;
+  const minReps = input.templateTarget.targetReps;
+  const minLabel = minReps !== null && minReps > 0 ? ` (min ${minReps}+)` : '';
+  return {
+    ...suggestion,
+    reps: null,
+    isAmrap: true,
+    amrapMinReps: minReps,
+    label: `AMRAP${minLabel}`,
+    reason: suggestion.reason || 'AMRAP set',
+  };
+}
+
+function inferConfidence(s: ProgressionSuggestion, input: ProgressionInput): ConfidenceLabel {
+  if (s.confidence) return s.confidence;
+  if (s.label === 'No suggestion yet.') return 'low';
+  if (input.recentSets.length === 0 && (input.previousSessionSets?.length ?? 0) === 0) {
+    return 'low';
+  }
+  return 'medium';
+}
+
+function withDefaults(s: ProgressionSuggestion, input: ProgressionInput): ProgressionSuggestion {
+  return {
+    ...s,
+    confidence: inferConfidence(s, input),
+    requiresUserAction: s.requiresUserAction ?? false,
+  };
+}
+
 export function getProgressionSuggestion(input: ProgressionInput): ProgressionSuggestion {
+  const amrapGate = amrapThresholdSuggestion(input);
+  if (amrapGate) return withDefaults(withAmrapOverride(input, amrapGate), input);
+
+  let base: ProgressionSuggestion;
   switch (input.progressionRule.rule) {
     case 'linear':
-      return linearSuggestion(input);
+      base = linearSuggestion(input);
+      break;
     case 'double':
-      return doubleSuggestion(input);
+      base = doubleSuggestion(input);
+      break;
     case 'rpe_gated':
-      return rpeGatedSuggestion(input);
+      base = rpeGatedSuggestion(input);
+      break;
     case 'none':
     default:
-      return fallbackSuggestion(input);
+      base = fallbackSuggestion(input);
+      break;
   }
+  return withDefaults(withAmrapOverride(input, base), input);
 }

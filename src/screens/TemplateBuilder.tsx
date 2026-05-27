@@ -41,6 +41,7 @@ type DraftItem = {
   rep_range_min: string;
   rep_range_max: string;
   rpe_cap: string;
+  amrap_last_set: boolean;
 };
 
 const REST_PRESETS_SECONDS = [60, 90, 120, 180] as const;
@@ -128,6 +129,7 @@ export default function TemplateBuilder() {
           rep_range_min: it.rep_range_min != null ? String(it.rep_range_min) : '',
           rep_range_max: it.rep_range_max != null ? String(it.rep_range_max) : '',
           rpe_cap: it.rpe_cap != null ? String(it.rpe_cap) : '',
+          amrap_last_set: it.amrap_last_set === 1,
         })),
       );
     })();
@@ -153,6 +155,7 @@ export default function TemplateBuilder() {
         rep_range_min: '',
         rep_range_max: '',
         rpe_cap: '',
+        amrap_last_set: false,
       },
     ]);
   };
@@ -197,6 +200,14 @@ export default function TemplateBuilder() {
     value: string,
   ) => {
     setItems((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
+  };
+
+  const toggleAmrapLastSet = (index: number) => {
+    setItems((prev) =>
+      prev.map((item, i) =>
+        i === index ? { ...item, amrap_last_set: !item.amrap_last_set } : item,
+      ),
+    );
   };
 
   const updateItemRule = (index: number, progressionRule: ProgressionRule) => {
@@ -246,6 +257,7 @@ export default function TemplateBuilder() {
           rep_range_max:
             it.progression_rule === 'double' ? parseOptionalInt(it.rep_range_max) : null,
           rpe_cap: it.progression_rule === 'rpe_gated' ? parseOptionalFloat(it.rpe_cap) : null,
+          amrap_last_set: it.amrap_last_set,
         };
       });
 
@@ -499,6 +511,25 @@ export default function TemplateBuilder() {
                   </View>
                 </View>
 
+                {/* AMRAP toggle */}
+                <View style={styles.amrapRow}>
+                  <Text style={styles.amrapLabel}>Last set AMRAP</Text>
+                  <TouchableOpacity
+                    style={[styles.amrapChip, item.amrap_last_set && styles.amrapChipActive]}
+                    onPress={() => toggleAmrapLastSet(index)}
+                    testID={`amrap-last-set-${item.key}`}
+                  >
+                    <Text
+                      style={[
+                        styles.amrapChipText,
+                        item.amrap_last_set && styles.amrapChipTextActive,
+                      ]}
+                    >
+                      {item.amrap_last_set ? 'On' : 'Off'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
                 {/* Progression */}
                 <View style={styles.progressionBlock}>
                   <Text style={styles.progressionLabel}>Progression</Text>
@@ -744,6 +775,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a2a2a',
   },
+  amrapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+  },
+  amrapLabel: { flex: 1, color: '#777', fontSize: 12, fontWeight: '600' },
+  amrapChip: {
+    minHeight: 30,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  amrapChipActive: { backgroundColor: '#7c5cfc', borderColor: '#7c5cfc' },
+  amrapChipText: { color: '#888', fontSize: 12, fontWeight: '600' },
+  amrapChipTextActive: { color: '#fff' },
   progressionBlock: {
     paddingHorizontal: 14,
     paddingBottom: 12,

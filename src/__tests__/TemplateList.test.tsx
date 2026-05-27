@@ -113,6 +113,15 @@ describe('TemplateList', () => {
     expect(mockNavigate).toHaveBeenCalledWith('TemplateBuilder', {});
   });
 
+  it('navigates to ProgramLibrary when "Browse programmes" is pressed', async () => {
+    const { getByTestId } = render(<TemplateList />);
+    await waitFor(() => expect(getByTestId('browse-presets-btn')).toBeTruthy());
+
+    fireEvent.press(getByTestId('browse-presets-btn'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('ProgramLibrary');
+  });
+
   it('reloads on focus', async () => {
     render(<TemplateList />);
     await waitFor(() => expect(getAllTemplatesWithCount).toHaveBeenCalled());

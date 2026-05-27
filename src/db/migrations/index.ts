@@ -262,6 +262,12 @@ ALTER TABLE template_items
   CHECK (rpe_cap IS NULL OR (rpe_cap >= 1 AND rpe_cap <= 10));
 `;
 
+const MIGRATION_010 = `
+ALTER TABLE template_items
+  ADD COLUMN amrap_last_set INTEGER NOT NULL DEFAULT 0
+  CHECK (amrap_last_set IN (0, 1));
+`;
+
 export const MIGRATIONS: Migration[] = [
   { name: '001_init', sql: MIGRATION_001 },
   { name: '002_app_settings', sql: MIGRATION_002 },
@@ -272,4 +278,5 @@ export const MIGRATIONS: Migration[] = [
   { name: '007_exercise_prs', sql: MIGRATION_007 },
   { name: '008_template_item_rest_seconds', sql: MIGRATION_008 },
   { name: '009_template_item_progression_rules', sql: MIGRATION_009 },
+  { name: '010_template_item_amrap_last_set', sql: MIGRATION_010 },
 ];

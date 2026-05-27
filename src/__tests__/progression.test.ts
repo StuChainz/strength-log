@@ -230,4 +230,236 @@ describe('getProgressionSuggestion', () => {
     expect(set).toEqual(baseSet);
     expect(next).not.toHaveProperty('apply');
   });
+
+  describe('linear deload', () => {
+    it('suggests deload after the configured failure threshold of missed sessions', () => {
+      const missed = { ...baseSet, reps: 3 };
+      const next = suggestion({
+        progressionRule: { rule: 'linear', failureThreshold: 2 },
+        recentSets: [missed, missed, missed],
+        previousSessionSets: [missed, missed, missed],
+      });
+
+      expect(next.weight).toBe(72);
+      expect(next.reps).toBe(5);
+      expect(next.reason).toMatch(/deload/i);
+      expect(next.confidence).toBe('high');
+      expect(next.requiresUserAction).toBe(true);
+    });
+
+    it('does not deload before reaching the threshold', () => {
+      const missed = { ...baseSet, reps: 3 };
+      const next = suggestion({
+        progressionRule: { rule: 'linear', failureThreshold: 3 },
+        recentSets: [missed, missed, missed],
+        previousSessionSets: [missed, missed, missed],
+      });
+
+      expect(next.weight).toBe(80);
+      expect(next.reason).not.toMatch(/deload/i);
+      expect(next.requiresUserAction).toBe(false);
+    });
+
+    it('does not deload when target was hit even with a non-null threshold', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'linear', failureThreshold: 2 },
+        recentSets: [baseSet, baseSet, baseSet],
+        previousSessionSets: [baseSet, baseSet, baseSet],
+      });
+
+      expect(next.weight).toBe(82.5);
+      expect(next.requiresUserAction).toBe(false);
+    });
+
+    it('respects a custom deloadFactor', () => {
+      const missed = { ...baseSet, reps: 3 };
+      const next = suggestion({
+        progressionRule: { rule: 'linear', failureThreshold: 2, deloadFactor: 0.85 },
+        recentSets: [missed, missed, missed],
+        previousSessionSets: [missed, missed, missed],
+      });
+
+      expect(next.weight).toBe(68);
+    });
+
+    it('missed reps never increase load', () => {
+      const missed = { ...baseSet, reps: 4 };
+      const next = suggestion({
+        progressionRule: { rule: 'linear', failureThreshold: 2 },
+        recentSets: [missed, missed, missed],
+      });
+
+      expect(next.weight).toBeLessThanOrEqual(80);
+    });
+  });
+
+  describe('amrap threshold', () => {
+    const amrapTarget = {
+      targetSets: 3,
+      targetReps: 5,
+      targetWeight: 80,
+      unit: 'kg' as const,
+      amrapLastSet: true,
+    };
+
+    it('suggests a weight bump when the previous AMRAP set cleared the threshold', () => {
+      const next = suggestion({
+        templateTarget: amrapTarget,
+        progressionRule: { rule: 'linear', amrapThresholdReps: 3 },
+        recentSets: [],
+        previousSessionSets: [
+          { ...baseSet, reps: 5 },
+          { ...baseSet, reps: 5 },
+          { ...baseSet, reps: 9 },
+        ],
+      });
+
+      expect(next.weight).toBe(82.5);
+      expect(next.reason).toMatch(/AMRAP/);
+      expect(next.confidence).toBe('high');
+      expect(next.requiresUserAction).toBe(true);
+    });
+
+    it('repeats target when the previous AMRAP set fell short of the threshold', () => {
+      const next = suggestion({
+        templateTarget: amrapTarget,
+        progressionRule: { rule: 'linear', amrapThresholdReps: 5 },
+        recentSets: [],
+        previousSessionSets: [
+          { ...baseSet, reps: 5 },
+          { ...baseSet, reps: 5 },
+          { ...baseSet, reps: 6 },
+        ],
+      });
+
+      expect(next.weight).toBe(80);
+      expect(next.reps).toBe(5);
+      expect(next.requiresUserAction).toBe(false);
+    });
+
+    it('does not bump weight when amrapLastSet flag is off, even if reps cleared', () => {
+      const next = suggestion({
+        templateTarget: { ...amrapTarget, amrapLastSet: false },
+        progressionRule: { rule: 'linear', amrapThresholdReps: 1 },
+        recentSets: [],
+        previousSessionSets: [
+          { ...baseSet, reps: 5 },
+          { ...baseSet, reps: 5 },
+          { ...baseSet, reps: 12 },
+        ],
+      });
+
+      expect(next.reason).not.toMatch(/AMRAP/);
+    });
+  });
+
+  describe('suggestion metadata', () => {
+    it('always includes confidence and requiresUserAction', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'linear' },
+        recentSets: [baseSet, baseSet, baseSet],
+      });
+
+      expect(['low', 'medium', 'high']).toContain(next.confidence);
+      expect(typeof next.requiresUserAction).toBe('boolean');
+    });
+
+    it('marks suggestion as low confidence when no history is available', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'none' },
+        recentSets: [],
+        previousSessionSets: [],
+      });
+
+      expect(next.confidence).toBe('low');
+    });
+
+    it('never auto-applies — pure return, no side effects', () => {
+      const initial = [
+        { ...baseSet },
+        { ...baseSet },
+        { ...baseSet },
+      ];
+      const snapshot = JSON.parse(JSON.stringify(initial));
+      const next = suggestion({
+        progressionRule: { rule: 'linear', failureThreshold: 2 },
+        recentSets: initial,
+        previousSessionSets: initial,
+      });
+
+      expect(initial).toEqual(snapshot);
+      expect(next).not.toHaveProperty('apply');
+    });
+  });
+
+  describe('amrap last set', () => {
+    it('marks the final working set as AMRAP and clears the rep suggestion', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'linear' },
+        templateTarget: { ...baseTarget, targetSets: 5, targetReps: 3, amrapLastSet: true },
+        recentSets: [
+          { ...baseSet, reps: 3 },
+          { ...baseSet, reps: 3 },
+          { ...baseSet, reps: 3 },
+          { ...baseSet, reps: 3 },
+        ],
+      });
+
+      expect(next.isAmrap).toBe(true);
+      expect(next.reps).toBeNull();
+      expect(next.amrapMinReps).toBe(3);
+      expect(next.label).toContain('AMRAP');
+      expect(next.weight).toBe(80);
+    });
+
+    it('does not mark earlier sets as AMRAP', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'linear' },
+        templateTarget: { ...baseTarget, targetSets: 5, targetReps: 3, amrapLastSet: true },
+        recentSets: [
+          { ...baseSet, reps: 3 },
+          { ...baseSet, reps: 3 },
+        ],
+      });
+
+      expect(next.isAmrap).toBeFalsy();
+      expect(next.reps).toBe(3);
+    });
+
+    it('marks the first/only set as AMRAP when targetSets is 1', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'linear' },
+        templateTarget: { ...baseTarget, targetSets: 1, targetReps: 5, amrapLastSet: true },
+        recentSets: [],
+      });
+
+      expect(next.isAmrap).toBe(true);
+      expect(next.reps).toBeNull();
+      expect(next.amrapMinReps).toBe(5);
+    });
+
+    it('ignores AMRAP flag when targetSets is null', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'linear' },
+        templateTarget: { ...baseTarget, targetSets: null, amrapLastSet: true },
+        recentSets: [],
+      });
+
+      expect(next.isAmrap).toBeFalsy();
+    });
+
+    it('does not affect non-AMRAP items', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'linear' },
+        templateTarget: { ...baseTarget, targetSets: 3, targetReps: 5 },
+        recentSets: [
+          { ...baseSet, reps: 5 },
+          { ...baseSet, reps: 5 },
+        ],
+      });
+
+      expect(next.isAmrap).toBeFalsy();
+      expect(next.reps).toBe(5);
+    });
+  });
 });

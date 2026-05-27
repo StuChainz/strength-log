@@ -10,6 +10,8 @@ export type RootStackParamList = {
   Settings: undefined;
   TemplateBuilder: { templateId?: string };
   ExerciseEdit: { exerciseId?: string };
+  ProgramLibrary: undefined;
+  ProgramPreview: { presetId: string };
 };
 
 export type MainTabParamList = {
@@ -68,3 +70,14 @@ export type SettingsNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   'Settings'
 >;
+
+export type ProgramLibraryNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'ProgramLibrary'
+>;
+
+export type ProgramPreviewNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'ProgramPreview'
+>;
+export type ProgramPreviewRouteProp = RouteProp<RootStackParamList, 'ProgramPreview'>;

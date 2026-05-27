@@ -388,6 +388,62 @@ describe('TemplateBuilder — edit mode', () => {
     });
   });
 
+  it('loads and preserves imported progression and AMRAP fields when edited', async () => {
+    (getTemplateItemsWithExercise as jest.Mock).mockResolvedValue([
+      {
+        id: 'item-1',
+        template_id: 'tmpl-1',
+        exercise_id: 'ex-squat',
+        exercise_name: 'Back Squat',
+        exercise_category: 'barbell',
+        exercise_default_unit: 'kg',
+        position: 0,
+        target_sets: 5,
+        target_reps: 5,
+        target_weight: null,
+        target_rpe: null,
+        rest_seconds: 180,
+        progression_rule: 'linear',
+        increment_kg: 2.5,
+        increment_lb: null,
+        rep_range_min: null,
+        rep_range_max: null,
+        rpe_cap: null,
+        amrap_last_set: 1,
+      },
+    ]);
+
+    const { getByTestId, getByText } = render(<TemplateBuilder />);
+    await waitFor(() => expect(getByText('Back Squat')).toBeTruthy());
+
+    expect(getByTestId(/^progression-rule-linear-/)).toBeTruthy();
+    expect(getByTestId(/^progression-increment-/).props.value).toBe('2.5');
+    expect(getByText('On')).toBeTruthy();
+
+    fireEvent.changeText(getByTestId('template-notes-input'), 'Edited after import');
+    fireEvent.press(getByTestId('save-btn'));
+
+    await waitFor(() => {
+      expect(updateTemplate).toHaveBeenCalledWith(
+        expect.anything(),
+        'tmpl-1',
+        expect.objectContaining({
+          notes: 'Edited after import',
+          items: [
+            expect.objectContaining({
+              exercise_id: 'ex-squat',
+              rest_seconds: 180,
+              progression_rule: 'linear',
+              increment_kg: 2.5,
+              increment_lb: null,
+              amrap_last_set: true,
+            }),
+          ],
+        }),
+      );
+    });
+  });
+
   it('can reorder exercises with up/down buttons', async () => {
     (getTemplateItemsWithExercise as jest.Mock).mockResolvedValue([
       {

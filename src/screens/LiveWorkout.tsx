@@ -347,6 +347,7 @@ export default function LiveWorkout() {
           targetReps: activeExercise?.targetReps ?? null,
           targetWeight: activeExercise?.targetWeight ?? null,
           unit: activeExercise?.defaultUnit ?? 'kg',
+          amrapLastSet: activeExercise?.amrapLastSet ?? false,
         },
         progressionRule: activeExercise?.progressionRule ?? { rule: 'none' },
         recentSets,
@@ -989,7 +990,13 @@ export default function LiveWorkout() {
           activeExercise.targetSets
         } complete`
       : null;
-  const suggestionHasValue = suggestion.weight !== null || suggestion.reps !== null;
+  const suggestionHasValue =
+    suggestion.weight !== null || suggestion.reps !== null || suggestion.isAmrap === true;
+  const suggestionRepsDisplay = suggestion.isAmrap
+    ? suggestion.amrapMinReps != null && suggestion.amrapMinReps > 0
+      ? `${suggestion.amrapMinReps}+ AMRAP`
+      : 'AMRAP'
+    : (suggestion.reps ?? '—');
   const suggestionReason = suggestion.reason || getSuggestionReason(suggestion.label);
   const nextSetSummary = `${wgt} ${activeUnit} × ${reps} reps${
     rpe !== null ? ` · RPE ${formatWeightInput(rpe)}` : ''
@@ -1403,7 +1410,7 @@ export default function LiveWorkout() {
               Suggest ·{' '}
               <Text style={styles.suggestionValue}>
                 {suggestionHasValue
-                  ? `${suggestion.weight ?? '—'} × ${suggestion.reps ?? '—'}`
+                  ? `${suggestion.weight ?? '—'} × ${suggestionRepsDisplay}`
                   : suggestionReason}
               </Text>
               {suggestionHasValue ? ` · ${suggestionReason}` : ''}
