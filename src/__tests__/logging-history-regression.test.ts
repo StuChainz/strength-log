@@ -494,6 +494,49 @@ describe('logging and history regression coverage', () => {
     ]);
   });
 
+  it('removes materialized set rows that have no corresponding set_added event', async () => {
+    db = await setupDb();
+    const bench = await createExercise(db);
+    const session = await createSession(db as never, { templateId: null, name: 'Rebuild stray' });
+    const logged = await appendSet(db, session, {
+      exerciseId: bench.id,
+      position: 0,
+      weight: 100,
+      reps: 5,
+      clientSetId: 'logged-set',
+    });
+
+    await db.runAsync(
+      `INSERT INTO workout_sets
+         (id, session_id, exercise_id, position, weight, reps, rpe,
+          unit, is_warmup, set_type, logged_at, source, client_set_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'stray-set',
+        session.id,
+        bench.id,
+        1,
+        999,
+        1,
+        null,
+        'kg',
+        0,
+        'working',
+        999,
+        'tap',
+        'stray-client-set',
+      ],
+    );
+
+    await rebuildSets(db as never, session.id);
+
+    expect(
+      await db.getAllAsync<WorkoutSet>('SELECT * FROM workout_sets WHERE session_id = ?', [
+        session.id,
+      ]),
+    ).toEqual([expect.objectContaining({ id: logged.id, client_set_id: 'logged-set' })]);
+  });
+
   it('replays add, edit, and delete events in append order when they share a timestamp', async () => {
     db = await setupDb();
     const bench = await createExercise(db);

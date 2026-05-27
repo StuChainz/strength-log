@@ -100,8 +100,26 @@ export async function rebuildSets(db: SQLiteDatabase, sessionId: string): Promis
     'SELECT event_type, payload_json, created_at FROM workout_events WHERE session_id = ? ORDER BY created_at ASC, rowid ASC',
     [sessionId],
   );
+  const eventSetIds = Array.from(
+    new Set(
+      events
+        .filter((event) => event.event_type === 'set_added')
+        .map((event) => (JSON.parse(event.payload_json) as SetAddedPayload).set_id),
+    ),
+  );
 
   await db.withTransactionAsync(async () => {
+    if (eventSetIds.length === 0) {
+      await db.runAsync('DELETE FROM workout_sets WHERE session_id = ?', [sessionId]);
+    } else {
+      await db.runAsync(
+        `DELETE FROM workout_sets
+          WHERE session_id = ?
+            AND id NOT IN (${eventSetIds.map(() => '?').join(', ')})`,
+        [sessionId, ...eventSetIds],
+      );
+    }
+
     for (const event of events) {
       if (event.event_type === 'set_added') {
         const p = JSON.parse(event.payload_json) as SetAddedPayload;
