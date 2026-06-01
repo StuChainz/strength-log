@@ -1,5 +1,5 @@
-import { Component, type ReactNode, useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Component, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -53,22 +53,76 @@ class StartupBoundary extends Component<{ children: ReactNode }, StartupBoundary
 }
 
 export default function App() {
-  useEffect(() => {
-    openDb().catch((error) => {
-      // eslint-disable-next-line no-console
-      console.error('[db] openDb startup failed', error);
-    });
+  const [bootState, setBootState] = useState<'booting' | 'ready' | 'error'>('booting');
+  const [bootError, setBootError] = useState<Error | null>(null);
+  const bootAttemptRef = useRef(0);
+
+  const boot = useCallback(() => {
+    const bootAttempt = bootAttemptRef.current + 1;
+    bootAttemptRef.current = bootAttempt;
+
+    setBootState('booting');
+    setBootError(null);
+
+    openDb()
+      .then(() => {
+        if (bootAttemptRef.current === bootAttempt) setBootState('ready');
+      })
+      .catch((error) => {
+        // eslint-disable-next-line no-console
+        console.error('[db] startup failed', error);
+        if (bootAttemptRef.current === bootAttempt) {
+          setBootError(error instanceof Error ? error : new Error(String(error)));
+          setBootState('error');
+        }
+      });
   }, []);
+
+  useEffect(() => {
+    boot();
+    return () => {
+      bootAttemptRef.current += 1;
+    };
+  }, [boot]);
 
   return (
     <StartupBoundary>
       <SafeAreaProvider>
-        <NavigationContainer theme={AppTheme}>
-          <RootNavigator />
-        </NavigationContainer>
+        {bootState === 'ready' ? (
+          <NavigationContainer theme={AppTheme}>
+            <RootNavigator />
+          </NavigationContainer>
+        ) : bootState === 'error' ? (
+          <StartupError error={bootError} onRetry={boot} />
+        ) : (
+          <StartupLoading />
+        )}
         <StatusBar style="light" />
       </SafeAreaProvider>
     </StartupBoundary>
+  );
+}
+
+function StartupLoading() {
+  return (
+    <View style={styles.startupFallback}>
+      <Text style={styles.startupTitle}>Starting Set</Text>
+      <Text style={styles.startupBody}>Preparing your workout log.</Text>
+    </View>
+  );
+}
+
+function StartupError({ error, onRetry }: { error: Error | null; onRetry: () => void }) {
+  return (
+    <View style={styles.startupFallback}>
+      <Text style={styles.startupTitle}>Set could not start</Text>
+      <Text style={styles.startupBody}>
+        {error?.message ? 'Database setup failed. Try again.' : 'Try again to reopen your log.'}
+      </Text>
+      <Pressable style={styles.retryButton} onPress={onRetry}>
+        <Text style={styles.retryButtonText}>Try Again</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -92,5 +146,20 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 10,
     textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 18,
+    minHeight: 44,
+    minWidth: 112,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: T.accent,
+    paddingHorizontal: 18,
+  },
+  retryButtonText: {
+    color: '#0a0a0a',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

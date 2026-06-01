@@ -24,25 +24,38 @@ let mockDb: ReturnType<typeof createMockDb>;
 
 function createMockDb() {
   const tables: Record<string, Row[]> = {};
+  const columns: Record<string, Set<string>> = {};
   const execCalls: string[] = [];
   const runCalls: { sql: string; params: (string | number | null)[] }[] = [];
 
   function ensureTable(name: string) {
     if (!tables[name]) tables[name] = [];
+    if (!columns[name]) columns[name] = new Set();
   }
 
   return {
     _execCalls: execCalls,
     _runCalls: runCalls,
     _tables: tables,
+    _columns: columns,
 
     execAsync: jest.fn(async (sql: string) => {
       execCalls.push(sql);
       for (const [, name] of sql.matchAll(/DROP TABLE IF EXISTS (\w+)/g)) {
         delete tables[name];
+        delete columns[name];
       }
       for (const [, name] of sql.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) {
         ensureTable(name);
+      }
+      for (const [, tableName, columnName] of sql.matchAll(
+        /ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(\w+)/gi,
+      )) {
+        ensureTable(tableName);
+        if (columns[tableName]!.has(columnName)) {
+          throw new Error(`duplicate column name: ${columnName}`);
+        }
+        columns[tableName]!.add(columnName);
       }
     }),
 
@@ -119,6 +132,12 @@ function createMockDb() {
     }),
 
     getAllAsync: jest.fn(async (sql: string) => {
+      const pragmaTableInfo = /PRAGMA table_info\((\w+)\)/.exec(sql);
+      if (pragmaTableInfo) {
+        const tableName = pragmaTableInfo[1]!;
+        ensureTable(tableName);
+        return [...columns[tableName]!].map((name) => ({ name }));
+      }
       if (/FROM sqlite_master/.test(sql)) {
         return Object.keys(tables).map((name) => ({ name }));
       }
@@ -243,6 +262,23 @@ describe('Migration runner', () => {
     expect(mockDb._tables.exercises).toBeDefined();
     expect(mockDb._tables.exercise_metadata).toBeDefined();
     expect(mockDb._tables.exercises).toHaveLength(SEED_EXERCISES.length);
+  });
+
+  it('does not crash when an ADD COLUMN migration was applied without its marker', async () => {
+    await openDb();
+    mockDb._tables._migrations = mockDb._tables._migrations.filter(
+      (row) =>
+        ![
+          '008_template_item_rest_seconds',
+          '009_template_item_progression_rules',
+          '010_template_item_amrap_last_set',
+        ].includes(String(row.name)),
+    );
+
+    _resetDbSingleton();
+    await expect(openDb()).resolves.toBe(mockDb);
+
+    expect(mockDb._tables._migrations).toHaveLength(MIGRATIONS.length);
   });
 
   it('shares one startup promise for concurrent open calls', async () => {

@@ -103,7 +103,7 @@ async function runMigrations(db: SQLiteDatabase): Promise<void> {
 
     // Apply the migration in a transaction so it's all-or-nothing.
     await db.withTransactionAsync(async () => {
-      await db.execAsync(migration.sql);
+      await runMigrationSql(db, migration.sql);
       await db.runAsync('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)', [
         migration.name,
         Date.now(),
@@ -132,7 +132,7 @@ async function repairMissingRequiredTables(db: SQLiteDatabase): Promise<void> {
 
   for (const migration of MIGRATIONS) {
     await db.withTransactionAsync(async () => {
-      await db.execAsync(migration.sql);
+      await runMigrationSql(db, migration.sql);
       await db.runAsync('INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)', [
         migration.name,
         Date.now(),
@@ -144,4 +144,39 @@ async function repairMissingRequiredTables(db: SQLiteDatabase): Promise<void> {
   if (stillMissing.length > 0) {
     throw new Error(`Database schema repair failed. Missing tables: ${stillMissing.join(', ')}`);
   }
+}
+
+async function runMigrationSql(db: SQLiteDatabase, sql: string): Promise<void> {
+  const statements = sql
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    const addedColumn = parseAddColumnStatement(statement);
+    if (addedColumn && (await columnExists(db, addedColumn.tableName, addedColumn.columnName))) {
+      continue;
+    }
+
+    await db.execAsync(`${statement};`);
+  }
+}
+
+function parseAddColumnStatement(
+  statement: string,
+): { tableName: string; columnName: string } | null {
+  const normalized = statement.replace(/\s+/g, ' ');
+  const match = /^ALTER TABLE (\w+) ADD COLUMN (\w+)\b/i.exec(normalized);
+  if (!match) return null;
+
+  return { tableName: match[1]!, columnName: match[2]! };
+}
+
+async function columnExists(
+  db: SQLiteDatabase,
+  tableName: string,
+  columnName: string,
+): Promise<boolean> {
+  const rows = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${tableName})`);
+  return rows.some((row) => row.name === columnName);
 }
