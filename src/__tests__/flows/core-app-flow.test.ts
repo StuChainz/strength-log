@@ -1127,17 +1127,6 @@ describe('core app flow repository acceptance', () => {
     await endSession(db as never, baseline.id, 400);
     await detectAndInsertFinalPrsForSession(db as never, baseline.id);
 
-    const inProgress = await createSession(db as never, {
-      templateId: null,
-      name: 'Ignore active',
-    });
-    await appendSet(db, inProgress, {
-      exerciseId: bench.id,
-      position: 0,
-      weight: 120,
-      reps: 5,
-    });
-
     const discarded = await createSession(db as never, {
       templateId: null,
       name: 'Ignore discarded',
@@ -1161,8 +1150,6 @@ describe('core app flow repository acceptance', () => {
       reps: 5,
     });
     await endSession(db as never, weaker.id, 375);
-    await detectAndInsertFinalPrsForSession(db as never, weaker.id);
-    expect(await getFinalPRsBySession(db as never, weaker.id)).toEqual([]);
 
     const warmupOnly = await createSession(db as never, { templateId: null, name: 'Warmups' });
     await appendSet(db, warmupOnly, {
@@ -1173,8 +1160,6 @@ describe('core app flow repository acceptance', () => {
       setType: 'warmup',
     });
     await endSession(db as never, warmupOnly.id, 700);
-    await detectAndInsertFinalPrsForSession(db as never, warmupOnly.id);
-    expect(await getFinalPRsBySession(db as never, warmupOnly.id)).toEqual([]);
 
     const stronger = await createSession(db as never, { templateId: null, name: 'Stronger' });
     const deleted = await appendSet(db, stronger, {
@@ -1199,6 +1184,24 @@ describe('core app flow repository acceptance', () => {
       setType: 'working',
     });
     await endSession(db as never, stronger.id, 1_025);
+
+    const inProgress = await createSession(db as never, {
+      templateId: null,
+      name: 'Ignore active',
+    });
+    await appendSet(db, inProgress, {
+      exerciseId: bench.id,
+      position: 0,
+      weight: 120,
+      reps: 5,
+    });
+
+    await detectAndInsertFinalPrsForSession(db as never, weaker.id);
+    expect(await getFinalPRsBySession(db as never, weaker.id)).toEqual([]);
+
+    await detectAndInsertFinalPrsForSession(db as never, warmupOnly.id);
+    expect(await getFinalPRsBySession(db as never, warmupOnly.id)).toEqual([]);
+
     await detectAndInsertFinalPrsForSession(db as never, stronger.id);
 
     const strongerPrs = await getFinalPRsBySession(db as never, stronger.id);

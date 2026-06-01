@@ -19,13 +19,14 @@ export interface InsertEventInput {
 export async function insertEvent(
   db: SQLiteDatabase,
   input: InsertEventInput,
-): Promise<void> {
-  await db.runAsync(
+): Promise<boolean> {
+  const result = await db.runAsync(
     `INSERT OR IGNORE INTO workout_events
        (id, session_id, event_type, payload_json, client_event_id, created_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [input.id, input.session_id, input.event_type, input.payload_json, input.client_event_id, Date.now()],
   );
+  return result.changes > 0;
 }
 
 export async function getEventsBySession(

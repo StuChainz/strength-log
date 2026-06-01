@@ -14,6 +14,7 @@ export type VoiceIntent =
 export type VoiceConfidence = 'high' | 'medium' | 'low';
 
 export interface IntentResult {
+  commandId: string;
   intent: VoiceIntent;
   args: Record<string, unknown>;
   confidence: VoiceConfidence;

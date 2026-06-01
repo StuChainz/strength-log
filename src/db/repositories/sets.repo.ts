@@ -25,8 +25,8 @@ export interface InsertSetInput {
  * Uses INSERT OR IGNORE so that retries after a crash produce exactly one row.
  * To edit a set, write a `set_edited` event then call `updateSet`.
  */
-export async function insertSet(db: SQLiteDatabase, input: InsertSetInput): Promise<void> {
-  await db.runAsync(
+export async function insertSet(db: SQLiteDatabase, input: InsertSetInput): Promise<boolean> {
+  const result = await db.runAsync(
     `INSERT OR IGNORE INTO workout_sets
        (id, session_id, exercise_id, position, weight, reps, rpe,
         unit, is_warmup, set_type, logged_at, source, client_set_id)
@@ -47,6 +47,7 @@ export async function insertSet(db: SQLiteDatabase, input: InsertSetInput): Prom
       input.client_set_id,
     ],
   );
+  return result.changes > 0;
 }
 
 export async function updateSet(

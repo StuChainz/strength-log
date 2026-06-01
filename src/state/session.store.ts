@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { openDb } from '@/db/client';
 import { newId } from '@/domain/ids';
 import {
-  getInProgressSession,
+  getSessionRecovery,
   createSession,
   endSession as dbEndSession,
   discardSession as dbDiscardSession,
+  type SessionRecovery,
 } from '@/db/repositories/sessions.repo';
 import { getTemplateItemsWithExercise } from '@/db/repositories/templates.repo';
 import { insertEvent } from '@/db/repositories/events.repo';
@@ -50,6 +51,8 @@ export interface LogSetParams {
   unit: Unit;
   setType?: SetType;
   source?: 'tap' | 'voice';
+  clientSetId?: string;
+  clientEventId?: string;
 }
 
 export type StorePhase = 'loading' | 'prompt_resume' | 'active' | 'ended';
@@ -58,6 +61,7 @@ export interface UseSessionStoreReturn {
   phase: StorePhase;
   session: WorkoutSession | null;
   existingSession: WorkoutSession | null;
+  recovery: SessionRecovery | null;
   resumedStartedAt: number | null;
   exercises: SessionExercise[];
   sets: WorkoutSet[];
@@ -177,6 +181,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
   const [phase, setPhase] = useState<StorePhase>('loading');
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [existingSession, setExistingSession] = useState<WorkoutSession | null>(null);
+  const [recovery, setRecovery] = useState<SessionRecovery | null>(null);
   const [resumedStartedAt, setResumedStartedAt] = useState<number | null>(null);
   const [exercises, setExercises] = useState<SessionExercise[]>([]);
   const [sets, setSets] = useState<WorkoutSet[]>([]);
@@ -207,11 +212,12 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
       if (cancelled) return;
       dbRef.current = db;
 
-      const existing = await getInProgressSession(db);
+      const recovered = await getSessionRecovery(db);
       if (cancelled) return;
 
-      if (existing) {
-        setExistingSession(existing);
+      if (recovered.status !== 'none') {
+        setRecovery(recovered);
+        setExistingSession(recovered.session);
         setPhase('prompt_resume');
         return;
       }
@@ -246,6 +252,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     await initSession(existingSession, db);
     setResumedStartedAt(existingSession.started_at);
     setExistingSession(null);
+    setRecovery(null);
   }, [existingSession, initSession]);
 
   const endExisting = useCallback(async () => {
@@ -255,6 +262,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     await updateSessionExerciseHistoryCache(db, existingSession.id);
     await recordFinalPrsSafely(db, existingSession.id);
     setExistingSession(null);
+    setRecovery(null);
     setPhase('ended');
   }, [existingSession]);
 
@@ -263,6 +271,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     if (!db || !existingSession) return;
     await dbDiscardSession(db, existingSession.id);
     setExistingSession(null);
+    setRecovery(null);
     setPhase('ended');
   }, [existingSession]);
 
@@ -271,6 +280,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     if (!db || !existingSession) return;
     await dbDiscardSession(db, existingSession.id);
     setExistingSession(null);
+    setRecovery(null);
     const sess = await createSession(db, { templateId: templateId ?? null, name: null });
     setResumedStartedAt(null);
     if (templateId) {
@@ -287,9 +297,9 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
       const db = dbRef.current;
       if (!db || !session) return;
 
-      const clientSetId = newId();
+      const clientSetId = params.clientSetId ?? newId();
       const setId = newId();
-      const clientEventId = newId();
+      const clientEventId = params.clientEventId ?? newId();
       const now = Date.now();
       const setType = params.setType ?? 'working';
       const isWarmup: 0 | 1 = setType === 'warmup' ? 1 : 0;
@@ -314,6 +324,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
         logged_at: now,
       };
 
+      let insertedSet = false;
       await db.withTransactionAsync(async () => {
         await insertEvent(db, {
           id: newId(),
@@ -322,7 +333,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
           payload_json: JSON.stringify(payload),
           client_event_id: clientEventId,
         });
-        await insertSet(db, {
+        insertedSet = await insertSet(db, {
           id: setId,
           session_id: session.id,
           exercise_id: params.exerciseId,
@@ -338,6 +349,8 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
           client_set_id: clientSetId,
         });
       });
+
+      if (!insertedSet) return;
 
       const newSet: WorkoutSet = {
         id: setId,
@@ -481,6 +494,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
     phase,
     session,
     existingSession,
+    recovery,
     resumedStartedAt,
     exercises,
     sets,

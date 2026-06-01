@@ -268,6 +268,30 @@ ALTER TABLE template_items
   CHECK (amrap_last_set IN (0, 1));
 `;
 
+const MIGRATION_011 = `
+CREATE TRIGGER IF NOT EXISTS trg_workout_sessions_one_in_progress_insert
+BEFORE INSERT ON workout_sessions
+WHEN NEW.status = 'in_progress'
+  AND EXISTS (
+    SELECT 1 FROM workout_sessions WHERE status = 'in_progress'
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'only one in-progress workout session is allowed');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_workout_sessions_one_in_progress_update
+BEFORE UPDATE OF status ON workout_sessions
+WHEN NEW.status = 'in_progress'
+  AND OLD.status <> 'in_progress'
+  AND EXISTS (
+    SELECT 1 FROM workout_sessions
+    WHERE status = 'in_progress' AND id <> NEW.id
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'only one in-progress workout session is allowed');
+END;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { name: '001_init', sql: MIGRATION_001 },
   { name: '002_app_settings', sql: MIGRATION_002 },
@@ -279,4 +303,5 @@ export const MIGRATIONS: Migration[] = [
   { name: '008_template_item_rest_seconds', sql: MIGRATION_008 },
   { name: '009_template_item_progression_rules', sql: MIGRATION_009 },
   { name: '010_template_item_amrap_last_set', sql: MIGRATION_010 },
+  { name: '011_one_in_progress_session', sql: MIGRATION_011 },
 ];

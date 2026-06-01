@@ -20,6 +20,7 @@ import {
   discardSession,
   endSession,
   getInProgressSession,
+  getSessionRecovery,
 } from '@/db/repositories/sessions.repo';
 import { insertEvent, getEventsBySession } from '@/db/repositories/events.repo';
 import {
@@ -645,7 +646,7 @@ describe('beta bug-hunt repository flows', () => {
     expect(await getSetsBySession(db as never, session.id)).toEqual([]);
   });
 
-  it('detects stale and multiple in-progress sessions without silently losing data', async () => {
+  it('detects stale sessions and prevents new duplicate active sessions without losing data', async () => {
     db = await setupDb();
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const bench = await exerciseByName(db, 'Barbell Bench Press');
@@ -658,23 +659,27 @@ describe('beta bug-hunt repository flows', () => {
     await appendSet(db, stale, { exerciseId: bench.id, position: 0, weight: 80, reps: 5 });
 
     expect((await getInProgressSession(db as never))?.id).toBe(stale.id);
+    await expect(getSessionRecovery(db as never)).resolves.toEqual(
+      expect.objectContaining({ status: 'stale', session: expect.objectContaining({ id: stale.id }) }),
+    );
 
-    const newer = await createSession(db as never, { templateId: null, name: 'Newest active' });
-    expect((await getInProgressSession(db as never))?.id).toBe(newer.id);
+    await expect(
+      createSession(db as never, { templateId: null, name: 'Newest active' }),
+    ).rejects.toThrow();
     expect(
       await db.getFirstAsync<{ status: string }>(
         'SELECT status FROM workout_sessions WHERE id = ?',
         [stale.id],
       ),
-    ).toEqual({ status: 'discarded' });
+    ).toEqual({ status: 'in_progress' });
     expect(await getSetsBySession(db as never, stale.id)).toEqual([
       expect.objectContaining({ exercise_id: bench.id, weight: 80, reps: 5 }),
     ]);
 
-    await discardSession(db as never, newer.id);
+    await discardSession(db as never, stale.id);
     expect(
-      (await getEventsBySession(db as never, newer.id)).map((event) => event.event_type),
-    ).toEqual(['session_started', 'session_discarded']);
+      (await getEventsBySession(db as never, stale.id)).map((event) => event.event_type),
+    ).toEqual(['session_started', 'set_added', 'session_discarded']);
     expect(await getInProgressSession(db as never)).toBeNull();
 
     warnSpy.mockRestore();

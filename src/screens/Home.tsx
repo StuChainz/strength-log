@@ -5,7 +5,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getAllTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
-import { getInProgressSession } from '@/db/repositories/sessions.repo';
+import { getSessionRecovery, type SessionRecovery } from '@/db/repositories/sessions.repo';
 import { getUntaggedCompletedSession } from '@/db/repositories/tags.repo';
 import { maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
 import { InsightCard } from '@/components/InsightCard';
@@ -26,6 +26,7 @@ export default function Home() {
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [recents, setRecents] = useState<RecentSession[]>([]);
   const [inProgress, setInProgress] = useState<WorkoutSession | null>(null);
+  const [sessionRecovery, setSessionRecovery] = useState<SessionRecovery | null>(null);
   const [unfinishedTagsSessionId, setUnfinishedTagsSessionId] = useState<string | null>(null);
   const [insightCard, setInsightCard] = useState<WeeklyInsightCard | null>(null);
   const [now, setNow] = useState<number>(Date.now);
@@ -42,13 +43,14 @@ export default function Home() {
            ORDER BY ended_at DESC
            LIMIT 5`,
         ),
-        getInProgressSession(db),
+        getSessionRecovery(db),
         getUntaggedCompletedSession(db),
         maybeGenerateWeeklyInsight(db),
       ]);
       setTemplates(tpls);
       setRecents(sessions);
-      setInProgress(active);
+      setSessionRecovery(active);
+      setInProgress(active.status === 'none' ? null : active.session);
       setUnfinishedTagsSessionId(unfinishedTags?.id ?? null);
       setInsightCard(latestInsight);
       setNow(Date.now());
@@ -64,6 +66,21 @@ export default function Home() {
   );
 
   const nextTemplate: TemplateSummary | null = templates[0] ?? null;
+  const inProgressLabel =
+    sessionRecovery?.status === 'multiple_active'
+      ? 'MULTIPLE ACTIVE WORKOUTS'
+      : sessionRecovery?.status === 'stale'
+        ? 'STALE WORKOUT'
+        : 'IN PROGRESS';
+  const inProgressTitle =
+    sessionRecovery?.status === 'multiple_active'
+      ? `${sessionRecovery.sessions.length} workouts need attention`
+      : inProgress
+        ? `Resumed workout from ${new Date(inProgress.started_at).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}`
+        : '';
 
   const today = new Date();
   const dayLabel = today.toLocaleDateString('en-GB', { weekday: 'short' }).toUpperCase();
@@ -133,14 +150,8 @@ export default function Home() {
                 <Ionicons name="refresh" size={18} color={T.accent} />
               </View>
               <View style={styles.resumeBody}>
-                <Text style={styles.resumeLabel}>IN PROGRESS</Text>
-                <Text style={styles.resumeTitle}>
-                  Resumed workout from{' '}
-                  {new Date(inProgress.started_at).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
+                <Text style={styles.resumeLabel}>{inProgressLabel}</Text>
+                <Text style={styles.resumeTitle}>{inProgressTitle}</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={T.mutedDeep} />
             </TouchableOpacity>

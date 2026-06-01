@@ -23,7 +23,15 @@ function result(
   now: number,
   requiresConfirmation = false,
 ): IntentResult {
-  return { intent, args, confidence, rawText, recognisedAt: now, requiresConfirmation };
+  return {
+    commandId: `${now}:${intent}:${normalizeVoiceText(rawText)}`,
+    intent,
+    args,
+    confidence,
+    rawText,
+    recognisedAt: now,
+    requiresConfirmation,
+  };
 }
 
 function exerciseTerms(exercise: VoiceExercise): string[] {
@@ -160,7 +168,7 @@ export function parseVoiceCommand(input: string, ctx: ParserContext): IntentResu
   }
 
   if (joined === 'undo' || joined === 'undo last' || joined === 'undo last set') {
-    return result('undo', {}, 'high', rawText, now);
+    return result('undo', {}, 'high', rawText, now, true);
   }
 
   if (joined === 'next' || joined === 'next exercise') {

@@ -147,6 +147,11 @@ async function repairMissingRequiredTables(db: SQLiteDatabase): Promise<void> {
 }
 
 async function runMigrationSql(db: SQLiteDatabase, sql: string): Promise<void> {
+  if (/CREATE\s+TRIGGER/i.test(sql)) {
+    await db.execAsync(sql);
+    return;
+  }
+
   const statements = sql
     .split(';')
     .map((statement) => statement.trim())

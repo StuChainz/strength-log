@@ -10,16 +10,41 @@ import type {
 export async function getInProgressSession(
   db: SQLiteDatabase,
 ): Promise<WorkoutSession | null> {
+  return db.getFirstAsync<WorkoutSession>(
+    "SELECT * FROM workout_sessions WHERE status = 'in_progress' ORDER BY started_at DESC LIMIT 1",
+  );
+}
+
+export const STALE_IN_PROGRESS_SESSION_MS = 12 * 60 * 60 * 1000;
+
+export type SessionRecovery =
+  | { status: 'none'; sessions: [] }
+  | { status: 'active'; session: WorkoutSession; sessions: [WorkoutSession] }
+  | { status: 'stale'; session: WorkoutSession; sessions: [WorkoutSession] }
+  | { status: 'multiple_active'; session: WorkoutSession; sessions: WorkoutSession[] };
+
+export async function getSessionRecovery(
+  db: SQLiteDatabase,
+  now = Date.now(),
+): Promise<SessionRecovery> {
   const sessions = await db.getAllAsync<WorkoutSession>(
     "SELECT * FROM workout_sessions WHERE status = 'in_progress' ORDER BY started_at DESC",
   );
-  const [newest, ...older] = sessions;
 
-  for (const session of older) {
-    await discardSession(db, session.id);
+  if (sessions.length === 0) return { status: 'none', sessions: [] };
+
+  const [newest] = sessions;
+  if (!newest) return { status: 'none', sessions: [] };
+
+  if (sessions.length > 1) {
+    return { status: 'multiple_active', session: newest, sessions };
   }
 
-  return newest ?? null;
+  if (now - newest.started_at > STALE_IN_PROGRESS_SESSION_MS) {
+    return { status: 'stale', session: newest, sessions: [newest] };
+  }
+
+  return { status: 'active', session: newest, sessions: [newest] };
 }
 
 export async function getSessionById(

@@ -3,7 +3,7 @@ import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import LiveWorkout from '@/screens/LiveWorkout';
 import { getPreviousPRDataForExercises } from '@/db/repositories/prs.repo';
-import { getProgressionSuggestion } from '@/domain/progression';
+import { getLiveWorkoutSuggestion } from '@/domain/progression';
 import { useSessionStore, type UseSessionStoreReturn } from '@/state/session.store';
 
 const mockReplace = jest.fn();
@@ -42,7 +42,7 @@ jest.mock('@/db/repositories/events.repo', () => ({
 }));
 
 jest.mock('@/domain/progression', () => ({
-  getProgressionSuggestion: jest.fn(() => ({
+  getLiveWorkoutSuggestion: jest.fn(() => ({
     label: 'No suggestion yet.',
     reason: 'No suggestion yet',
     weight: null,
@@ -69,8 +69,8 @@ const useSessionStoreMock = useSessionStore as jest.MockedFunction<typeof useSes
 const getPreviousPRDataForExercisesMock = getPreviousPRDataForExercises as jest.MockedFunction<
   typeof getPreviousPRDataForExercises
 >;
-const getProgressionSuggestionMock = getProgressionSuggestion as jest.MockedFunction<
-  typeof getProgressionSuggestion
+const getLiveWorkoutSuggestionMock = getLiveWorkoutSuggestion as jest.MockedFunction<
+  typeof getLiveWorkoutSuggestion
 >;
 
 function activeStore(overrides: Partial<UseSessionStoreReturn> = {}): UseSessionStoreReturn {
@@ -134,6 +134,7 @@ function activeStore(overrides: Partial<UseSessionStoreReturn> = {}): UseSession
     discardAndStart: jest.fn().mockResolvedValue(undefined),
     addExercise: jest.fn(),
     ...overrides,
+    recovery: overrides.recovery ?? null,
   };
 }
 
@@ -150,7 +151,7 @@ describe('LiveWorkout screen core flow', () => {
       estimated1RMs: [],
       sessionVolumes: [],
     });
-    getProgressionSuggestionMock.mockReturnValue({
+    getLiveWorkoutSuggestionMock.mockReturnValue({
       label: 'No suggestion yet.',
       reason: 'No suggestion yet',
       weight: null,
@@ -205,7 +206,7 @@ describe('LiveWorkout screen core flow', () => {
   });
 
   it('renders suggestion copy with a short reason label', () => {
-    getProgressionSuggestionMock.mockReturnValue({
+    getLiveWorkoutSuggestionMock.mockReturnValue({
       label: 'Same weight, same reps.',
       reason: 'Repeat target',
       weight: 80,
@@ -224,8 +225,29 @@ describe('LiveWorkout screen core flow', () => {
     expect(getByText(/Suggest ·/)).toBeTruthy();
   });
 
+  it('builds live suggestions from current-session sets', () => {
+    const store = activeStore();
+    useSessionStoreMock.mockReturnValue(store);
+
+    render(<LiveWorkout />);
+
+    expect(getLiveWorkoutSuggestionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recentSets: [
+          expect.objectContaining({
+            id: 'set-1',
+            session_id: 'session-1',
+            weight: 80,
+            reps: 5,
+            rpe: 8,
+          }),
+        ],
+      }),
+    );
+  });
+
   it('renders suggestion reason from a template rule and tapping only fills the logger', async () => {
-    getProgressionSuggestionMock.mockReturnValue({
+    getLiveWorkoutSuggestionMock.mockReturnValue({
       label: 'Linear: target hit',
       reason: 'Linear: target hit',
       weight: 82.5,
@@ -370,6 +392,29 @@ describe('LiveWorkout screen core flow', () => {
     await waitFor(() => expect(store.logSet).toHaveBeenCalledTimes(1));
     expect(queryByTestId('rest-timer-remaining')).toBeNull();
     expect(getByTestId('manual-rest-60')).toBeTruthy();
+  });
+
+  it('rapid double tapping the log button only logs one set', async () => {
+    let resolveLogSet: () => void = () => {};
+    const store = activeStore({
+      sets: [],
+      logSet: jest.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveLogSet = resolve;
+          }),
+      ),
+    });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId } = render(<LiveWorkout />);
+    const logButton = getByTestId('log-set-btn');
+
+    fireEvent.press(logButton);
+    fireEvent.press(logButton);
+    resolveLogSet();
+
+    await waitFor(() => expect(store.logSet).toHaveBeenCalledTimes(1));
   });
 
   it('starts, extends, and stops a manual rest timer without logging sets', async () => {
@@ -707,6 +752,23 @@ describe('LiveWorkout screen core flow', () => {
         source: 'voice',
       }),
     );
+  });
+
+  it('requires confirmation before typed voice undo runs', async () => {
+    const store = activeStore();
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByPlaceholderText, getByText } = render(<LiveWorkout />);
+    const input = getByPlaceholderText('Typed voice debug');
+
+    fireEvent.changeText(input, 'undo last set');
+    fireEvent(input, 'submitEditing');
+
+    expect(store.undoLastSet).not.toHaveBeenCalled();
+
+    fireEvent.press(getByText('Confirm'));
+
+    await waitFor(() => expect(store.undoLastSet).toHaveBeenCalledTimes(1));
   });
 
   it('starts the real timer from typed rest commands', async () => {

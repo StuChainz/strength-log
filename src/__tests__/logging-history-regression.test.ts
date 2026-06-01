@@ -659,10 +659,6 @@ describe('logging and history regression coverage', () => {
     await appendSet(db, complete, { exerciseId: bench.id, position: 0, weight: 100, reps: 5 });
     await endSession(db as never, complete.id, 500);
 
-    const active = await createSession(db as never, { templateId: null, name: 'Active' });
-    await setSessionStartedAt(db, active.id, 2000);
-    await appendSet(db, active, { exerciseId: bench.id, position: 0, weight: 999, reps: 1 });
-
     const discarded = await createSession(db as never, { templateId: null, name: 'Discarded' });
     await setSessionStartedAt(db, discarded.id, 3000);
     await appendSet(db, discarded, { exerciseId: bench.id, position: 0, weight: 888, reps: 1 });
@@ -678,6 +674,10 @@ describe('logging and history regression coverage', () => {
     });
     await deleteSetWithEvent(db, deletedOnly.id, deleted.id);
     await endSession(db as never, deletedOnly.id, 777);
+
+    const active = await createSession(db as never, { templateId: null, name: 'Active' });
+    await setSessionStartedAt(db, active.id, 2000);
+    await appendSet(db, active, { exerciseId: bench.id, position: 0, weight: 999, reps: 1 });
 
     expect(await getExerciseHistory(db as never, bench.id, 10)).toEqual([
       expect.objectContaining({

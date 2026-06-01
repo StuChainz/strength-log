@@ -33,6 +33,7 @@ jest.mock('@/db/repositories/templates.repo', () => ({
 
 jest.mock('@/db/repositories/sessions.repo', () => ({
   getInProgressSession: jest.fn().mockResolvedValue(null),
+  getSessionRecovery: jest.fn().mockResolvedValue({ status: 'none', sessions: [] }),
 }));
 
 jest.mock('@/db/repositories/tags.repo', () => ({

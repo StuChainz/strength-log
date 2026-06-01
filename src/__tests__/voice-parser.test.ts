@@ -36,6 +36,7 @@ describe('parseVoiceCommand', () => {
     const parsed = parseVoiceCommand(input, ctx);
     expect(parsed?.intent).toBe(intent);
     expect(parsed?.confidence).toBe(confidence);
+    expect(parsed?.commandId).toEqual(expect.any(String));
   });
 
   it('uses the active exercise when omitted', () => {
@@ -43,6 +44,16 @@ describe('parseVoiceCommand', () => {
     expect(parsed?.args.exerciseId).toBe('bench');
     expect(parsed?.args.weight).toBe(80);
     expect(parsed?.args.reps).toBe(5);
+  });
+
+  it('requires confirmation for undo', () => {
+    const parsed = parseVoiceCommand('undo last set', ctx);
+    expect(parsed).toEqual(
+      expect.objectContaining({
+        intent: 'undo',
+        requiresConfirmation: true,
+      }),
+    );
   });
 
   it('returns null for invalid or unsupported commands', () => {

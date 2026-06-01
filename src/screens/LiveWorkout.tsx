@@ -23,7 +23,7 @@ import { ExercisePicker } from '@/components/ExercisePicker';
 import { MicButton } from '@/components/MicButton';
 import ExerciseHistorySheet from '@/screens/ExerciseHistorySheet';
 import VoiceConfirm from '@/screens/VoiceConfirm';
-import { getProgressionSuggestion } from '@/domain/progression';
+import { getLiveWorkoutSuggestion } from '@/domain/progression';
 import { detectLivePotentialPRs, type LivePotentialPR, type PreviousPRData } from '@/domain/prs';
 import {
   calculateSessionVolume,
@@ -207,6 +207,7 @@ export default function LiveWorkout() {
     phase,
     session,
     existingSession,
+    recovery,
     resumedStartedAt,
     exercises,
     sets,
@@ -261,8 +262,12 @@ export default function LiveWorkout() {
 
   const activeExerciseIndex = exercises.findIndex((e) => e.id === activeExerciseId);
   const activeExercise = activeExerciseIndex >= 0 ? exercises[activeExerciseIndex] : null;
-  const activeSets = sets.filter(
-    (s) => s.exercise_id === activeExerciseId && s.deleted_at === null,
+  const activeSets = useMemo(
+    () =>
+      sets
+        .filter((s) => s.exercise_id === activeExerciseId && s.deleted_at === null)
+        .sort((a, b) => a.position - b.position),
+    [activeExerciseId, sets],
   );
   const exerciseIdsKey = useMemo(
     () => [...new Set(exercises.map((exercise) => exercise.id))].sort().join('|'),
@@ -337,8 +342,8 @@ export default function LiveWorkout() {
   );
   const suggestion = useMemo(
     () => {
-      const { recentSets, previousSessionSets } = getRecentHistoryBuckets(lastSets);
-      return getProgressionSuggestion({
+      const { recentSets: lastSessionSets, previousSessionSets } = getRecentHistoryBuckets(lastSets);
+      return getLiveWorkoutSuggestion({
         exercise: activeExercise?.progressionExercise ?? {
           category: activeExercise?.category ?? 'barbell',
         },
@@ -350,11 +355,11 @@ export default function LiveWorkout() {
           amrapLastSet: activeExercise?.amrapLastSet ?? false,
         },
         progressionRule: activeExercise?.progressionRule ?? { rule: 'none' },
-        recentSets,
-        previousSessionSets,
+        recentSets: activeSets,
+        previousSessionSets: lastSessionSets.length > 0 ? lastSessionSets : previousSessionSets,
       });
     },
-    [activeExercise, lastSets],
+    [activeExercise, activeSets, lastSets],
   );
   const potentialPRs = useMemo(
     () => (previousPRData ? detectLivePotentialPRs(sets, previousPRData) : []),
@@ -541,7 +546,19 @@ export default function LiveWorkout() {
       hour: '2-digit',
       minute: '2-digit',
     });
-    const isStale = Date.now() - existingSession.started_at > 12 * 60 * 60 * 1000;
+    if (recovery?.status === 'multiple_active') {
+      Alert.alert(
+        'Multiple Active Workouts',
+        `${recovery.sessions.length} workouts are still in progress. Resume the latest one from ${started}; no workouts will be discarded.`,
+        [
+          { text: 'Resume Latest', onPress: resumeExisting },
+          { text: 'Go Home', onPress: () => navigation.popToTop() },
+        ],
+        { cancelable: false },
+      );
+      return;
+    }
+    const isStale = recovery?.status === 'stale';
     const buttons = isStale
       ? [
           { text: 'Resume', onPress: resumeExisting },
@@ -560,7 +577,7 @@ export default function LiveWorkout() {
       buttons,
       { cancelable: false },
     );
-  }, [phase, existingSession]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, existingSession, recovery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const formatElapsed = (secs: number) => {
     const h = Math.floor(secs / 3600);
@@ -955,7 +972,7 @@ export default function LiveWorkout() {
       return;
     }
     setVoiceMessage(null);
-    if (parsed.intent === 'end_workout' || parsed.confidence === 'medium') return;
+    if (parsed.requiresConfirmation || parsed.confidence === 'medium') return;
     void commitVoiceResult(parsed);
   }, [commitVoiceResult, parserContext, voiceText]);
 
@@ -1382,7 +1399,7 @@ export default function LiveWorkout() {
                 </TouchableOpacity>
               </View>
               <VoiceConfirm result={voiceResult} />
-              {voiceResult?.confidence === 'medium' || voiceResult?.intent === 'end_workout' ? (
+              {voiceResult?.confidence === 'medium' || voiceResult?.requiresConfirmation ? (
                 <TouchableOpacity
                   style={styles.voiceConfirmBtn}
                   onPress={() => voiceResult && void commitVoiceResult(voiceResult)}
