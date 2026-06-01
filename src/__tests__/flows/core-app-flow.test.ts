@@ -33,7 +33,12 @@ import {
   detectAndInsertFinalPrsForSession,
   getFinalPRsBySession,
 } from '@/db/repositories/prs.repo';
-import { getSavedTags, savePostSessionDetails, SESSION_TAGS } from '@/db/repositories/tags.repo';
+import {
+  getSavedTags,
+  getUntaggedCompletedSession,
+  savePostSessionDetails,
+  SESSION_TAGS,
+} from '@/db/repositories/tags.repo';
 import { maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
 import { exportDatabase } from '@/db/repositories/export.repo';
 import { EXPORT_TABLES } from '@/export/schema';
@@ -1265,6 +1270,41 @@ describe('core app flow repository acceptance', () => {
     ]);
     expect(SESSION_TAGS).toContain('sore');
     expect(PostSessionTagSchema.safeParse('custom_tag').success).toBe(false);
+  });
+
+  it('keeps completed workouts recoverable for later tag saving after an app restart', async () => {
+    db = await setupDb();
+    const bench = await exerciseByName(db, 'Barbell Bench Press');
+    const session = await createSession(db as never, { templateId: null, name: 'Save tags later' });
+    await appendSet(db, session, {
+      exerciseId: bench.id,
+      position: 0,
+      weight: 80,
+      reps: 5,
+      loggedAt: 10_000,
+    });
+    await endSession(db as never, session.id, 400);
+
+    await expect(getUntaggedCompletedSession(db as never)).resolves.toEqual(
+      expect.objectContaining({ id: session.id }),
+    );
+
+    const summary = await getWorkoutSummary(db as never, session.id);
+    await savePostSessionDetails(db as never, {
+      sessionId: session.id,
+      tags: ['felt_strong'],
+      energyRating: 8,
+      note: 'Saved after restart',
+      metrics: {
+        volume: summary?.volume ?? 400,
+        durationMin: summary?.durationMin ?? 0,
+        setCount: summary?.setCount ?? 1,
+        sampledAt: summary?.session.ended_at ?? 1,
+      },
+    });
+
+    await expect(getUntaggedCompletedSession(db as never)).resolves.toBeNull();
+    expect(await getSavedTags(db as never, session.id)).toEqual(['felt_strong']);
   });
 
   it('generates weekly insights only when thresholds are met and uses cautious copy', async () => {

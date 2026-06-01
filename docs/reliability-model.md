@@ -24,7 +24,8 @@
 | `set_deleted` | `set_id` |
 | `session_ended` | `ended_at` |
 | `session_discarded` | `discarded_at` |
-| `tags_added` | `tags[]`, `energy_rating?`, `note?` |
+
+Post-session tags, energy, notes, and metric samples are stored in local post-session tables after the workout is completed. They are not workout-loop events.
 
 ---
 
@@ -32,21 +33,21 @@
 
 ### Client-side ID allocation
 
-The `client_set_id` and `client_event_id` are **allocated in the UI at intent time** — before any DB call is made. This means:
+The `client_set_id` and `client_event_id` are allocated before the set write transaction starts. This means:
 
 1. User taps "Log set" → `client_set_id = uuidv7()` generated immediately.
 2. DB write is attempted with that ID.
-3. If the write fails and the UI retries, it uses the **same** ID.
-4. The `UNIQUE (client_set_id)` constraint in `workout_sets` silently ignores the duplicate insert.
+3. The UI blocks concurrent tap writes while the first write is in flight.
+4. Repository callers that retry with the same IDs get idempotent `INSERT OR IGNORE` behavior.
 
 The same pattern applies to `client_event_id` in `workout_events`.
 
 ### Idempotency checklist
 
-- [ ] `workout_sets.client_set_id` has a `UNIQUE` constraint.
-- [ ] `workout_events.client_event_id` has a `UNIQUE` constraint.
-- [ ] The set-add code path catches the SQLite `UNIQUE` constraint error and treats it as a success (returns the existing row).
-- [ ] `client_set_id` is stored in `session.store.ts` state so that a re-render or a retry within the same session doesn't generate a new ID.
+- [x] `workout_sets.client_set_id` has a `UNIQUE` constraint.
+- [x] `workout_events.client_event_id` has a `UNIQUE` constraint.
+- [x] The set-add code path uses `INSERT OR IGNORE` for duplicate-safe materialization.
+- [x] The live UI blocks rapid duplicate tap writes while a set is being logged.
 
 ---
 
@@ -95,7 +96,8 @@ Call this function on `LiveWorkout` mount — do not trust the existing `workout
 
 ### Invariant enforced on resume
 
-- At most one `status = 'in_progress'` session. If two are found (should be impossible), log a warning, mark the older one `discarded`, and resume the newer one.
+- The schema prevents more than one normal `status = 'in_progress'` session.
+- If duplicate active sessions are found from older data or a partial repair, never silently discard any workout. Surface the duplicate state, resume the newest session only after user intent, and leave older active rows untouched for manual recovery.
 
 ---
 
@@ -103,8 +105,8 @@ Call this function on `LiveWorkout` mount — do not trust the existing `workout
 
 | Scenario | Outcome |
 |---|---|
-| Crash before `BEGIN TRANSACTION` | No data written. Next tap retries with same `client_set_id`. Safe. |
-| Crash inside transaction, before `COMMIT` | SQLite rolls back. Next tap retries. Safe. |
+| Crash before `BEGIN TRANSACTION` | No data written. The next tap writes a new complete set. Safe. |
+| Crash inside transaction, before `COMMIT` | SQLite rolls back. The next tap writes a new complete set. Safe. |
 | Crash after `COMMIT` | Both event and set rows exist. Recovery reads them correctly. Safe. |
 | App killed while confirmation chip is showing (voice) | The tap was never made. No write happened. Safe. |
 

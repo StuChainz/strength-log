@@ -1,10 +1,13 @@
 import { render, screen, waitFor } from '@testing-library/react-native';
 import Home from '@/screens/Home';
 import { getSessionRecovery } from '@/db/repositories/sessions.repo';
+import { getUntaggedCompletedSession } from '@/db/repositories/tags.repo';
+
+const mockNavigate = jest.fn();
 
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
-  useNavigation: () => ({ navigate: jest.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate }),
   useFocusEffect: (cb: () => void) => { cb(); },
 }));
 
@@ -31,11 +34,15 @@ jest.mock('@/db/repositories/insights.repo', () => ({
 }));
 
 const getSessionRecoveryMock = getSessionRecovery as jest.MockedFunction<typeof getSessionRecovery>;
+const getUntaggedCompletedSessionMock = getUntaggedCompletedSession as jest.MockedFunction<
+  typeof getUntaggedCompletedSession
+>;
 
 describe('Home screen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     getSessionRecoveryMock.mockResolvedValue({ status: 'none', sessions: [] });
+    getUntaggedCompletedSessionMock.mockResolvedValue(null);
   });
 
   it('renders the "Strength Log" heading', async () => {
@@ -71,5 +78,17 @@ describe('Home screen', () => {
 
     await waitFor(() => expect(screen.getByText('MULTIPLE ACTIVE WORKOUTS')).toBeTruthy());
     expect(screen.getByText('2 workouts need attention')).toBeTruthy();
+  });
+
+  it('surfaces a completed session that still needs post-session details', async () => {
+    getUntaggedCompletedSessionMock.mockResolvedValue({
+      id: 'session-needs-tags',
+      ended_at: 1_700_000_000_000,
+    });
+
+    render(<Home />);
+
+    await waitFor(() => expect(screen.getByText('FINISH THIS SESSION')).toBeTruthy());
+    expect(screen.getByText('Add tags and energy rating')).toBeTruthy();
   });
 });
