@@ -175,6 +175,12 @@ describe('Migration runner', () => {
     expect(mockDb._tables['_migrations']?.find((r) => r.name === '001_init')).toBeDefined();
   });
 
+  it('enables SQLite foreign keys on open', async () => {
+    await openDb();
+
+    expect(mockDb._execCalls).toContain('PRAGMA foreign_keys = ON;');
+  });
+
   it('creates the exercise_metadata table', async () => {
     await openDb();
     expect(mockDb._tables.exercise_metadata).toBeDefined();
@@ -333,11 +339,17 @@ describe('Seed idempotency', () => {
   it('resetLocalData recreates and reseeds exercises', async () => {
     await openDb();
     mockDb._tables.exercises = [];
+    const foreignKeyCallsBeforeReset = mockDb._execCalls.filter(
+      (sql) => sql === 'PRAGMA foreign_keys = ON;',
+    ).length;
 
     await resetLocalData();
 
     expect(mockDb._tables.exercises).toHaveLength(SEED_EXERCISES.length);
     expect(mockDb._tables['_migrations']).toHaveLength(MIGRATIONS.length);
+    expect(
+      mockDb._execCalls.filter((sql) => sql === 'PRAGMA foreign_keys = ON;').length,
+    ).toBeGreaterThan(foreignKeyCallsBeforeReset);
   });
 
   it('inserts seed metadata on first open', async () => {

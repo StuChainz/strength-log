@@ -51,6 +51,7 @@ export interface LogSetParams {
   unit: Unit;
   setType?: SetType;
   source?: 'tap' | 'voice';
+  setId?: string;
   clientSetId?: string;
   clientEventId?: string;
 }
@@ -298,7 +299,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
       if (!db || !session) return;
 
       const clientSetId = params.clientSetId ?? newId();
-      const setId = newId();
+      const setId = params.setId ?? newId();
       const clientEventId = params.clientEventId ?? newId();
       const now = Date.now();
       const setType = params.setType ?? 'working';

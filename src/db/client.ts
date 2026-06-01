@@ -34,6 +34,7 @@ export async function openDb(): Promise<SQLiteDatabase> {
 
   _openingDb = (async () => {
     const db = await openDatabaseAsync('strengthlog.db');
+    await enableForeignKeys(db);
     await runMigrations(db);
     await seedExercises(db);
     _db = db;
@@ -60,6 +61,7 @@ export function _resetDbSingleton(): void {
 
 export async function resetLocalData(): Promise<void> {
   const db = await openDb();
+  await enableForeignKeys(db);
   await db.execAsync(`
     DROP TABLE IF EXISTS app_settings;
     DROP TABLE IF EXISTS weekly_insight_cards;
@@ -85,6 +87,10 @@ export async function resetLocalData(): Promise<void> {
 
 // ─── Migration runner ─────────────────────────────────────────────────────────
 
+async function enableForeignKeys(db: SQLiteDatabase): Promise<void> {
+  await db.execAsync('PRAGMA foreign_keys = ON;');
+}
+
 async function runMigrations(db: SQLiteDatabase): Promise<void> {
   // Bootstrap the migrations tracking table.
   await db.execAsync(`
@@ -103,11 +109,13 @@ async function runMigrations(db: SQLiteDatabase): Promise<void> {
 
     // Apply the migration in a transaction so it's all-or-nothing.
     await db.withTransactionAsync(async () => {
-      await runMigrationSql(db, migration.sql);
-      await db.runAsync('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)', [
-        migration.name,
-        Date.now(),
-      ]);
+      const applied = await runMigrationSql(db, migration.sql);
+      if (applied) {
+        await db.runAsync('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)', [
+          migration.name,
+          Date.now(),
+        ]);
+      }
     });
   }
 
@@ -132,11 +140,13 @@ async function repairMissingRequiredTables(db: SQLiteDatabase): Promise<void> {
 
   for (const migration of MIGRATIONS) {
     await db.withTransactionAsync(async () => {
-      await runMigrationSql(db, migration.sql);
-      await db.runAsync('INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)', [
-        migration.name,
-        Date.now(),
-      ]);
+      const applied = await runMigrationSql(db, migration.sql);
+      if (applied) {
+        await db.runAsync('INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)', [
+          migration.name,
+          Date.now(),
+        ]);
+      }
     });
   }
 
@@ -146,10 +156,14 @@ async function repairMissingRequiredTables(db: SQLiteDatabase): Promise<void> {
   }
 }
 
-async function runMigrationSql(db: SQLiteDatabase, sql: string): Promise<void> {
+async function runMigrationSql(db: SQLiteDatabase, sql: string): Promise<boolean> {
+  if (/idx_one_in_progress_session/i.test(sql) && (await hasDuplicateInProgressSessions(db))) {
+    return false;
+  }
+
   if (/CREATE\s+TRIGGER/i.test(sql)) {
     await db.execAsync(sql);
-    return;
+    return true;
   }
 
   const statements = sql
@@ -165,6 +179,8 @@ async function runMigrationSql(db: SQLiteDatabase, sql: string): Promise<void> {
 
     await db.execAsync(`${statement};`);
   }
+
+  return true;
 }
 
 function parseAddColumnStatement(
@@ -184,4 +200,11 @@ async function columnExists(
 ): Promise<boolean> {
   const rows = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${tableName})`);
   return rows.some((row) => row.name === columnName);
+}
+
+async function hasDuplicateInProgressSessions(db: SQLiteDatabase): Promise<boolean> {
+  const row = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) AS count FROM workout_sessions WHERE status = 'in_progress'",
+  );
+  return (row?.count ?? 0) > 1;
 }

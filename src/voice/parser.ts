@@ -21,10 +21,11 @@ function result(
   confidence: VoiceConfidence,
   rawText: string,
   now: number,
+  ctx: ParserContext,
   requiresConfirmation = false,
 ): IntentResult {
   return {
-    commandId: `${now}:${intent}:${normalizeVoiceText(rawText)}`,
+    commandId: commandIdFor(ctx, intent, rawText, now),
     intent,
     args,
     confidence,
@@ -32,6 +33,15 @@ function result(
     recognisedAt: now,
     requiresConfirmation,
   };
+}
+
+function commandIdFor(
+  ctx: ParserContext,
+  intent: IntentResult['intent'],
+  rawText: string,
+  now: number,
+): string {
+  return ctx.commandId ?? `${now}:${intent}:${normalizeVoiceText(rawText)}`;
 }
 
 function exerciseTerms(exercise: VoiceExercise): string[] {
@@ -99,6 +109,7 @@ function parseLogSet(tokens: string[], rawText: string, ctx: ParserContext, now:
     confidence,
     rawText,
     now,
+    ctx,
   );
 }
 
@@ -114,12 +125,19 @@ export function parseVoiceCommand(input: string, ctx: ParserContext): IntentResu
   if (joined === 'same again' || joined === 'again') {
     const last = ctx.lastSet;
     if (!last || last.weight === null || last.reps === null) return null;
-    return result('log_set_same', {
-      exerciseId: last.exerciseId,
-      weight: last.weight,
-      reps: last.reps,
-      unit: last.unit,
-    }, 'high', rawText, now);
+    return result(
+      'log_set_same',
+      {
+        exerciseId: last.exerciseId,
+        weight: last.weight,
+        reps: last.reps,
+        unit: last.unit,
+      },
+      'high',
+      rawText,
+      now,
+      ctx,
+    );
   }
 
   if (tokens[0] === 'add' || tokens[0] === 'plus') {
@@ -127,12 +145,19 @@ export function parseVoiceCommand(input: string, ctx: ParserContext): IntentResu
     const last = ctx.lastSet;
     if (!parsed || !last || last.weight === null || last.reps === null) return null;
     const unit = unitFromToken(tokens[parsed.next], last.unit);
-    return result('log_set_delta', {
-      exerciseId: last.exerciseId,
-      weight: last.weight + parsed.value,
-      reps: last.reps,
-      unit,
-    }, 'high', rawText, now);
+    return result(
+      'log_set_delta',
+      {
+        exerciseId: last.exerciseId,
+        weight: last.weight + parsed.value,
+        reps: last.reps,
+        unit,
+      },
+      'high',
+      rawText,
+      now,
+      ctx,
+    );
   }
 
   if (tokens[0] === 'minus') {
@@ -142,21 +167,35 @@ export function parseVoiceCommand(input: string, ctx: ParserContext): IntentResu
     if (REP_WORDS.has(tokens[parsed.next])) {
       const reps = last.reps - parsed.value;
       if (reps <= 0) return null;
-      return result('log_set_delta', {
-        exerciseId: last.exerciseId,
-        weight: last.weight,
-        reps,
-        unit: last.unit,
-      }, 'high', rawText, now);
+      return result(
+        'log_set_delta',
+        {
+          exerciseId: last.exerciseId,
+          weight: last.weight,
+          reps,
+          unit: last.unit,
+        },
+        'high',
+        rawText,
+        now,
+        ctx,
+      );
     }
     const nextWeight = last.weight - parsed.value;
     if (nextWeight <= 0) return null;
-    return result('log_set_delta', {
-      exerciseId: last.exerciseId,
-      weight: nextWeight,
-      reps: last.reps,
-      unit: unitFromToken(tokens[parsed.next], last.unit),
-    }, 'high', rawText, now);
+    return result(
+      'log_set_delta',
+      {
+        exerciseId: last.exerciseId,
+        weight: nextWeight,
+        reps: last.reps,
+        unit: unitFromToken(tokens[parsed.next], last.unit),
+      },
+      'high',
+      rawText,
+      now,
+      ctx,
+    );
   }
 
   if (tokens[0] === 'rpe') {
@@ -164,19 +203,48 @@ export function parseVoiceCommand(input: string, ctx: ParserContext): IntentResu
     const last = ctx.lastSet;
     if (!parsed || !last?.setId || parsed.value < 1 || parsed.value > 10) return null;
     if (last.loggedAt && now - last.loggedAt > 30_000) return null;
-    return result('set_rpe', { setId: last.setId, rpe: parsed.value }, 'high', rawText, now);
+    return result(
+      'set_rpe',
+      { setId: last.setId, rpe: parsed.value },
+      'high',
+      rawText,
+      now,
+      ctx,
+    );
   }
 
   if (joined === 'undo' || joined === 'undo last' || joined === 'undo last set') {
-    return result('undo', {}, 'high', rawText, now, true);
+    return result(
+      'undo',
+      {},
+      'high',
+      rawText,
+      now,
+      ctx,
+      true,
+    );
   }
 
   if (joined === 'next' || joined === 'next exercise') {
-    return result('next_exercise', {}, 'high', rawText, now);
+    return result(
+      'next_exercise',
+      {},
+      'high',
+      rawText,
+      now,
+      ctx,
+    );
   }
 
   if (joined === 'previous' || joined === 'prev' || joined === 'back' || joined === 'previous exercise' || joined === 'prev exercise' || joined === 'back exercise') {
-    return result('prev_exercise', {}, 'high', rawText, now);
+    return result(
+      'prev_exercise',
+      {},
+      'high',
+      rawText,
+      now,
+      ctx,
+    );
   }
 
   if (tokens[0] === 'rest') {
@@ -186,11 +254,26 @@ export function parseVoiceCommand(input: string, ctx: ParserContext): IntentResu
     const unit = tokens[parsed.next];
     const seconds = unit?.startsWith('min') ? parsed.value * 60 : parsed.value;
     if (!unit?.startsWith('min') && !unit?.startsWith('sec')) return null;
-    return result('start_rest_timer', { seconds }, 'high', rawText, now);
+    return result(
+      'start_rest_timer',
+      { seconds },
+      'high',
+      rawText,
+      now,
+      ctx,
+    );
   }
 
   if (joined === 'end workout' || joined === 'finish workout') {
-    return result('end_workout', {}, 'high', rawText, now, true);
+    return result(
+      'end_workout',
+      {},
+      'high',
+      rawText,
+      now,
+      ctx,
+      true,
+    );
   }
 
   return parseLogSet(tokens, rawText, ctx, now);

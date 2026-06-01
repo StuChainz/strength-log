@@ -337,6 +337,11 @@ describe('real SQLite idempotency constraints', () => {
         [clientSetId],
       ),
     ).resolves.toEqual({ count: 1 });
+    await expect(
+      db.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM workout_sets WHERE id = ?', [
+        setId,
+      ]),
+    ).resolves.toEqual({ count: 1 });
   });
 
   it('enforces one in-progress session for new writes', async () => {
@@ -351,5 +356,19 @@ describe('real SQLite idempotency constraints', () => {
         [newId(), Date.now(), Date.now(), Date.now()],
       ),
     ).rejects.toThrow();
+  });
+
+  it('creates the partial unique index for one in-progress session', async () => {
+    db = await setupSqliteDb();
+
+    const indexes = await db.getAllAsync<{ name: string; unique: number }>(
+      'PRAGMA index_list(workout_sessions)',
+    );
+
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'idx_one_in_progress_session', unique: 1 }),
+      ]),
+    );
   });
 });

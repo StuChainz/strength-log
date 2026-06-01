@@ -292,6 +292,12 @@ BEGIN
 END;
 `;
 
+const MIGRATION_012 = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_in_progress_session
+  ON workout_sessions(status)
+  WHERE status = 'in_progress';
+`;
+
 export const MIGRATIONS: Migration[] = [
   { name: '001_init', sql: MIGRATION_001 },
   { name: '002_app_settings', sql: MIGRATION_002 },
@@ -304,4 +310,5 @@ export const MIGRATIONS: Migration[] = [
   { name: '009_template_item_progression_rules', sql: MIGRATION_009 },
   { name: '010_template_item_amrap_last_set', sql: MIGRATION_010 },
   { name: '011_one_in_progress_session', sql: MIGRATION_011 },
+  { name: '012_one_in_progress_session_unique_index', sql: MIGRATION_012 },
 ];

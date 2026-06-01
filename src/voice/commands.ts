@@ -45,4 +45,5 @@ export interface ParserContext {
   exercises: VoiceExercise[];
   lastSet?: LastSetContext | null;
   now?: number;
+  commandId?: string;
 }

@@ -56,6 +56,21 @@ describe('parseVoiceCommand', () => {
     );
   });
 
+  it('requires confirmation for end workout', () => {
+    const parsed = parseVoiceCommand('end workout', ctx);
+    expect(parsed).toEqual(
+      expect.objectContaining({
+        intent: 'end_workout',
+        requiresConfirmation: true,
+      }),
+    );
+  });
+
+  it('uses commandId from parser context when provided', () => {
+    const parsed = parseVoiceCommand('80 for 5', { ...ctx, commandId: 'test-command-id' });
+    expect(parsed?.commandId).toBe('test-command-id');
+  });
+
   it('returns null for invalid or unsupported commands', () => {
     expect(parseVoiceCommand('minus 5 reps', ctx)).toBeNull();
     expect(parseVoiceCommand('play music', ctx)).toBeNull();
