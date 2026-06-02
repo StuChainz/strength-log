@@ -13,6 +13,7 @@ import EndWorkoutSummary from '@/screens/EndWorkoutSummary';
 import PostSessionTags from '@/screens/PostSessionTags';
 import Settings from '@/screens/Settings';
 import Insights from '@/screens/Insights';
+import TrainingVolume from '@/screens/TrainingVolume';
 import { T } from '@/theme/tokens';
 import type { RootStackParamList, MainTabParamList } from './types';
 
@@ -108,6 +109,7 @@ export function RootNavigator() {
       />
       <Stack.Screen name="ProgramLibrary" component={ProgramLibrary} />
       <Stack.Screen name="ProgramPreview" component={ProgramPreview} />
+      <Stack.Screen name="TrainingVolume" component={TrainingVolume} />
       <Stack.Screen
         name="ExerciseEdit"
         component={ExerciseEdit}

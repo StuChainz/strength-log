@@ -38,6 +38,7 @@ const baseSummary = {
   durationMin: 30,
   prCount: 0,
   prs: [],
+  muscleSummary: {},
 };
 
 describe('EndWorkoutSummary', () => {
@@ -112,5 +113,24 @@ describe('EndWorkoutSummary', () => {
     const { getByText } = render(<EndWorkoutSummary />);
 
     await waitFor(() => expect(getByText('No new PRs')).toBeTruthy());
+  });
+
+  it('renders the muscles worked section from summary data', async () => {
+    getWorkoutSummaryMock.mockResolvedValue({
+      ...baseSummary,
+      muscleSummary: {
+        chest: 3,
+        triceps: 1.5,
+        front_delts: 1.5,
+      },
+    });
+
+    const { getByTestId, getByText } = render(<EndWorkoutSummary />);
+
+    await waitFor(() => expect(getByText('Muscles Worked')).toBeTruthy());
+    expect(getByTestId('body-map-front')).toBeTruthy();
+    expect(getByTestId('body-map-back')).toBeTruthy();
+    expect(getByText('Chest')).toBeTruthy();
+    expect(getByText('3')).toBeTruthy();
   });
 });

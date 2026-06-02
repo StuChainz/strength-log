@@ -102,7 +102,7 @@ describe('exercise metadata fixture audit', () => {
     const coverage = summarizeExerciseMetadataCoverage(
       [
         { name: 'Bench Press', category: 'barbell', primary_muscle: 'chest' },
-        { name: 'Pull Up', category: 'bodyweight', primary_muscle: 'back' },
+        { name: 'Pull Up', category: 'bodyweight', primary_muscle: 'upper_back' },
       ],
       [VALID_METADATA],
     );
@@ -116,7 +116,7 @@ describe('exercise metadata fixture audit', () => {
         {
           name: 'Pull Up',
           category: 'bodyweight',
-          primary_muscle: 'back',
+          primary_muscle: 'upper_back',
         },
       ],
     });
@@ -135,7 +135,7 @@ describe('exercise metadata fixture audit', () => {
         ...VALID_METADATA,
         exerciseName: 'Overhead Press',
         movement_pattern: 'vertical_push',
-        primary_muscles: ['shoulders'],
+        primary_muscles: ['front_delts'],
         substitution_group: 'vertical_press',
         source_id: 'curated_seed:overhead_press',
       },

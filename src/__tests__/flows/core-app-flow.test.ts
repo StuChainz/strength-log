@@ -507,7 +507,9 @@ describe('core app flow repository acceptance', () => {
     const bench = await exerciseByName(db, 'Barbell Bench Press');
 
     const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(template_items)');
-    expect(columns).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'rest_seconds' })]));
+    expect(columns).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'rest_seconds' })]),
+    );
 
     const template = await createTemplate(db as never, {
       name: 'Rest template',
@@ -891,7 +893,9 @@ describe('core app flow repository acceptance', () => {
     await appendEvent(db, session.id, 'rest_timer_cancelled', { cancelled_at: 20_000 });
     await appendEvent(db, session.id, 'rest_timer_completed', { completed_at: 30_000 });
 
-    expect((await getEventsBySession(db as never, session.id)).map((event) => event.event_type)).toEqual([
+    expect(
+      (await getEventsBySession(db as never, session.id)).map((event) => event.event_type),
+    ).toEqual([
       'session_started',
       'rest_timer_started',
       'rest_timer_cancelled',
@@ -1386,11 +1390,26 @@ describe('core app flow parser and platform guardrails', () => {
     );
   });
 
-  it('documents that the web database client is a non-persistent mock, not native SQLite', async () => {
+  it('seeds exercises and saves custom exercises in the web database client', async () => {
     const webClient = jest.requireActual<typeof import('@/db/client.web')>('@/db/client.web');
-    const webDb = await webClient.openDb();
+    webClient._resetDbSingleton();
+    await webClient.resetLocalData();
 
-    expect(await webDb.getAllAsync('SELECT * FROM exercises')).toEqual([]);
-    await expect(webClient.resetLocalData()).resolves.toBeUndefined();
+    const webDb = await webClient.openDb();
+    const seeded = await webDb.getAllAsync<{ name: string }>('SELECT * FROM exercises');
+
+    expect(seeded.length).toBeGreaterThan(0);
+    expect(seeded.some((exercise) => exercise.name === 'Barbell Bench Press')).toBe(true);
+
+    const custom = await createExercise(webDb as never, {
+      name: 'Web Test Press',
+      category: 'barbell',
+      primary_muscle: 'chest',
+      default_unit: 'kg',
+    });
+
+    await expect(
+      webDb.getFirstAsync('SELECT * FROM exercises WHERE id = ?', [custom.id]),
+    ).resolves.toEqual(expect.objectContaining({ name: 'Web Test Press', is_custom: 1 }));
   });
 });

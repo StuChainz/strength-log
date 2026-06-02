@@ -66,7 +66,7 @@ describe('exercises repository metadata', () => {
         force_type: 'push',
         body_region: 'upper_body',
         primary_muscles_json: '["chest"]',
-        secondary_muscles_json: '["triceps","shoulders"]',
+        secondary_muscles_json: '["triceps","front_delts"]',
         equipment_json: '["barbell","bench"]',
         mechanics: 'compound',
         laterality: 'bilateral',
@@ -225,8 +225,8 @@ describe('exercises repository metadata', () => {
         movement_pattern: 'vertical_pull',
         force_type: 'pull',
         body_region: 'upper_body',
-        primary_muscles_json: '["back"]',
-        secondary_muscles_json: '["biceps","core"]',
+        primary_muscles_json: '["lats"]',
+        secondary_muscles_json: '["biceps","upper_back"]',
         equipment_json: '["bodyweight","pull_up_bar"]',
         mechanics: 'compound',
         laterality: 'bilateral',
@@ -268,9 +268,9 @@ describe('exercises repository metadata', () => {
     expect(facets.body_regions).toEqual(['upper_body']);
     expect(facets.mechanics).toEqual(['compound']);
     expect(facets.lateralities).toEqual(['bilateral']);
-    expect(facets.primary_muscles).toEqual(['chest', 'back']);
-    expect(facets.secondary_muscles).toEqual(['biceps', 'triceps', 'core']);
-    expect(facets.muscles).toEqual(['chest', 'back', 'biceps', 'triceps', 'core']);
+    expect(facets.primary_muscles).toEqual(['chest', 'lats']);
+    expect(facets.secondary_muscles).toEqual(['upper_back', 'biceps', 'triceps']);
+    expect(facets.muscles).toEqual(['chest', 'upper_back', 'lats', 'biceps', 'triceps']);
     expect(facets.equipment).toEqual(['barbell', 'bodyweight', 'bench', 'pull_up_bar']);
     expect(facets.substitution_groups).toEqual(['horizontal_press', 'vertical_pull']);
     expect(facets.sources).toEqual(['curated_seed']);
@@ -282,12 +282,12 @@ describe('exercises repository metadata', () => {
     const exercise = await createExercise(db as never, {
       name: 'Custom Press',
       category: 'barbell',
-      primary_muscle: 'chest',
       default_unit: 'kg',
     });
 
     expect(db.runCalls[0].sql).toContain('INSERT INTO exercises');
     expect(db.runCalls[0].params).toContain('custom press');
+    expect(db.runCalls[0].params[4]).toBeNull();
     expect(exercise.is_custom).toBe(1);
   });
 

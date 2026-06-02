@@ -12,6 +12,7 @@ export type RootStackParamList = {
   ExerciseEdit: { exerciseId?: string };
   ProgramLibrary: undefined;
   ProgramPreview: { presetId: string };
+  TrainingVolume: undefined;
 };
 
 export type MainTabParamList = {
@@ -33,6 +34,11 @@ export type TemplateListNavigationProp = CompositeNavigationProp<
 
 export type ExerciseLibraryNavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Library'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
+
+export type InsightsNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Insights'>,
   NativeStackNavigationProp<RootStackParamList>
 >;
 
@@ -66,10 +72,7 @@ export type PostSessionTagsNavigationProp = NativeStackNavigationProp<
 >;
 export type PostSessionTagsRouteProp = RouteProp<RootStackParamList, 'PostSessionTags'>;
 
-export type SettingsNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  'Settings'
->;
+export type SettingsNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Settings'>;
 
 export type ProgramLibraryNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -81,3 +84,8 @@ export type ProgramPreviewNavigationProp = NativeStackNavigationProp<
   'ProgramPreview'
 >;
 export type ProgramPreviewRouteProp = RouteProp<RootStackParamList, 'ProgramPreview'>;
+
+export type TrainingVolumeNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'TrainingVolume'
+>;

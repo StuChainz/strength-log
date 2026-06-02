@@ -37,18 +37,23 @@ export const MOVEMENT_PATTERNS = [
 ] as const;
 export const MUSCLE_GROUPS = [
   'chest',
-  'back',
-  'shoulders',
+  'upper_back',
+  'lats',
+  'traps',
+  'front_delts',
+  'side_delts',
+  'rear_delts',
   'biceps',
   'triceps',
-  'quadriceps',
-  'hamstrings',
-  'glutes',
-  'calves',
-  'core',
   'forearms',
-  'full_body',
-  'other',
+  'abs',
+  'obliques',
+  'spinal_erectors',
+  'glutes',
+  'quads',
+  'hamstrings',
+  'calves',
+  'adductors',
 ] as const;
 export const BODY_REGIONS = ['upper_body', 'lower_body', 'full_body', 'core', 'other'] as const;
 export const EQUIPMENT = [

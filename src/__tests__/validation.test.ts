@@ -1,9 +1,11 @@
 import {
   CreateExerciseSchema,
+  ExerciseMetadataInputSchema,
   UpdateExerciseSchema,
   SessionNoteSchema,
   POST_SESSION_TAGS,
 } from '@/domain/validation';
+import { MUSCLE_GROUPS } from '@/domain/types';
 
 describe('CreateExerciseSchema', () => {
   it('accepts a valid exercise', () => {
@@ -61,6 +63,67 @@ describe('UpdateExerciseSchema', () => {
   it('accepts an empty object (no-op update)', () => {
     const result = UpdateExerciseSchema.safeParse({});
     expect(result.success).toBe(true);
+  });
+});
+
+describe('ExerciseMetadataInputSchema', () => {
+  it('uses the fixed muscle metadata vocabulary', () => {
+    expect(MUSCLE_GROUPS).toEqual([
+      'chest',
+      'upper_back',
+      'lats',
+      'traps',
+      'front_delts',
+      'side_delts',
+      'rear_delts',
+      'biceps',
+      'triceps',
+      'forearms',
+      'abs',
+      'obliques',
+      'spinal_erectors',
+      'glutes',
+      'quads',
+      'hamstrings',
+      'calves',
+      'adductors',
+    ]);
+  });
+
+  it('accepts primary and secondary muscle metadata', () => {
+    const result = ExerciseMetadataInputSchema.safeParse({
+      movement_pattern: 'horizontal_push',
+      force_type: 'push',
+      body_region: 'upper_body',
+      primary_muscles: ['chest'],
+      secondary_muscles: ['front_delts', 'triceps'],
+      equipment: ['barbell', 'bench'],
+      mechanics: 'compound',
+      laterality: 'bilateral',
+      difficulty: 3,
+      substitution_group: 'horizontal_press',
+      source_id: 'curated_seed:bench_press',
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects muscles outside the fixed vocabulary', () => {
+    const result = ExerciseMetadataInputSchema.safeParse({
+      movement_pattern: 'vertical_pull',
+      force_type: 'pull',
+      body_region: 'upper_body',
+      primary_muscles: ['back'],
+      secondary_muscles: ['biceps'],
+      equipment: ['bodyweight'],
+      mechanics: 'compound',
+      laterality: 'bilateral',
+      difficulty: 3,
+      substitution_group: 'vertical_pull',
+      source_id: 'curated_seed:pull_up',
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 

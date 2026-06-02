@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import MusclesWorkedSection from '@/components/MusclesWorkedSection';
 import { openDb } from '@/db/client';
 import { getWorkoutSummary, type WorkoutSummary } from '@/db/repositories/sessionSummary.repo';
 import { T } from '@/theme/tokens';
@@ -87,6 +88,8 @@ export default function EndWorkoutSummary() {
               <Text style={styles.metricLabel}>PRs</Text>
             </View>
           </View>
+
+          <MusclesWorkedSection muscleSummary={summary.muscleSummary} />
 
           <View style={styles.prBlock}>
             <Text style={styles.sectionLabel}>NEW PRs</Text>

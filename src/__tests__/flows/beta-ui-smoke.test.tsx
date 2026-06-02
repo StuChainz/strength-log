@@ -87,6 +87,7 @@ describe('beta UI smoke tests', () => {
       durationMin: 45,
       prCount: 0,
       prs: [],
+      muscleSummary: {},
     });
     savePostSessionDetailsMock.mockResolvedValue(undefined);
   });
