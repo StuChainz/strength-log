@@ -7,6 +7,7 @@ type WebDbStore = {
   exercises: Exercise[];
   exercise_aliases: ExerciseAlias[];
   exercise_metadata: ExerciseMetadata[];
+  app_settings: { key: string; value_json: string; updated_at: number }[];
 };
 
 type WebDb = {
@@ -141,7 +142,13 @@ function getAll(store: WebDbStore, sql: string, params: SqlParam[]): unknown[] {
   if (/PRAGMA table_info\(\w+\)/i.test(normalizedSql)) return [];
 
   if (/FROM sqlite_master/i.test(normalizedSql)) {
-    return ['exercises', 'exercise_aliases', 'exercise_metadata'].map((name) => ({ name }));
+    return ['exercises', 'exercise_aliases', 'exercise_metadata', 'app_settings'].map((name) => ({
+      name,
+    }));
+  }
+
+  if (/SELECT key, value_json FROM app_settings/i.test(normalizedSql)) {
+    return store.app_settings.map(({ key, value_json }) => ({ key, value_json }));
   }
 
   if (/FROM exercise_metadata m INNER JOIN exercises e/i.test(normalizedSql)) {
@@ -262,6 +269,21 @@ function run(
 
     exercise.archived_at = Number(params[0]);
     return { lastInsertRowId: 0, changes: 1 };
+  }
+
+  if (/INSERT OR REPLACE INTO app_settings/i.test(normalizedSql)) {
+    const next = {
+      key: String(params[0]),
+      value_json: String(params[1]),
+      updated_at: Number(params[2]),
+    };
+    const index = store.app_settings.findIndex((row) => row.key === next.key);
+    if (index === -1) {
+      store.app_settings.push(next);
+      return { lastInsertRowId: store.app_settings.length, changes: 1 };
+    }
+    store.app_settings[index] = next;
+    return { lastInsertRowId: index + 1, changes: 1 };
   }
 
   return { lastInsertRowId: 0, changes: 0 };
@@ -429,6 +451,7 @@ function createEmptyStore(): WebDbStore {
     exercises: [],
     exercise_aliases: [],
     exercise_metadata: [],
+    app_settings: [],
   };
 }
 
@@ -445,6 +468,7 @@ function loadStore(): WebDbStore {
       exercises: Array.isArray(parsed.exercises) ? parsed.exercises : [],
       exercise_aliases: Array.isArray(parsed.exercise_aliases) ? parsed.exercise_aliases : [],
       exercise_metadata: Array.isArray(parsed.exercise_metadata) ? parsed.exercise_metadata : [],
+      app_settings: Array.isArray(parsed.app_settings) ? parsed.app_settings : [],
     };
   } catch {
     return fallback;

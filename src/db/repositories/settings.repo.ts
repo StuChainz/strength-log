@@ -7,12 +7,14 @@ export interface AppSettings {
   unit: Unit;
   weekStartDay: WeekStartDay;
   voiceMode: boolean;
+  onboardingCompleted: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   unit: 'kg',
   weekStartDay: 'monday',
   voiceMode: false,
+  onboardingCompleted: false,
 };
 
 export async function getAppSettings(db: SQLiteDatabase): Promise<AppSettings> {

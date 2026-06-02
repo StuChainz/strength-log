@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb, resetLocalData } from '@/db/client';
 import { exportDatabase } from '@/db/repositories/export.repo';
@@ -22,15 +23,18 @@ import {
 } from '@/db/repositories/settings.repo';
 import { T } from '@/theme/tokens';
 import type { Unit } from '@/domain/types';
+import type { SettingsNavigationProp } from '@/navigation/types';
 
 const BETA_FEEDBACK_URL =
   'https://github.com/StuChainz/strength-log/issues/new?title=Beta%20feedback&body=1.%20Was%20logging%20fast%20enough%3F%0A%0A2.%20What%20felt%20confusing%3F%0A%0A3.%20Did%20suggestions%20help%3F%0A%0A4.%20What%20broke%3F%0A%0A5.%20What%20would%20you%20need%20next%3F%0A';
 
 export default function Settings() {
+  const navigation = useNavigation<SettingsNavigationProp>();
   const [settings, setSettings] = useState<AppSettings>({
     unit: 'kg',
     weekStartDay: 'monday',
     voiceMode: false,
+    onboardingCompleted: false,
   });
   const [busy, setBusy] = useState(false);
 
@@ -162,6 +166,14 @@ export default function Settings() {
         <TouchableOpacity style={styles.actionRow} onPress={() => void feedback()}>
           <Ionicons name="chatbox-ellipses-outline" size={18} color={T.textDim} />
           <Text style={styles.actionText}>Beta feedback</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionRow}
+          onPress={() => navigation.navigate('Onboarding', { mode: 'revisit' })}
+        >
+          <Ionicons name="map-outline" size={18} color={T.textDim} />
+          <Text style={styles.actionText}>View Onboarding</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={[styles.actionRow, styles.dangerRow]} onPress={confirmWipe}>

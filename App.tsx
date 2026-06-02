@@ -4,6 +4,7 @@ import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@reac
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { openDb } from '@/db/client';
+import { getAppSettings } from '@/db/repositories/settings.repo';
 import { RootNavigator } from '@/navigation/RootNavigator';
 import { registerRestTimerNotificationNavigation } from '@/notifications/restTimerNotifications';
 import { T } from '@/theme/tokens';
@@ -57,6 +58,7 @@ class StartupBoundary extends Component<{ children: ReactNode }, StartupBoundary
 export default function App() {
   const [bootState, setBootState] = useState<'booting' | 'ready' | 'error'>('booting');
   const [bootError, setBootError] = useState<Error | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const bootAttemptRef = useRef(0);
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
 
@@ -68,8 +70,12 @@ export default function App() {
     setBootError(null);
 
     openDb()
-      .then(() => {
-        if (bootAttemptRef.current === bootAttempt) setBootState('ready');
+      .then(async (db) => {
+        const settings = await getAppSettings(db);
+        if (bootAttemptRef.current === bootAttempt) {
+          setShowOnboarding(!settings.onboardingCompleted);
+          setBootState('ready');
+        }
       })
       .catch((error) => {
         // eslint-disable-next-line no-console
@@ -98,7 +104,7 @@ export default function App() {
       <SafeAreaProvider>
         {bootState === 'ready' ? (
           <NavigationContainer ref={navigationRef} theme={AppTheme}>
-            <RootNavigator />
+            <RootNavigator showOnboarding={showOnboarding} />
           </NavigationContainer>
         ) : bootState === 'error' ? (
           <StartupError error={bootError} onRetry={boot} />

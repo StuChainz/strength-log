@@ -14,6 +14,7 @@ import PostSessionTags from '@/screens/PostSessionTags';
 import Settings from '@/screens/Settings';
 import Insights from '@/screens/Insights';
 import TrainingVolume from '@/screens/TrainingVolume';
+import Onboarding from '@/screens/Onboarding';
 import { T } from '@/theme/tokens';
 import type { RootStackParamList, MainTabParamList } from './types';
 
@@ -88,9 +89,17 @@ function MainTabs() {
   );
 }
 
-export function RootNavigator() {
+export function RootNavigator({ showOnboarding }: { showOnboarding: boolean }) {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator
+      initialRouteName={showOnboarding ? 'Onboarding' : 'Main'}
+      screenOptions={{ headerShown: false }}
+    >
+      <Stack.Screen
+        name="Onboarding"
+        component={Onboarding}
+        initialParams={{ mode: showOnboarding ? 'firstLaunch' : 'revisit' }}
+      />
       <Stack.Screen name="Main" component={MainTabs} />
       <Stack.Screen name="LiveWorkout" component={LiveWorkout} />
       <Stack.Screen name="EndWorkoutSummary" component={EndWorkoutSummary} />

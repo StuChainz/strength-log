@@ -3,6 +3,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { CompositeNavigationProp, RouteProp } from '@react-navigation/native';
 
 export type RootStackParamList = {
+  Onboarding: { mode?: 'firstLaunch' | 'revisit' } | undefined;
   Main: undefined;
   LiveWorkout: { templateId?: string; sessionId?: string } | undefined;
   EndWorkoutSummary: { sessionId: string };
@@ -73,6 +74,11 @@ export type PostSessionTagsNavigationProp = NativeStackNavigationProp<
 export type PostSessionTagsRouteProp = RouteProp<RootStackParamList, 'PostSessionTags'>;
 
 export type SettingsNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Settings'>;
+
+export type OnboardingNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'Onboarding'
+>;
 
 export type ProgramLibraryNavigationProp = NativeStackNavigationProp<
   RootStackParamList,

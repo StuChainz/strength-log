@@ -1,6 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import App from '../../App';
 import { openDb } from '@/db/client';
+import { getAppSettings, setAppSetting } from '@/db/repositories/settings.repo';
 
 jest.mock('react-native-safe-area-context', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -25,6 +26,11 @@ jest.mock('react-native-safe-area-context', () => {
 
 jest.mock('@/db/client', () => ({
   openDb: jest.fn(),
+}));
+
+jest.mock('@/db/repositories/settings.repo', () => ({
+  getAppSettings: jest.fn(),
+  setAppSetting: jest.fn(),
 }));
 
 jest.mock('@/notifications/restTimerNotifications', () => ({
@@ -56,18 +62,72 @@ jest.mock('@/db/repositories/exercises.repo', () => ({
 
 describe('App startup', () => {
   const openDbMock = openDb as jest.MockedFunction<typeof openDb>;
+  const getAppSettingsMock = getAppSettings as jest.MockedFunction<typeof getAppSettings>;
+  const setAppSettingMock = setAppSetting as jest.MockedFunction<typeof setAppSetting>;
   const mockDb = {} as Awaited<ReturnType<typeof openDb>>;
 
   beforeEach(() => {
     jest.clearAllMocks();
     openDbMock.mockReset();
     openDbMock.mockResolvedValue(mockDb);
+    getAppSettingsMock.mockResolvedValue({
+      unit: 'kg',
+      weekStartDay: 'monday',
+      voiceMode: false,
+      onboardingCompleted: true,
+    });
+    setAppSettingMock.mockResolvedValue(undefined);
   });
 
   it('renders the first screen instead of a blank root', async () => {
     const { getByText } = render(<App />);
 
     await waitFor(() => expect(getByText('Strength Log')).toBeTruthy());
+  });
+
+  it('shows onboarding on first launch', async () => {
+    getAppSettingsMock.mockResolvedValueOnce({
+      unit: 'kg',
+      weekStartDay: 'monday',
+      voiceMode: false,
+      onboardingCompleted: false,
+    });
+
+    const { getByText } = render(<App />);
+
+    await waitFor(() => expect(getByText('Fast strength training logging.')).toBeTruthy());
+    expect(getByText('Get Started')).toBeTruthy();
+  });
+
+  it('persists onboarding completion and navigates to Home', async () => {
+    getAppSettingsMock.mockResolvedValueOnce({
+      unit: 'kg',
+      weekStartDay: 'monday',
+      voiceMode: false,
+      onboardingCompleted: false,
+    });
+
+    const { getByText } = render(<App />);
+
+    await waitFor(() => expect(getByText('Get Started')).toBeTruthy());
+    fireEvent.press(getByText('Get Started'));
+    fireEvent.press(getByText('Next'));
+    fireEvent.press(getByText('Next'));
+    fireEvent.press(getByText('Next'));
+    fireEvent.press(getByText('Next'));
+    fireEvent.press(getByText('Start Logging'));
+
+    await waitFor(() =>
+      expect(setAppSettingMock).toHaveBeenCalledWith(mockDb, 'onboardingCompleted', true),
+    );
+    await waitFor(() => expect(getByText('Strength Log')).toBeTruthy());
+  });
+
+  it('skips onboarding for returning users', async () => {
+    const { getByText, queryByText } = render(<App />);
+
+    await waitFor(() => expect(getByText('Strength Log')).toBeTruthy());
+    expect(queryByText('Fast strength training logging.')).toBeNull();
   });
 
   it('does not render navigation until database startup completes', async () => {

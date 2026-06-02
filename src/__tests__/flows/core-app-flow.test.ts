@@ -36,6 +36,7 @@ import {
 import { getSavedTags, savePostSessionDetails, SESSION_TAGS } from '@/db/repositories/tags.repo';
 import { maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
 import { exportDatabase } from '@/db/repositories/export.repo';
+import { getAppSettings, setAppSetting } from '@/db/repositories/settings.repo';
 import { EXPORT_TABLES } from '@/export/schema';
 import { getProgressionSuggestion } from '@/domain/progression';
 import { estimateOneRepMax } from '@/domain/volume';
@@ -1411,5 +1412,48 @@ describe('core app flow parser and platform guardrails', () => {
     await expect(
       webDb.getFirstAsync('SELECT * FROM exercises WHERE id = ?', [custom.id]),
     ).resolves.toEqual(expect.objectContaining({ name: 'Web Test Press', is_custom: 1 }));
+  });
+
+  it('saves local settings in the web database client', async () => {
+    const memoryStorage = new Map<string, string>();
+    const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => memoryStorage.get(key) ?? null,
+        removeItem: (key: string) => {
+          memoryStorage.delete(key);
+        },
+        setItem: (key: string, value: string) => {
+          memoryStorage.set(key, value);
+        },
+      },
+    });
+    const webClient = jest.requireActual<typeof import('@/db/client.web')>('@/db/client.web');
+
+    try {
+      webClient._resetDbSingleton();
+      await webClient.resetLocalData();
+
+      const webDb = await webClient.openDb();
+      await setAppSetting(webDb as never, 'onboardingCompleted', true);
+
+      await expect(getAppSettings(webDb as never)).resolves.toEqual(
+        expect.objectContaining({ onboardingCompleted: true }),
+      );
+
+      webClient._resetDbSingleton();
+      const reopenedWebDb = await webClient.openDb();
+
+      await expect(getAppSettings(reopenedWebDb as never)).resolves.toEqual(
+        expect.objectContaining({ onboardingCompleted: true }),
+      );
+    } finally {
+      if (originalStorage) {
+        Object.defineProperty(globalThis, 'localStorage', originalStorage);
+      } else {
+        delete (globalThis as { localStorage?: Storage }).localStorage;
+      }
+    }
   });
 });

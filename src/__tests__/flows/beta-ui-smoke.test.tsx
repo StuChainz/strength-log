@@ -9,12 +9,14 @@ import { getAppSettings } from '@/db/repositories/settings.repo';
 import { getSavedTags, savePostSessionDetails } from '@/db/repositories/tags.repo';
 
 const mockPopToTop = jest.fn();
+const mockNavigate = jest.fn();
 const mockDb = {};
 
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
   useNavigation: () => ({
     popToTop: mockPopToTop,
+    navigate: mockNavigate,
   }),
   useRoute: () => ({ params: { sessionId: 'session-1' } }),
 }));
@@ -68,6 +70,7 @@ describe('beta UI smoke tests', () => {
       unit: 'kg',
       weekStartDay: 'monday',
       voiceMode: false,
+      onboardingCompleted: true,
     });
     getSavedTagsMock.mockResolvedValue([]);
     getWorkoutSummaryMock.mockResolvedValue({
@@ -136,5 +139,14 @@ describe('beta UI smoke tests', () => {
 
     canOpenURLSpy.mockRestore();
     openURLSpy.mockRestore();
+  });
+
+  it('Settings can reopen onboarding', async () => {
+    const { getByText } = render(<Settings />);
+
+    await waitFor(() => expect(getByText('View Onboarding')).toBeTruthy());
+    fireEvent.press(getByText('View Onboarding'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('Onboarding', { mode: 'revisit' });
   });
 });
