@@ -93,44 +93,19 @@ function parsePositiveInteger(value: string): number | null {
   return Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
 }
 
-function formatTargetLine(exercise: {
-  defaultUnit: string | null;
-  targetSets: number | null;
-  targetReps: number | null;
-  targetWeight: number | null;
-  targetRpe: number | null;
-}): string {
-  const hasTarget =
-    exercise.targetSets !== null ||
-    exercise.targetReps !== null ||
-    exercise.targetWeight !== null ||
-    exercise.targetRpe !== null;
-  if (!hasTarget) return 'No programmed target';
-
-  const unit = exercise.defaultUnit ?? 'kg';
-  const parts: string[] = [];
-  if (exercise.targetSets !== null && exercise.targetReps !== null) {
-    parts.push(`${exercise.targetSets} sets × ${exercise.targetReps} reps`);
-  } else if (exercise.targetSets !== null) {
-    parts.push(`${exercise.targetSets} sets`);
-  } else if (exercise.targetReps !== null) {
-    parts.push(`${exercise.targetReps} reps`);
-  }
-
-  if (exercise.targetWeight !== null) {
-    const targetWeight = `${formatWeightInput(exercise.targetWeight)} ${unit}`;
-    if (parts.length > 0) parts[0] = `${parts[0]} @ ${targetWeight}`;
-    else parts.push(targetWeight);
-  }
-
-  if (exercise.targetRpe !== null) parts.push(`RPE ${formatWeightInput(exercise.targetRpe)}`);
-  return parts.join(' · ');
-}
-
 function getSetTypeLabel(setType: SetType, uppercase = false): string {
   const option = SET_TYPE_OPTIONS.find((item) => item.value === setType);
   if (!option) return uppercase ? 'WORKING' : 'working';
   return uppercase ? option.rowLabel : option.label.toLowerCase();
+}
+
+function getExerciseHeaderMeta(
+  index: number,
+  count: number,
+  category: string | null | undefined,
+): string {
+  const categoryLabel = category ? category.replace(/_/g, ' ').toUpperCase() : 'EXERCISE';
+  return `EXERCISE ${index + 1} OF ${count} · ${categoryLabel}`;
 }
 
 function getCompactTargetLine(exercise: {
@@ -202,6 +177,14 @@ function formatLivePRCount(count: number): string {
   return `${count} PR${count === 1 ? '' : 's'} today`;
 }
 
+function getPrBadgeLabel(indicators: LivePotentialPR[]): string {
+  const priority = indicators.find((item) => item.record_type === 'rep_max') ?? indicators[0];
+  if (!priority) return 'PR';
+  if (priority.record_type === 'rep_max') return 'REP PR';
+  if (priority.record_type === 'estimated_1rm') return '1RM PR';
+  return 'VOL PR';
+}
+
 function scheduleRestNotificationSafely(durationSeconds: number, sessionId: string) {
   void scheduleRestTimerNotification({ durationSeconds, sessionId }).catch(() => {});
 }
@@ -266,6 +249,7 @@ export default function LiveWorkout() {
   );
   const [restTimer, setRestTimer] = useState<RestTimerState | null>(null);
   const [restNow, setRestNow] = useState(Date.now());
+  const [rpeExpanded, setRpeExpanded] = useState(false);
   const [exerciseRestSecondsById, setExerciseRestSecondsById] = useState<
     Record<string, number | null>
   >({});
@@ -1077,13 +1061,7 @@ export default function LiveWorkout() {
   const wgt = formatWeightInput(weight);
   const logBtnLabel = justLogged ? 'Logged ✓' : `Log set · ${wgt} × ${reps}`;
   const activeUnit = activeExercise?.defaultUnit ?? 'kg';
-  const targetLine = activeExercise ? formatTargetLine(activeExercise) : 'No programmed target';
-  const targetCompletion =
-    activeExercise?.targetSets !== null && activeExercise?.targetSets !== undefined
-      ? `${Math.min(activeSets.filter(isWorkingSet).length, activeExercise.targetSets)} / ${
-          activeExercise.targetSets
-        } complete`
-      : null;
+  const compactTargetLine = activeExercise ? getCompactTargetLine(activeExercise) : null;
   const suggestionHasValue =
     suggestion.weight !== null || suggestion.reps !== null || suggestion.isAmrap === true;
   const suggestionRepsDisplay = suggestion.isAmrap
@@ -1095,6 +1073,12 @@ export default function LiveWorkout() {
   const nextSetSummary = `${wgt} ${activeUnit} × ${reps} reps${
     rpe !== null ? ` · RPE ${formatWeightInput(rpe)}` : ''
   } · ${getSetTypeLabel(setType)}`;
+  const loggerContextLine = [
+    lastHintText ? `Last · ${lastHintText}` : null,
+    compactTargetLine ? `Target ${compactTargetLine}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -1106,25 +1090,24 @@ export default function LiveWorkout() {
         {/* ── Top bar ──────────────────────────────────────────── */}
         <View style={styles.topBar}>
           <TouchableOpacity
-            style={styles.topActionBtn}
+            style={styles.sessionIconBtn}
             onPress={() => setSummaryVisible(true)}
             hitSlop={8}
             testID="summary-btn"
           >
-            <Ionicons name="stats-chart-outline" size={14} color={T.textDim} />
-            <Text style={styles.topActionText}>Summary</Text>
+            <Ionicons name="chevron-back" size={22} color={T.textDim} />
           </TouchableOpacity>
           <View style={styles.elapsedPill}>
             <View style={styles.liveDot} />
             <Text style={styles.elapsedText}>{formatElapsed(elapsedSecs)}</Text>
           </View>
           <TouchableOpacity
-            style={[styles.topActionBtn, styles.finishBtn]}
+            style={styles.finishBtn}
             onPress={handleEndWorkout}
             hitSlop={8}
             testID="end-workout-btn"
           >
-            <Text style={[styles.topActionText, styles.finishBtnText]}>Finish</Text>
+            <Text style={styles.finishBtnText}>Finish</Text>
           </TouchableOpacity>
         </View>
 
@@ -1144,49 +1127,55 @@ export default function LiveWorkout() {
 
         {exercises.length > 0 && (
           <View style={styles.carouselHeader}>
-            <TouchableOpacity
-              style={[styles.arrowBtn, activeExerciseIndex === 0 && styles.arrowBtnDisabled]}
-              onPress={() =>
-                activeExerciseIndex > 0 &&
-                setActiveExerciseId(exercises[activeExerciseIndex - 1].id)
-              }
-              disabled={activeExerciseIndex === 0}
-              hitSlop={8}
-            >
-              <Ionicons
-                name="chevron-back"
-                size={18}
-                color={activeExerciseIndex === 0 ? T.mutedDeep : T.textDim}
-              />
-            </TouchableOpacity>
-
             <View style={styles.carouselCenter}>
               <Text style={styles.carouselEyebrow}>
-                Exercise {activeExerciseIndex + 1} of {exercises.length}
+                {getExerciseHeaderMeta(
+                  activeExerciseIndex,
+                  exercises.length,
+                  activeExercise?.category,
+                )}
               </Text>
-              <Text style={styles.carouselName} numberOfLines={1}>
+              <Text style={styles.carouselName} numberOfLines={2}>
                 {activeExercise?.name ?? '—'}
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={[
-                styles.arrowBtn,
-                activeExerciseIndex >= exercises.length - 1 && styles.arrowBtnDisabled,
-              ]}
-              onPress={() =>
-                activeExerciseIndex < exercises.length - 1 &&
-                setActiveExerciseId(exercises[activeExerciseIndex + 1].id)
-              }
-              disabled={activeExerciseIndex >= exercises.length - 1}
-              hitSlop={8}
-            >
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={activeExerciseIndex >= exercises.length - 1 ? T.mutedDeep : T.textDim}
-              />
-            </TouchableOpacity>
+            <View style={styles.exerciseNavActions}>
+              <TouchableOpacity
+                style={[styles.arrowBtn, activeExerciseIndex === 0 && styles.arrowBtnDisabled]}
+                onPress={() =>
+                  activeExerciseIndex > 0 &&
+                  setActiveExerciseId(exercises[activeExerciseIndex - 1].id)
+                }
+                disabled={activeExerciseIndex === 0}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="chevron-back"
+                  size={18}
+                  color={activeExerciseIndex === 0 ? T.mutedDeep : T.textDim}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.arrowBtn,
+                  activeExerciseIndex >= exercises.length - 1 && styles.arrowBtnDisabled,
+                ]}
+                onPress={() =>
+                  activeExerciseIndex < exercises.length - 1 &&
+                  setActiveExerciseId(exercises[activeExerciseIndex + 1].id)
+                }
+                disabled={activeExerciseIndex >= exercises.length - 1}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color={activeExerciseIndex >= exercises.length - 1 ? T.mutedDeep : T.textDim}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -1305,36 +1294,9 @@ export default function LiveWorkout() {
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
             ListHeaderComponent={
               <>
-                {/* Today's target */}
-                <View style={styles.targetCard} testID="todays-target-card">
-                  <Text style={styles.targetLabel}>{"TODAY'S TARGET"}</Text>
-                  <Text style={styles.targetValue}>{targetLine}</Text>
-                  {targetCompletion !== null && (
-                    <Text style={styles.targetCompletion}>{targetCompletion}</Text>
-                  )}
-                </View>
-
-                {/* Last-time strip */}
-                <TouchableOpacity
-                  style={styles.lastTimeCard}
-                  activeOpacity={0.7}
-                  onPress={() => setHistoryVisible(true)}
-                >
-                  <Ionicons name="time-outline" size={16} color={T.muted} />
-                  <View style={styles.lastTimeBody}>
-                    <Text style={styles.lastTimeLabel}>
-                      {lastHintText ? 'LAST TIME' : 'NO HISTORY'}
-                    </Text>
-                    <Text style={styles.lastTimeData} numberOfLines={1}>
-                      {lastHintText ?? 'First time logging this exercise'}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={14} color={T.mutedDeep} />
-                </TouchableOpacity>
-
                 {/* Sets header */}
                 <View style={styles.setsHeader}>
-                  <Text style={styles.setsLabel}>SETS · {activeSets.length}</Text>
+                  <Text style={styles.setsLabel}>LOGGED · {activeSets.length} SETS</Text>
                   <View style={styles.setsHeaderActions}>
                     {activePotentialPRCount > 0 && (
                       <View style={styles.livePrSummary} testID="live-pr-summary">
@@ -1373,77 +1335,77 @@ export default function LiveWorkout() {
               const rowPotentialPRs = potentialPRsBySetId.get(item.id) ?? [];
               return (
                 <View style={styles.setRowWrap}>
-                  <View style={styles.setRow} testID={`set-row-${item.id}`}>
-                    <Text style={styles.setIndex}>#{index + 1}</Text>
-                    <Text style={styles.setTypeChip} testID={`set-type-${item.id}`}>
-                      {getSetTypeLabel(item.set_type, true)}
-                    </Text>
-                    <View style={styles.setMetric}>
-                      <TextInput
-                        style={styles.setMetricInput}
-                        value={
-                          setDrafts[item.id]?.weight ??
-                          (item.weight !== null ? formatWeightInput(item.weight) : '')
-                        }
-                        onChangeText={(next) => updateSetDraft(item.id, 'weight', next)}
-                        onBlur={() => void commitSetWeightInput(item)}
-                        onSubmitEditing={() => void commitSetWeightInput(item)}
-                        keyboardType="decimal-pad"
-                        returnKeyType="done"
-                        placeholder="—"
-                        placeholderTextColor={T.muted}
-                        selectTextOnFocus
-                        maxLength={7}
-                        testID={`set-weight-input-${item.id}`}
-                      />
-                      <Text style={styles.setUnit}>{item.unit}</Text>
-                    </View>
-                    <View style={styles.setMetric}>
-                      <TextInput
-                        style={styles.setMetricInput}
-                        value={
-                          setDrafts[item.id]?.reps ?? (item.reps !== null ? String(item.reps) : '')
-                        }
-                        onChangeText={(next) => updateSetDraft(item.id, 'reps', next)}
-                        onBlur={() => void commitSetRepsInput(item)}
-                        onSubmitEditing={() => void commitSetRepsInput(item)}
-                        keyboardType="number-pad"
-                        returnKeyType="done"
-                        placeholder="—"
-                        placeholderTextColor={T.muted}
-                        selectTextOnFocus
-                        maxLength={3}
-                        testID={`set-reps-input-${item.id}`}
-                      />
-                      <Text style={styles.setUnit}>reps</Text>
-                    </View>
-                    <Text style={styles.setRpe}>{item.rpe !== null ? `RPE ${item.rpe}` : '—'}</Text>
-                    <View style={styles.setCheck}>
-                      <Ionicons name="checkmark" size={14} color={T.success} />
-                    </View>
-                    {rowPotentialPRs.length > 0 && (
-                      <View style={styles.setPrBadge} testID={`set-pr-badge-${item.id}`}>
-                        <Text style={styles.setPrBadgeText}>PR</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.78}
+                    onPress={() => openEditSet(item)}
+                    onLongPress={() => handleDeleteSet(item)}
+                    delayLongPress={450}
+                    testID={`edit-set-btn-${item.id}`}
+                  >
+                    <View
+                      style={[
+                        styles.setRow,
+                        rowPotentialPRs.length > 0 && styles.setRowPr,
+                      ]}
+                      testID={`set-row-${item.id}`}
+                    >
+                      <Text style={styles.setIndex}>#{index + 1}</Text>
+                      <View style={styles.setMetric}>
+                        <TextInput
+                          style={styles.setMetricInput}
+                          value={
+                            setDrafts[item.id]?.weight ??
+                            (item.weight !== null ? formatWeightInput(item.weight) : '')
+                          }
+                          onChangeText={(next) => updateSetDraft(item.id, 'weight', next)}
+                          onBlur={() => void commitSetWeightInput(item)}
+                          onSubmitEditing={() => void commitSetWeightInput(item)}
+                          keyboardType="decimal-pad"
+                          returnKeyType="done"
+                          placeholder="—"
+                          placeholderTextColor={T.muted}
+                          selectTextOnFocus
+                          maxLength={7}
+                          testID={`set-weight-input-${item.id}`}
+                        />
+                        <Text style={styles.setUnit}>{item.unit}</Text>
                       </View>
-                    )}
-                    <View style={styles.setActions}>
-                      <TouchableOpacity
-                        style={styles.setActionBtn}
-                        onPress={() => openEditSet(item)}
-                        hitSlop={6}
-                        testID={`edit-set-btn-${item.id}`}
-                      >
-                        <Ionicons name="create-outline" size={14} color={T.textDim} />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.setActionBtn}
-                        onPress={() => handleDeleteSet(item)}
-                        hitSlop={6}
-                      >
-                        <Ionicons name="trash-outline" size={14} color={T.danger} />
-                      </TouchableOpacity>
+                      <View style={styles.setMetric}>
+                        <TextInput
+                          style={styles.setMetricInput}
+                          value={
+                            setDrafts[item.id]?.reps ??
+                            (item.reps !== null ? String(item.reps) : '')
+                          }
+                          onChangeText={(next) => updateSetDraft(item.id, 'reps', next)}
+                          onBlur={() => void commitSetRepsInput(item)}
+                          onSubmitEditing={() => void commitSetRepsInput(item)}
+                          keyboardType="number-pad"
+                          returnKeyType="done"
+                          placeholder="—"
+                          placeholderTextColor={T.muted}
+                          selectTextOnFocus
+                          maxLength={3}
+                          testID={`set-reps-input-${item.id}`}
+                        />
+                        <Text style={styles.setUnit}>reps</Text>
+                      </View>
+                      <Text style={styles.setRpe}>
+                        {item.rpe !== null ? `RPE ${item.rpe}` : ''}
+                      </Text>
+                      {rowPotentialPRs.length > 0 && (
+                        <View style={styles.setPrBadge} testID={`set-pr-badge-${item.id}`}>
+                          <Ionicons name="flash" size={12} color={T.accentInk} />
+                          <Text style={styles.setPrBadgeText}>
+                            {getPrBadgeLabel(rowPotentialPRs)}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.setCheck}>
+                        <Ionicons name="checkmark" size={18} color={T.success} />
+                      </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 </View>
               );
             }}
@@ -1494,9 +1456,8 @@ export default function LiveWorkout() {
               </View>
             )}
 
-            {/* Suggestion line */}
             <TouchableOpacity
-              style={styles.suggestionRow}
+              style={styles.nextSetHeader}
               disabled={!suggestionHasValue}
               onPress={() => {
                 if (suggestion.weight !== null) setWeight(suggestion.weight);
@@ -1505,24 +1466,23 @@ export default function LiveWorkout() {
               }}
               testID="suggestion-row"
             >
-              <View style={styles.suggestionDot} />
-              <Text style={styles.suggestionText} numberOfLines={1}>
-                Suggest ·{' '}
-                <Text style={styles.suggestionValue}>
-                  {suggestionHasValue
-                    ? `${suggestion.weight ?? '—'} × ${suggestionRepsDisplay}`
-                    : suggestionReason}
-                </Text>
-                {suggestionHasValue ? ` · ${suggestionReason}` : ''}
+              <Text style={styles.nextSetLabel}>NEXT SET</Text>
+              <Text style={styles.nextSetSuggestion} numberOfLines={1}>
+                {suggestionHasValue
+                  ? `• Suggested ${suggestion.weight ?? '—'} × ${suggestionRepsDisplay}`
+                  : suggestionReason}
               </Text>
             </TouchableOpacity>
 
-            <View style={styles.nextSetHeader}>
-              <Text style={styles.nextSetLabel}>NEXT SET</Text>
-              <Text style={styles.nextSetValue} numberOfLines={1}>
-                {nextSetSummary}
+            <TouchableOpacity
+              style={styles.loggerContextLine}
+              activeOpacity={0.7}
+              onPress={() => setHistoryVisible(true)}
+            >
+              <Text style={styles.loggerContextText} numberOfLines={1}>
+                {loggerContextLine || nextSetSummary}
               </Text>
-            </View>
+            </TouchableOpacity>
 
             <View style={styles.setTypeRow}>
               {SET_TYPE_OPTIONS.map((option) => (
@@ -1640,20 +1600,41 @@ export default function LiveWorkout() {
             </View>
 
             {/* RPE chips */}
-            <View style={styles.rpeRow}>
-              <Text style={styles.rpeLabel}>RPE</Text>
-              {RPE_VALUES.map((r) => (
+            <View style={[styles.rpeRow, !rpeExpanded && rpe === null && styles.rpeRowCollapsed]}>
+              {rpeExpanded || rpe !== null ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.rpeToggleChip}
+                    onPress={() => {
+                      setRpe(null);
+                      setRpeExpanded(false);
+                    }}
+                  >
+                    <Text style={styles.rpeToggleText}>RPE</Text>
+                  </TouchableOpacity>
+                  {RPE_VALUES.map((r) => (
+                    <TouchableOpacity
+                      key={r}
+                      style={[styles.rpeChip, rpe === r && styles.rpeChipActive]}
+                      onPress={() => setRpe(rpe === r ? null : r)}
+                      testID={`rpe-option-${r}`}
+                    >
+                      <Text style={[styles.rpeChipText, rpe === r && styles.rpeChipTextActive]}>
+                        {r}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              ) : (
                 <TouchableOpacity
-                  key={r}
-                  style={[styles.rpeChip, rpe === r && styles.rpeChipActive]}
-                  onPress={() => setRpe(rpe === r ? null : r)}
-                  testID={`rpe-option-${r}`}
+                  style={styles.addRpeBtn}
+                  onPress={() => setRpeExpanded(true)}
+                  testID="rpe-toggle"
                 >
-                  <Text style={[styles.rpeChipText, rpe === r && styles.rpeChipTextActive]}>
-                    {r}
-                  </Text>
+                  <Ionicons name="add" size={16} color={T.muted} />
+                  <Text style={styles.addRpeText}>RPE</Text>
                 </TouchableOpacity>
-              ))}
+              )}
             </View>
 
             {/* Log set + Mic */}
@@ -1945,26 +1926,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 10,
-    paddingBottom: 4,
+    paddingBottom: 8,
   },
-  topActionBtn: {
-    minWidth: 86,
-    minHeight: 34,
-    flexDirection: 'row',
+  sessionIconBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.borderBright,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    borderRadius: 999,
-    backgroundColor: T.surface2,
-    borderWidth: 1,
-    borderColor: T.border,
-    paddingHorizontal: 12,
   },
-  topActionText: { color: T.textDim, fontSize: 12, fontWeight: '700' },
-  finishBtn: { backgroundColor: T.accent, borderColor: T.accent },
-  finishBtnText: { color: T.accentInk },
+  finishBtn: {
+    minWidth: 86,
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  finishBtnText: { color: T.text, fontSize: 18, fontWeight: '800' },
   iconBtn: {
     width: 32,
     height: 32,
@@ -1978,20 +1965,20 @@ const styles = StyleSheet.create({
   elapsedPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     backgroundColor: T.surface,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: T.border,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    borderColor: T.borderBright,
+    paddingHorizontal: 18,
+    height: 48,
   },
-  liveDot: { width: 6, height: 6, borderRadius: 999, backgroundColor: T.accent },
+  liveDot: { width: 9, height: 9, borderRadius: 999, backgroundColor: T.accent },
   elapsedText: {
     fontFamily: 'Courier New',
-    fontSize: 13,
+    fontSize: 17,
     color: T.text,
-    letterSpacing: 0.5,
+    letterSpacing: 1,
   },
   resumeBanner: {
     flexDirection: 'row',
@@ -2015,39 +2002,41 @@ const styles = StyleSheet.create({
 
   carouselHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 4,
-    gap: 12,
+    alignItems: 'flex-end',
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    paddingBottom: 12,
+    gap: 14,
   },
   arrowBtn: {
-    width: 36,
-    height: 36,
+    width: 46,
+    height: 46,
     borderRadius: 999,
     backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: T.border,
+    borderColor: T.borderBright,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   arrowBtnDisabled: { opacity: 0.3 },
-  carouselCenter: { flex: 1, alignItems: 'center' },
+  exerciseNavActions: { flexDirection: 'row', gap: 10, paddingBottom: 2 },
+  carouselCenter: { flex: 1, alignItems: 'flex-start', minWidth: 0 },
   carouselEyebrow: {
     fontFamily: 'Courier New',
-    fontSize: 10.5,
+    fontSize: 12,
     color: T.muted,
-    letterSpacing: 1,
+    letterSpacing: 3,
     textTransform: 'uppercase',
+    fontWeight: '700',
   },
   carouselName: {
-    fontSize: 19,
-    fontWeight: '600',
+    fontSize: 32,
+    lineHeight: 35,
+    fontWeight: '800',
     color: T.text,
-    letterSpacing: -0.3,
-    marginTop: 4,
-    textAlign: 'center',
+    letterSpacing: 0,
+    marginTop: 8,
   },
   restTimerPanel: {
     minHeight: 48,
@@ -2120,65 +2109,13 @@ const styles = StyleSheet.create({
   manualRestBtnTextActive: { color: T.bg },
 
   scrollArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: 22, paddingTop: 14, paddingBottom: 8 },
-
-  targetCard: {
-    backgroundColor: T.surface2,
-    borderWidth: 1,
-    borderColor: T.borderBright,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 10,
-  },
-  targetLabel: {
-    fontFamily: 'Courier New',
-    fontSize: 10.5,
-    color: T.accent,
-    letterSpacing: 0,
-    textTransform: 'uppercase',
-    fontWeight: '700',
-  },
-  targetValue: {
-    color: T.text,
-    fontSize: 21,
-    fontWeight: '800',
-    marginTop: 6,
-  },
-  targetCompletion: {
-    fontFamily: 'Courier New',
-    color: T.textDim,
-    fontSize: 12.5,
-    marginTop: 5,
-  },
-
-  lastTimeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: T.bg,
-    borderWidth: 1,
-    borderColor: T.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    marginBottom: 16,
-  },
-  lastTimeBody: { flex: 1, minWidth: 0 },
-  lastTimeLabel: {
-    fontFamily: 'Courier New',
-    fontSize: 10,
-    color: T.muted,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  lastTimeData: { fontFamily: 'Courier New', fontSize: 12, color: T.text, marginTop: 2 },
+  scrollContent: { paddingHorizontal: 22, paddingTop: 10, paddingBottom: 8 },
 
   setsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
     gap: 10,
   },
   setsLabel: {
@@ -2234,29 +2171,27 @@ const styles = StyleSheet.create({
   setRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    minHeight: 74,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: T.border,
-    borderRadius: 12,
+    borderColor: T.borderBright,
+    borderRadius: 20,
   },
-  setIndex: { fontFamily: 'Courier New', fontSize: 12, color: T.muted, width: 32 },
-  setTypeChip: {
-    width: 62,
+  setRowPr: {
+    backgroundColor: '#151308',
+    borderColor: 'rgba(255,216,77,0.5)',
+  },
+  setIndex: {
     fontFamily: 'Courier New',
-    fontSize: 9.5,
-    color: T.textDim,
-    textAlign: 'center',
-    borderWidth: 1,
-    borderColor: T.border,
-    borderRadius: 7,
-    paddingVertical: 4,
-    marginRight: 8,
-    overflow: 'hidden',
+    fontSize: 17,
+    color: T.muted,
+    width: 48,
+    fontWeight: '700',
   },
   setMetric: {
-    flex: 0.9,
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 4,
@@ -2268,39 +2203,36 @@ const styles = StyleSheet.create({
     padding: 0,
     margin: 0,
     fontFamily: 'Courier New',
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: 24,
+    fontWeight: '800',
     color: T.text,
-    lineHeight: 18,
+    lineHeight: 30,
   },
-  setRpe: { flex: 0.8, fontFamily: 'Courier New', fontSize: 12, color: T.textDim },
-  setUnit: { fontSize: 10, color: T.muted },
-  setCheck: { width: 28, alignItems: 'center' },
+  setRpe: {
+    minWidth: 44,
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    color: T.textDim,
+  },
+  setUnit: { fontSize: 13, color: T.muted, fontWeight: '700' },
+  setCheck: { width: 28, alignItems: 'flex-end' },
   setPrBadge: {
-    minWidth: 26,
-    height: 22,
+    minWidth: 82,
+    height: 34,
     borderRadius: 999,
     backgroundColor: T.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 6,
+    flexDirection: 'row',
+    gap: 5,
+    marginRight: 12,
+    paddingHorizontal: 10,
   },
   setPrBadgeText: {
     color: T.accentInk,
     fontFamily: 'Courier New',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  setActions: { flexDirection: 'row', gap: 4, flexShrink: 0 },
-  setActionBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: T.surface2,
-    borderWidth: 1,
-    borderColor: T.border,
-    alignItems: 'center',
-    justifyContent: 'center',
+    fontSize: 12,
+    fontWeight: '800',
   },
   emptySetRow: {
     paddingVertical: 14,
@@ -2344,78 +2276,65 @@ const styles = StyleSheet.create({
   loggerBlock: {
     borderTopWidth: 1,
     borderTopColor: T.border,
-    backgroundColor: T.bg,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 10,
-  },
-  suggestionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
     backgroundColor: T.surface,
-    borderWidth: 1,
-    borderColor: T.border,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 10,
+    gap: 12,
   },
-  suggestionDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: T.accent,
-    flexShrink: 0,
-  },
-  suggestionText: {
-    fontFamily: 'Courier New',
-    fontSize: 11.5,
-    color: T.textDim,
-    letterSpacing: 0.2,
-    flex: 1,
-  },
-  suggestionValue: { color: T.text },
   nextSetHeader: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
   nextSetLabel: {
     fontFamily: 'Courier New',
-    fontSize: 11,
-    letterSpacing: 0,
+    fontSize: 15,
+    letterSpacing: 3,
     textTransform: 'uppercase',
     color: T.text,
-    fontWeight: '700',
+    fontWeight: '800',
   },
-  nextSetValue: {
+  nextSetSuggestion: {
     flex: 1,
-    color: T.textDim,
+    color: T.accent,
     fontFamily: 'Courier New',
-    fontSize: 12,
+    fontSize: 14,
     textAlign: 'right',
   },
+  loggerContextLine: { marginTop: -6 },
+  loggerContextText: {
+    color: T.muted,
+    fontFamily: 'Courier New',
+    fontSize: 13,
+    letterSpacing: 0.8,
+  },
 
-  setTypeRow: { flexDirection: 'row', gap: 6 },
+  setTypeRow: {
+    flexDirection: 'row',
+    gap: 0,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    borderRadius: 15,
+    padding: 4,
+  },
   setTypeBtn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 9,
-    backgroundColor: T.surface,
-    borderWidth: 1,
-    borderColor: T.border,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'transparent',
   },
-  setTypeBtnActive: { backgroundColor: T.text, borderColor: T.text },
+  setTypeBtnActive: { backgroundColor: T.surface3 },
   setTypeBtnText: {
     color: T.textDim,
     fontSize: 12,
     fontWeight: '600',
   },
-  setTypeBtnTextActive: { color: T.bg },
+  setTypeBtnTextActive: { color: T.text },
 
   steppersRow: { flexDirection: 'row', gap: 8 },
   stepperWrap: { flex: 1, gap: 6 },
@@ -2476,6 +2395,7 @@ const styles = StyleSheet.create({
   stepperUnit: { fontFamily: 'Courier New', fontSize: 11, color: T.muted, letterSpacing: 0.3 },
 
   rpeRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  rpeRowCollapsed: { alignSelf: 'flex-start' },
   rpeLabel: {
     fontFamily: 'Courier New',
     fontSize: 10.5,
@@ -2496,6 +2416,39 @@ const styles = StyleSheet.create({
   rpeChipActive: { backgroundColor: T.text, borderColor: T.text },
   rpeChipText: { fontFamily: 'Courier New', fontSize: 11, fontWeight: '500', color: T.textDim },
   rpeChipTextActive: { color: T.bg },
+  rpeToggleChip: {
+    minHeight: 32,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: T.border,
+    borderStyle: 'dashed',
+  },
+  rpeToggleText: {
+    fontFamily: 'Courier New',
+    fontSize: 12,
+    color: T.textDim,
+    fontWeight: '700',
+  },
+  addRpeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 42,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    borderStyle: 'dashed',
+    paddingHorizontal: 18,
+  },
+  addRpeText: {
+    fontFamily: 'Courier New',
+    fontSize: 14,
+    color: T.muted,
+    fontWeight: '700',
+  },
 
   logRow: { flexDirection: 'row', gap: 8 },
   logBtn: {

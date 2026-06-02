@@ -185,15 +185,14 @@ describe('LiveWorkout screen core flow', () => {
     jest.useRealTimers();
   });
 
-  it("renders today's target with sets, reps, weight, RPE, and completed count", () => {
+  it("folds today's target into the next-set logger context", () => {
     const store = activeStore();
     useSessionStoreMock.mockReturnValue(store);
 
-    const { getByText } = render(<LiveWorkout />);
+    const { getByText, queryByText } = render(<LiveWorkout />);
 
-    expect(getByText("TODAY'S TARGET")).toBeTruthy();
-    expect(getByText('3 sets × 5 reps @ 80 kg · RPE 8')).toBeTruthy();
-    expect(getByText('1 / 3 complete')).toBeTruthy();
+    expect(queryByText("TODAY'S TARGET")).toBeNull();
+    expect(getByText('Target 3 × 5 @ 80 kg RPE 8')).toBeTruthy();
   });
 
   it('shows a local recovery state when workout startup fails', () => {
@@ -294,10 +293,10 @@ describe('LiveWorkout screen core flow', () => {
     });
     useSessionStoreMock.mockReturnValue(store);
 
-    const { getByText, queryByText } = render(<LiveWorkout />);
+    const { queryByText } = render(<LiveWorkout />);
 
-    expect(getByText("TODAY'S TARGET")).toBeTruthy();
-    expect(getByText('No programmed target')).toBeTruthy();
+    expect(queryByText("TODAY'S TARGET")).toBeNull();
+    expect(queryByText('No programmed target')).toBeNull();
     expect(queryByText(/complete/)).toBeNull();
   });
 
@@ -317,8 +316,8 @@ describe('LiveWorkout screen core flow', () => {
 
     const { getByText } = render(<LiveWorkout />);
 
-    expect(getByText(/Repeat target/)).toBeTruthy();
-    expect(getByText(/Suggest ·/)).toBeTruthy();
+    expect(getByText(/Suggested 80 × 5/)).toBeTruthy();
+    expect(getByText('NEXT SET')).toBeTruthy();
   });
 
   it('builds live suggestions from current-session sets', () => {
@@ -358,7 +357,7 @@ describe('LiveWorkout screen core flow', () => {
 
     const { getByTestId, getByText } = render(<LiveWorkout />);
 
-    expect(getByText(/Linear: target hit/)).toBeTruthy();
+    expect(getByText(/Suggested 82.5 × 5/)).toBeTruthy();
     fireEvent.press(getByTestId('suggestion-row'));
 
     await waitFor(() => expect(getByText('Log set · 82.5 × 5')).toBeTruthy());
@@ -410,6 +409,7 @@ describe('LiveWorkout screen core flow', () => {
     fireEvent.changeText(getByTestId('weight-input'), '82.5');
     fireEvent(getByTestId('reps-input'), 'focus');
     fireEvent.changeText(getByTestId('reps-input'), '4');
+    fireEvent.press(getByTestId('rpe-toggle'));
     fireEvent.press(getByTestId('rpe-option-8'));
     fireEvent.press(getByTestId('log-set-btn'));
 
@@ -937,10 +937,12 @@ describe('LiveWorkout screen core flow', () => {
     });
     useSessionStoreMock.mockReturnValue(store);
 
-    const { getByTestId } = render(<LiveWorkout />);
+    const { getByTestId, queryByTestId } = render(<LiveWorkout />);
 
-    expect(getByTestId('set-type-warmup-set').props.children).toBe('WARM-UP');
-    expect(getByTestId('set-type-drop-set').props.children).toBe('DROP');
+    expect(getByTestId('set-row-warmup-set')).toBeTruthy();
+    expect(getByTestId('set-row-drop-set')).toBeTruthy();
+    expect(queryByTestId('set-type-warmup-set')).toBeNull();
+    expect(queryByTestId('set-type-drop-set')).toBeNull();
   });
 
   it('shows a compact live PR indicator after a qualifying set', async () => {
