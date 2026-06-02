@@ -1,4 +1,8 @@
-import { getProgressionSuggestion, type ProgressionInput } from '@/domain/progression';
+import {
+  getLiveWorkoutSuggestion,
+  getProgressionSuggestion,
+  type ProgressionInput,
+} from '@/domain/progression';
 
 const baseTarget = {
   targetSets: 3,
@@ -461,5 +465,134 @@ describe('getProgressionSuggestion', () => {
       expect(next.isAmrap).toBeFalsy();
       expect(next.reps).toBe(5);
     });
+  });
+});
+
+describe('getLiveWorkoutSuggestion', () => {
+  const arnoldTarget = {
+    targetSets: 3,
+    targetReps: 10,
+    targetWeight: 40,
+    unit: 'kg' as const,
+  };
+  const arnoldExercise = {
+    category: 'dumbbell' as const,
+    movementPattern: 'vertical_push' as const,
+    bodyRegion: 'upper_body' as const,
+    mechanics: 'compound' as const,
+    equipment: ['dumbbell'],
+  };
+
+  function liveSuggestion(input: Partial<ProgressionInput>) {
+    return getLiveWorkoutSuggestion({
+      exercise: arnoldExercise,
+      templateTarget: arnoldTarget,
+      progressionRule: { rule: 'none' },
+      recentSets: [],
+      previousSessionSets: [],
+      ...input,
+    });
+  }
+
+  it('uses an Arnold Press 3x10 at 40kg template target before any sets are logged', () => {
+    const next = liveSuggestion({
+      progressionRule: { rule: 'double', repRangeMin: 6, repRangeMax: 12 },
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({
+        weight: 40,
+        reps: 10,
+        reason: 'Planned target',
+      }),
+    );
+  });
+
+  it('repeats Arnold Press 40x12 after that set is logged', () => {
+    const next = liveSuggestion({
+      progressionRule: { rule: 'double', repRangeMin: 6, repRangeMax: 12 },
+      recentSets: [{ weight: 40, reps: 12, rpe: null, unit: 'kg', set_type: 'working' }],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({
+        weight: 40,
+        reps: 12,
+        reason: 'Repeat logged set',
+      }),
+    );
+  });
+
+  it('does not let double progression lower-bound reps override the latest logged set', () => {
+    const next = liveSuggestion({
+      progressionRule: { rule: 'double', repRangeMin: 6, repRangeMax: 12 },
+      recentSets: [{ weight: 40, reps: 12, rpe: null, unit: 'kg', set_type: 'working' }],
+    });
+
+    expect(next.reps).toBe(12);
+    expect(next.reps).not.toBe(6);
+    expect(next.reason).not.toBe('Double: build reps');
+  });
+
+  it('allows repeating 40x12 when RPE is below the cap', () => {
+    const next = liveSuggestion({
+      progressionRule: { rule: 'rpe_gated', rpeCap: 8.5 },
+      recentSets: [{ weight: 40, reps: 12, rpe: 6, unit: 'kg', set_type: 'working' }],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({
+        weight: 40,
+        reps: 12,
+      }),
+    );
+    expect(next.reason).toMatch(/under cap 8\.5/);
+  });
+
+  it('does not increase difficulty and explains the RPE cap when latest RPE is above cap', () => {
+    const next = liveSuggestion({
+      progressionRule: { rule: 'rpe_gated', rpeCap: 8.5 },
+      recentSets: [{ weight: 40, reps: 12, rpe: 10, unit: 'kg', set_type: 'working' }],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({
+        weight: 40,
+        reps: 12,
+      }),
+    );
+    expect(next.reason).toMatch(/exceeds cap 8\.5/);
+  });
+
+  it('gives different RPE-gated reasoning for Barbell Pause Squat RPE 6 and RPE 10', () => {
+    const squatInput: Partial<ProgressionInput> = {
+      exercise: {
+        category: 'barbell',
+        movementPattern: 'squat',
+        bodyRegion: 'lower_body',
+        mechanics: 'compound',
+        equipment: ['barbell'],
+      },
+      templateTarget: {
+        targetSets: 3,
+        targetReps: 5,
+        targetWeight: 10,
+        unit: 'kg',
+      },
+      progressionRule: { rule: 'rpe_gated', rpeCap: 8.5 },
+    };
+
+    const easy = liveSuggestion({
+      ...squatInput,
+      recentSets: [{ weight: 10, reps: 5, rpe: 6, unit: 'kg', set_type: 'working' }],
+    });
+    const hard = liveSuggestion({
+      ...squatInput,
+      recentSets: [{ weight: 10, reps: 5, rpe: 10, unit: 'kg', set_type: 'working' }],
+    });
+
+    expect(easy.reason).not.toBe(hard.reason);
+    expect(easy.reason).toMatch(/under cap 8\.5/);
+    expect(hard.reason).toMatch(/exceeds cap 8\.5/);
   });
 });
