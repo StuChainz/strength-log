@@ -82,7 +82,7 @@ describe('App startup', () => {
   it('renders the first screen instead of a blank root', async () => {
     const { getByText } = render(<App />);
 
-    await waitFor(() => expect(getByText('Strength Log')).toBeTruthy());
+    await waitFor(() => expect(getByText('Start Workout')).toBeTruthy());
   });
 
   it('shows onboarding on first launch', async () => {
@@ -120,13 +120,13 @@ describe('App startup', () => {
     await waitFor(() =>
       expect(setAppSettingMock).toHaveBeenCalledWith(mockDb, 'onboardingCompleted', true),
     );
-    await waitFor(() => expect(getByText('Strength Log')).toBeTruthy());
+    await waitFor(() => expect(getByText('Start Workout')).toBeTruthy());
   });
 
   it('skips onboarding for returning users', async () => {
     const { getByText, queryByText } = render(<App />);
 
-    await waitFor(() => expect(getByText('Strength Log')).toBeTruthy());
+    await waitFor(() => expect(getByText('Start Workout')).toBeTruthy());
     expect(queryByText('Fast strength training logging.')).toBeNull();
   });
 
@@ -141,11 +141,11 @@ describe('App startup', () => {
     const { getByText, queryByText } = render(<App />);
 
     expect(getByText('Starting Set')).toBeTruthy();
-    expect(queryByText('Strength Log')).toBeNull();
+    expect(queryByText('Start Workout')).toBeNull();
 
     resolveOpenDb(mockDb);
 
-    await waitFor(() => expect(getByText('Strength Log')).toBeTruthy());
+    await waitFor(() => expect(getByText('Start Workout')).toBeTruthy());
   });
 
   it('shows a retry state when database startup fails', async () => {
@@ -159,7 +159,7 @@ describe('App startup', () => {
       expect(openDbMock).toHaveBeenCalledTimes(1);
       fireEvent.press(getByText('Try Again'));
 
-      await waitFor(() => expect(getByText('Strength Log')).toBeTruthy());
+      await waitFor(() => expect(getByText('Start Workout')).toBeTruthy());
       expect(openDbMock.mock.results[0]?.type).toBe('return');
       expect(openDbMock.mock.results[1]?.type).toBe('return');
     } finally {
