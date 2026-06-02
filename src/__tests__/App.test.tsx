@@ -27,6 +27,10 @@ jest.mock('@/db/client', () => ({
   openDb: jest.fn(),
 }));
 
+jest.mock('@/notifications/restTimerNotifications', () => ({
+  registerRestTimerNotificationNavigation: jest.fn(() => jest.fn()),
+}));
+
 jest.mock('@/db/repositories/templates.repo', () => ({
   getAllTemplatesWithCount: jest.fn().mockResolvedValue([]),
 }));

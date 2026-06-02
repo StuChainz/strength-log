@@ -3,7 +3,9 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -38,6 +40,10 @@ import {
 } from '@/domain/restTimer';
 import { isStaleCommand } from '@/voice/confidence';
 import { parseVoiceCommand } from '@/voice/parser';
+import {
+  cancelRestTimerNotification,
+  scheduleRestTimerNotification,
+} from '@/notifications/restTimerNotifications';
 import { T } from '@/theme/tokens';
 import type { LiveWorkoutNavigationProp, LiveWorkoutRouteProp } from '@/navigation/types';
 import type { EventType, SetType, WorkoutSet } from '@/domain/types';
@@ -66,7 +72,7 @@ type RestTimerState = {
   startedAt: number;
   exerciseId: string | null;
   exerciseName: string | null;
-  status: 'running' | 'done';
+  status: 'running' | 'completed';
 };
 
 function formatWeightInput(value: number): string {
@@ -197,10 +203,19 @@ function formatPotentialPRLine(indicators: Pick<LivePotentialPR, 'label'>[]): st
   return `${labels.join(' · ')} · PR pending until workout is saved`;
 }
 
+function scheduleRestNotificationSafely(durationSeconds: number, sessionId: string) {
+  void scheduleRestTimerNotification({ durationSeconds, sessionId }).catch(() => {});
+}
+
+function cancelRestNotificationSafely() {
+  void cancelRestTimerNotification().catch(() => {});
+}
+
 export default function LiveWorkout() {
   const navigation = useNavigation<LiveWorkoutNavigationProp>();
   const route = useRoute<LiveWorkoutRouteProp>();
   const templateId = route.params?.templateId;
+  const notificationSessionId = route.params?.sessionId;
 
   const store = useSessionStore(templateId);
   const {
@@ -258,6 +273,7 @@ export default function LiveWorkout() {
   const loggingRef = useRef(false);
   const completedRef = useRef(false);
   const completedRestTimerKeyRef = useRef<string | null>(null);
+  const notificationResumeSessionIdRef = useRef<string | null>(null);
   const justLoggedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeExerciseIndex = exercises.findIndex((e) => e.id === activeExerciseId);
@@ -340,27 +356,24 @@ export default function LiveWorkout() {
     }),
     [activeExercise, activeExerciseId, exercises, lastLoggedSet],
   );
-  const suggestion = useMemo(
-    () => {
-      const { recentSets: lastSessionSets, previousSessionSets } = getRecentHistoryBuckets(lastSets);
-      return getLiveWorkoutSuggestion({
-        exercise: activeExercise?.progressionExercise ?? {
-          category: activeExercise?.category ?? 'barbell',
-        },
-        templateTarget: {
-          targetSets: activeExercise?.targetSets ?? null,
-          targetReps: activeExercise?.targetReps ?? null,
-          targetWeight: activeExercise?.targetWeight ?? null,
-          unit: activeExercise?.defaultUnit ?? 'kg',
-          amrapLastSet: activeExercise?.amrapLastSet ?? false,
-        },
-        progressionRule: activeExercise?.progressionRule ?? { rule: 'none' },
-        recentSets: activeSets,
-        previousSessionSets: lastSessionSets.length > 0 ? lastSessionSets : previousSessionSets,
-      });
-    },
-    [activeExercise, activeSets, lastSets],
-  );
+  const suggestion = useMemo(() => {
+    const { recentSets: lastSessionSets, previousSessionSets } = getRecentHistoryBuckets(lastSets);
+    return getLiveWorkoutSuggestion({
+      exercise: activeExercise?.progressionExercise ?? {
+        category: activeExercise?.category ?? 'barbell',
+      },
+      templateTarget: {
+        targetSets: activeExercise?.targetSets ?? null,
+        targetReps: activeExercise?.targetReps ?? null,
+        targetWeight: activeExercise?.targetWeight ?? null,
+        unit: activeExercise?.defaultUnit ?? 'kg',
+        amrapLastSet: activeExercise?.amrapLastSet ?? false,
+      },
+      progressionRule: activeExercise?.progressionRule ?? { rule: 'none' },
+      recentSets: activeSets,
+      previousSessionSets: lastSessionSets.length > 0 ? lastSessionSets : previousSessionSets,
+    });
+  }, [activeExercise, activeSets, lastSets]);
   const potentialPRs = useMemo(
     () => (previousPRData ? detectLivePotentialPRs(sets, previousPRData) : []),
     [previousPRData, sets],
@@ -377,9 +390,7 @@ export default function LiveWorkout() {
     (indicator) =>
       indicator.exercise_id === activeExerciseId && indicator.record_type === 'session_volume',
   );
-  const restRemainingSeconds = restTimer
-    ? getRestTimerRemainingSeconds(restTimer, restNow)
-    : 0;
+  const restRemainingSeconds = restTimer ? getRestTimerRemainingSeconds(restTimer, restNow) : 0;
   const restTimerExerciseName =
     restTimer?.exerciseName ??
     exercises.find((exercise) => exercise.id === restTimer?.exerciseId)?.name ??
@@ -439,23 +450,27 @@ export default function LiveWorkout() {
         const payload = JSON.parse(event.payload_json) as RestTimerStartedPayload;
         if (!Number.isFinite(payload.duration_seconds) || payload.duration_seconds <= 0) return;
         const exercise = exercises.find((item) => item.id === payload.exercise_id);
+        const recoveredSnapshot = {
+          durationSeconds: payload.duration_seconds,
+          startedAt: payload.started_at,
+        };
+        if (isRestTimerDone(recoveredSnapshot, Date.now())) {
+          setRestTimer(null);
+          return;
+        }
         const recoveredTimer: RestTimerState = {
           durationSeconds: Math.floor(payload.duration_seconds),
           startedAt: payload.started_at,
           exerciseId: payload.exercise_id,
           exerciseName: exercise?.name ?? null,
-          status: isRestTimerDone(
-            {
-              durationSeconds: payload.duration_seconds,
-              startedAt: payload.started_at,
-            },
-            Date.now(),
-          )
-            ? 'done'
-            : 'running',
+          status: 'running',
         };
         setRestNow(Date.now());
         setRestTimer(recoveredTimer);
+        scheduleRestNotificationSafely(
+          getRestTimerRemainingSeconds(recoveredTimer, Date.now()),
+          session.id,
+        );
       })
       .catch(() => {});
     return () => {
@@ -532,6 +547,21 @@ export default function LiveWorkout() {
     if (phase === 'ended' && !completedRef.current) navigation.popToTop();
   }, [phase, navigation]);
 
+  useEffect(() => {
+    if (
+      phase !== 'prompt_resume' ||
+      !notificationSessionId ||
+      !existingSession ||
+      existingSession.id !== notificationSessionId ||
+      notificationResumeSessionIdRef.current === notificationSessionId
+    ) {
+      return;
+    }
+
+    notificationResumeSessionIdRef.current = notificationSessionId;
+    void resumeExisting();
+  }, [existingSession, notificationSessionId, phase, resumeExisting]);
+
   useEffect(
     () => () => {
       if (justLoggedTimeoutRef.current) clearTimeout(justLoggedTimeoutRef.current);
@@ -542,6 +572,7 @@ export default function LiveWorkout() {
   // Prompt resume/start-new
   useEffect(() => {
     if (phase !== 'prompt_resume' || !existingSession) return;
+    if (notificationSessionId && existingSession.id === notificationSessionId) return;
     const started = new Date(existingSession.started_at).toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
@@ -549,9 +580,10 @@ export default function LiveWorkout() {
     if (recovery?.status === 'multiple_active') {
       Alert.alert(
         'Multiple Active Workouts',
-        `${recovery.sessions.length} workouts are still in progress. Resume the latest one from ${started}; no workouts will be discarded.`,
+        `${recovery.sessions.length} workouts are still in progress. Resume the latest one from ${started}, or discard them all and start this workout.`,
         [
           { text: 'Resume Latest', onPress: resumeExisting },
+          { text: 'Discard All + Start', style: 'destructive', onPress: discardAndStart },
           { text: 'Go Home', onPress: () => navigation.popToTop() },
         ],
         { cancelable: false },
@@ -577,7 +609,7 @@ export default function LiveWorkout() {
       buttons,
       { cancelable: false },
     );
-  }, [phase, existingSession, recovery]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, existingSession, notificationSessionId, recovery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const formatElapsed = (secs: number) => {
     const h = Math.floor(secs / 3600);
@@ -650,13 +682,16 @@ export default function LiveWorkout() {
       completedRestTimerKeyRef.current = null;
       setRestNow(Date.now());
       setRestTimer(nextTimer);
+      if (session) {
+        scheduleRestNotificationSafely(roundedDuration, session.id);
+      }
       void appendRestTimerEvent('rest_timer_started', {
         duration_seconds: roundedDuration,
         started_at: startedAt,
         exercise_id: exercise?.id ?? null,
       });
     },
-    [activeExercise, appendRestTimerEvent],
+    [activeExercise, appendRestTimerEvent, session],
   );
 
   const handleAddRestTime = useCallback(() => {
@@ -670,12 +705,18 @@ export default function LiveWorkout() {
     completedRestTimerKeyRef.current = null;
     setRestNow(Date.now());
     setRestTimer(nextTimer);
+    if (session) {
+      scheduleRestNotificationSafely(
+        getRestTimerRemainingSeconds(nextTimer, Date.now()),
+        session.id,
+      );
+    }
     void appendRestTimerEvent('rest_timer_started', {
       duration_seconds: nextTimer.durationSeconds,
       started_at: nextTimer.startedAt,
       exercise_id: nextTimer.exerciseId,
     });
-  }, [appendRestTimerEvent, restTimer]);
+  }, [appendRestTimerEvent, restTimer, session]);
 
   const handleSubtractRestTime = useCallback(() => {
     if (!restTimer) return;
@@ -688,12 +729,18 @@ export default function LiveWorkout() {
     completedRestTimerKeyRef.current = null;
     setRestNow(Date.now());
     setRestTimer(nextTimer);
+    if (session) {
+      scheduleRestNotificationSafely(
+        getRestTimerRemainingSeconds(nextTimer, Date.now()),
+        session.id,
+      );
+    }
     void appendRestTimerEvent('rest_timer_started', {
       duration_seconds: nextTimer.durationSeconds,
       started_at: nextTimer.startedAt,
       exercise_id: nextTimer.exerciseId,
     });
-  }, [appendRestTimerEvent, restTimer]);
+  }, [appendRestTimerEvent, restTimer, session]);
 
   const handleManualRestStart = useCallback(
     (seconds: number) => {
@@ -714,6 +761,7 @@ export default function LiveWorkout() {
     const wasRunning = restTimer.status === 'running';
     setRestTimer(null);
     completedRestTimerKeyRef.current = null;
+    cancelRestNotificationSafely();
     if (wasRunning) {
       void appendRestTimerEvent('rest_timer_cancelled', { cancelled_at: Date.now() });
     }
@@ -726,7 +774,13 @@ export default function LiveWorkout() {
     }`;
     if (completedRestTimerKeyRef.current === timerKey) return;
     completedRestTimerKeyRef.current = timerKey;
-    setRestTimer((current) => (current ? { ...current, status: 'done' } : current));
+    setRestTimer((current) =>
+      current &&
+      current.startedAt === restTimer.startedAt &&
+      current.durationSeconds === restTimer.durationSeconds
+        ? { ...current, status: 'completed' }
+        : current,
+    );
     Vibration.vibrate([0, 80, 80, 80]);
     void appendRestTimerEvent('rest_timer_completed', { completed_at: Date.now() });
   }, [appendRestTimerEvent, restRemainingSeconds, restTimer]);
@@ -847,13 +901,21 @@ export default function LiveWorkout() {
           if (!session) return;
           const endedSessionId = session.id;
           completedRef.current = true;
+          cancelRestNotificationSafely();
           void endWorkout().then(() => {
             Vibration.vibrate(30);
             navigation.replace('EndWorkoutSummary', { sessionId: endedSessionId });
           });
         },
       },
-      { text: 'Discard', style: 'destructive', onPress: () => void discardWorkout() },
+      {
+        text: 'Discard',
+        style: 'destructive',
+        onPress: () => {
+          cancelRestNotificationSafely();
+          void discardWorkout();
+        },
+      },
     ]);
   }, [discardWorkout, endWorkout, navigation, session]);
 
@@ -997,6 +1059,23 @@ export default function LiveWorkout() {
     );
   }
 
+  if (phase === 'error') {
+    return (
+      <SafeAreaView style={[styles.safe, styles.center]} edges={['top']}>
+        <Text style={styles.errorTitle}>Workout could not start</Text>
+        <Text style={styles.mutedText}>Go back and try again.</Text>
+        <TouchableOpacity
+          style={styles.addExBtn}
+          onPress={() => navigation.popToTop()}
+          testID="workout-start-error-home"
+        >
+          <Ionicons name="arrow-back" size={18} color={T.accentInk} />
+          <Text style={styles.addExBtnText}>Back Home</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
   const wgt = formatWeightInput(weight);
   const logBtnLabel = justLogged ? 'Logged ✓' : `Log set · ${wgt} × ${reps}`;
   const activeUnit = activeExercise?.defaultUnit ?? 'kg';
@@ -1021,746 +1100,496 @@ export default function LiveWorkout() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* ── Top bar ──────────────────────────────────────────── */}
-      <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.topActionBtn}
-          onPress={() => setSummaryVisible(true)}
-          hitSlop={8}
-          testID="summary-btn"
-        >
-          <Ionicons name="stats-chart-outline" size={14} color={T.textDim} />
-          <Text style={styles.topActionText}>Summary</Text>
-        </TouchableOpacity>
-        <View style={styles.elapsedPill}>
-          <View style={styles.liveDot} />
-          <Text style={styles.elapsedText}>{formatElapsed(elapsedSecs)}</Text>
-        </View>
-        <TouchableOpacity
-          style={[styles.topActionBtn, styles.finishBtn]}
-          onPress={handleEndWorkout}
-          hitSlop={8}
-          testID="end-workout-btn"
-        >
-          <Text style={[styles.topActionText, styles.finishBtnText]}>Finish</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Exercise carousel ─────────────────────────────────── */}
-      {resumedStartedAt !== null && (
-        <View style={styles.resumeBanner}>
-          <Ionicons name="refresh" size={15} color={T.accent} />
-          <Text style={styles.resumeBannerText}>
-            Resumed your workout from{' '}
-            {new Date(resumedStartedAt).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </Text>
-        </View>
-      )}
-
-      {exercises.length > 0 && (
-        <View style={styles.carouselHeader}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoiding}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        testID="live-workout-keyboard-avoiding"
+      >
+        {/* ── Top bar ──────────────────────────────────────────── */}
+        <View style={styles.topBar}>
           <TouchableOpacity
-            style={[styles.arrowBtn, activeExerciseIndex === 0 && styles.arrowBtnDisabled]}
-            onPress={() =>
-              activeExerciseIndex > 0 && setActiveExerciseId(exercises[activeExerciseIndex - 1].id)
-            }
-            disabled={activeExerciseIndex === 0}
+            style={styles.topActionBtn}
+            onPress={() => setSummaryVisible(true)}
             hitSlop={8}
+            testID="summary-btn"
           >
-            <Ionicons
-              name="chevron-back"
-              size={18}
-              color={activeExerciseIndex === 0 ? T.mutedDeep : T.textDim}
-            />
+            <Ionicons name="stats-chart-outline" size={14} color={T.textDim} />
+            <Text style={styles.topActionText}>Summary</Text>
           </TouchableOpacity>
+          <View style={styles.elapsedPill}>
+            <View style={styles.liveDot} />
+            <Text style={styles.elapsedText}>{formatElapsed(elapsedSecs)}</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.topActionBtn, styles.finishBtn]}
+            onPress={handleEndWorkout}
+            hitSlop={8}
+            testID="end-workout-btn"
+          >
+            <Text style={[styles.topActionText, styles.finishBtnText]}>Finish</Text>
+          </TouchableOpacity>
+        </View>
 
-          <View style={styles.carouselCenter}>
-            <Text style={styles.carouselEyebrow}>
-              Exercise {activeExerciseIndex + 1} of {exercises.length}
-            </Text>
-            <Text style={styles.carouselName} numberOfLines={1}>
-              {activeExercise?.name ?? '—'}
+        {/* ── Exercise carousel ─────────────────────────────────── */}
+        {resumedStartedAt !== null && (
+          <View style={styles.resumeBanner}>
+            <Ionicons name="refresh" size={15} color={T.accent} />
+            <Text style={styles.resumeBannerText}>
+              Resumed your workout from{' '}
+              {new Date(resumedStartedAt).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
             </Text>
           </View>
+        )}
 
-          <TouchableOpacity
-            style={[
-              styles.arrowBtn,
-              activeExerciseIndex >= exercises.length - 1 && styles.arrowBtnDisabled,
-            ]}
-            onPress={() =>
-              activeExerciseIndex < exercises.length - 1 &&
-              setActiveExerciseId(exercises[activeExerciseIndex + 1].id)
-            }
-            disabled={activeExerciseIndex >= exercises.length - 1}
-            hitSlop={8}
-          >
-            <Ionicons
-              name="chevron-forward"
-              size={18}
-              color={activeExerciseIndex >= exercises.length - 1 ? T.mutedDeep : T.textDim}
-            />
-          </TouchableOpacity>
-        </View>
-      )}
+        {exercises.length > 0 && (
+          <View style={styles.carouselHeader}>
+            <TouchableOpacity
+              style={[styles.arrowBtn, activeExerciseIndex === 0 && styles.arrowBtnDisabled]}
+              onPress={() =>
+                activeExerciseIndex > 0 &&
+                setActiveExerciseId(exercises[activeExerciseIndex - 1].id)
+              }
+              disabled={activeExerciseIndex === 0}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="chevron-back"
+                size={18}
+                color={activeExerciseIndex === 0 ? T.mutedDeep : T.textDim}
+              />
+            </TouchableOpacity>
 
-      {exercises.length > 0 && (
-        <View style={styles.restTimerPanel} testID="rest-timer-panel">
-          {restTimer ? (
-            <>
-              <View style={styles.restTimerMain}>
-                <Text style={styles.restTimerLabel}>
-                  {restTimer.status === 'done' ? 'Rest done' : 'Rest'}
-                </Text>
-                <Text style={styles.restTimerValue} testID="rest-timer-remaining">
-                  {formatElapsed(restRemainingSeconds)}
-                </Text>
-                {restTimerExerciseName && (
-                  <Text style={styles.restTimerExercise} numberOfLines={1}>
-                    {restTimerExerciseName}
-                  </Text>
-                )}
-              </View>
-              <View style={styles.restTimerActions}>
-                <TouchableOpacity
-                  style={styles.restTimerActionBtn}
-                  onPress={handleSubtractRestTime}
-                  testID="rest-subtract-15"
-                >
-                  <Text style={styles.restTimerActionText}>-15s</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.restTimerActionBtn}
-                  onPress={handleAddRestTime}
-                  testID="rest-add-15"
-                >
-                  <Text style={styles.restTimerActionText}>+15s</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.restTimerActionBtn}
-                  onPress={handleStopRestTimer}
-                  testID="rest-stop"
-                >
-                  <Text style={styles.restTimerActionText}>
-                    {restTimer.status === 'done' ? 'Clear' : 'Skip'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : (
-            <>
-              <Text style={styles.manualRestLabel}>
-                {activeRestSeconds ? `Rest ${formatElapsed(activeRestSeconds)}` : 'Rest'}
+            <View style={styles.carouselCenter}>
+              <Text style={styles.carouselEyebrow}>
+                Exercise {activeExerciseIndex + 1} of {exercises.length}
               </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.manualRestOptions}
-              >
-                <TouchableOpacity
-                  style={[styles.manualRestBtn, activeRestSeconds === null && styles.manualRestBtnActive]}
-                  onPress={handleClearExerciseRest}
-                  testID="manual-rest-off"
-                >
-                  <Text
-                    style={[
-                      styles.manualRestBtnText,
-                      activeRestSeconds === null && styles.manualRestBtnTextActive,
-                    ]}
-                  >
-                    Off
+              <Text style={styles.carouselName} numberOfLines={1}>
+                {activeExercise?.name ?? '—'}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.arrowBtn,
+                activeExerciseIndex >= exercises.length - 1 && styles.arrowBtnDisabled,
+              ]}
+              onPress={() =>
+                activeExerciseIndex < exercises.length - 1 &&
+                setActiveExerciseId(exercises[activeExerciseIndex + 1].id)
+              }
+              disabled={activeExerciseIndex >= exercises.length - 1}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={activeExerciseIndex >= exercises.length - 1 ? T.mutedDeep : T.textDim}
+              />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {exercises.length > 0 && (
+          <View style={styles.restTimerPanel} testID="rest-timer-panel">
+            {restTimer?.status === 'running' ? (
+              <>
+                <View style={styles.restTimerMain}>
+                  <Text style={styles.restTimerLabel}>Rest</Text>
+                  <Text style={styles.restTimerValue} testID="rest-timer-remaining">
+                    {formatElapsed(restRemainingSeconds)}
                   </Text>
-                </TouchableOpacity>
-                {REST_TIMER_PRESETS_SECONDS.map((seconds) => (
+                  {restTimerExerciseName && (
+                    <Text style={styles.restTimerExercise} numberOfLines={1}>
+                      {restTimerExerciseName}
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.restTimerActions}>
                   <TouchableOpacity
-                    key={seconds}
+                    style={styles.restTimerActionBtn}
+                    onPress={handleSubtractRestTime}
+                    testID="rest-subtract-15"
+                  >
+                    <Text style={styles.restTimerActionText}>-15s</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.restTimerActionBtn}
+                    onPress={handleAddRestTime}
+                    testID="rest-add-15"
+                  >
+                    <Text style={styles.restTimerActionText}>+15s</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.restTimerActionBtn}
+                    onPress={handleStopRestTimer}
+                    testID="rest-stop"
+                  >
+                    <Text style={styles.restTimerActionText}>Skip</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.manualRestLabel}>
+                  {activeRestSeconds ? `Rest ${formatElapsed(activeRestSeconds)}` : 'Rest'}
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.manualRestOptions}
+                >
+                  <TouchableOpacity
                     style={[
                       styles.manualRestBtn,
-                      activeRestSeconds === seconds && styles.manualRestBtnActive,
+                      activeRestSeconds === null && styles.manualRestBtnActive,
                     ]}
-                    onPress={() => handleManualRestStart(seconds)}
-                    testID={`manual-rest-${seconds}`}
+                    onPress={handleClearExerciseRest}
+                    testID="manual-rest-off"
                   >
                     <Text
                       style={[
                         styles.manualRestBtnText,
-                        activeRestSeconds === seconds && styles.manualRestBtnTextActive,
+                        activeRestSeconds === null && styles.manualRestBtnTextActive,
                       ]}
                     >
-                      {seconds >= 60 ? `${seconds / 60}m` : `${seconds}s`}
+                      Off
                     </Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </>
-          )}
-        </View>
-      )}
-
-      {/* ── Scrollable content ───────────────────────────────── */}
-      {exercises.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={styles.mutedText}>Tap below to add an exercise</Text>
-          <TouchableOpacity
-            style={styles.addExBtn}
-            onPress={() => setPickerVisible(true)}
-            testID="add-exercise-tab"
-          >
-            <Ionicons name="add" size={20} color={T.accentInk} />
-            <Text style={styles.addExBtnText}>Add Exercise</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={activeSets}
-          keyExtractor={(s) => s.id}
-          style={styles.scrollArea}
-          contentContainerStyle={styles.scrollContent}
-          ListHeaderComponent={
-            <>
-              {/* Today's target */}
-              <View style={styles.targetCard} testID="todays-target-card">
-                <Text style={styles.targetLabel}>{"TODAY'S TARGET"}</Text>
-                <Text style={styles.targetValue}>{targetLine}</Text>
-                {targetCompletion !== null && (
-                  <Text style={styles.targetCompletion}>{targetCompletion}</Text>
-                )}
-              </View>
-
-              {/* Last-time strip */}
-              <TouchableOpacity
-                style={styles.lastTimeCard}
-                activeOpacity={0.7}
-                onPress={() => setHistoryVisible(true)}
-              >
-                <Ionicons name="time-outline" size={16} color={T.muted} />
-                <View style={styles.lastTimeBody}>
-                  <Text style={styles.lastTimeLabel}>
-                    {lastHintText ? 'LAST TIME' : 'NO HISTORY'}
-                  </Text>
-                  <Text style={styles.lastTimeData} numberOfLines={1}>
-                    {lastHintText ?? 'First time logging this exercise'}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={14} color={T.mutedDeep} />
-              </TouchableOpacity>
-
-              {/* Sets header */}
-              <View style={styles.setsHeader}>
-                <Text style={styles.setsLabel}>SETS · {activeSets.length}</Text>
-                {hasLoggedSets && (
-                  <TouchableOpacity
-                    style={styles.undoBtn}
-                    onPress={() => {
-                      Alert.alert('Undo last set?', undefined, [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Undo', onPress: () => void store.undoLastSet() },
-                      ]);
-                    }}
-                  >
-                    <Ionicons name="arrow-undo" size={13} color={T.textDim} />
-                    <Text style={styles.undoBtnText}>UNDO</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              {activeVolumePR && (
-                <View style={styles.potentialPrCard} testID="active-volume-pr-pending">
-                  <Ionicons name="sparkles-outline" size={13} color={T.accent} />
-                  <Text style={styles.potentialPrText}>
-                    {formatPotentialPRLine([activeVolumePR])}
-                  </Text>
-                </View>
-              )}
-            </>
-          }
-          ListEmptyComponent={
-            <View style={styles.emptySetRow}>
-              <Text style={styles.emptySetText}>
-                No sets yet. Suggestion below pre-fills the logger.
-              </Text>
-            </View>
-          }
-          renderItem={({ item, index }) => {
-            const rowPotentialPRs = potentialPRsBySetId.get(item.id) ?? [];
-            return (
-              <View style={styles.setRowWrap}>
-                <View style={styles.setRow} testID={`set-row-${item.id}`}>
-                  <Text style={styles.setIndex}>#{index + 1}</Text>
-                  <Text style={styles.setTypeChip} testID={`set-type-${item.id}`}>
-                    {getSetTypeLabel(item.set_type, true)}
-                  </Text>
-                  <View style={styles.setMetric}>
-                    <TextInput
-                      style={styles.setMetricInput}
-                      value={
-                        setDrafts[item.id]?.weight ??
-                        (item.weight !== null ? formatWeightInput(item.weight) : '')
-                      }
-                      onChangeText={(next) => updateSetDraft(item.id, 'weight', next)}
-                      onBlur={() => void commitSetWeightInput(item)}
-                      onSubmitEditing={() => void commitSetWeightInput(item)}
-                      keyboardType="decimal-pad"
-                      returnKeyType="done"
-                      placeholder="—"
-                      placeholderTextColor={T.muted}
-                      selectTextOnFocus
-                      maxLength={7}
-                      testID={`set-weight-input-${item.id}`}
-                    />
-                    <Text style={styles.setUnit}>{item.unit}</Text>
-                  </View>
-                  <View style={styles.setMetric}>
-                    <TextInput
-                      style={styles.setMetricInput}
-                      value={
-                        setDrafts[item.id]?.reps ?? (item.reps !== null ? String(item.reps) : '')
-                      }
-                      onChangeText={(next) => updateSetDraft(item.id, 'reps', next)}
-                      onBlur={() => void commitSetRepsInput(item)}
-                      onSubmitEditing={() => void commitSetRepsInput(item)}
-                      keyboardType="number-pad"
-                      returnKeyType="done"
-                      placeholder="—"
-                      placeholderTextColor={T.muted}
-                      selectTextOnFocus
-                      maxLength={3}
-                      testID={`set-reps-input-${item.id}`}
-                    />
-                    <Text style={styles.setUnit}>reps</Text>
-                  </View>
-                  <Text style={styles.setRpe}>{item.rpe !== null ? `RPE ${item.rpe}` : '—'}</Text>
-                  <View style={styles.setCheck}>
-                    <Ionicons name="checkmark" size={14} color={T.success} />
-                  </View>
-                  <View style={styles.setActions}>
+                  {REST_TIMER_PRESETS_SECONDS.map((seconds) => (
                     <TouchableOpacity
-                      style={styles.setActionBtn}
-                      onPress={() => openEditSet(item)}
-                      hitSlop={6}
-                      testID={`edit-set-btn-${item.id}`}
+                      key={seconds}
+                      style={[
+                        styles.manualRestBtn,
+                        activeRestSeconds === seconds && styles.manualRestBtnActive,
+                      ]}
+                      onPress={() => handleManualRestStart(seconds)}
+                      testID={`manual-rest-${seconds}`}
                     >
-                      <Ionicons name="create-outline" size={14} color={T.textDim} />
+                      <Text
+                        style={[
+                          styles.manualRestBtnText,
+                          activeRestSeconds === seconds && styles.manualRestBtnTextActive,
+                        ]}
+                      >
+                        {seconds >= 60 ? `${seconds / 60}m` : `${seconds}s`}
+                      </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.setActionBtn}
-                      onPress={() => handleDeleteSet(item)}
-                      hitSlop={6}
-                    >
-                      <Ionicons name="trash-outline" size={14} color={T.danger} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                {rowPotentialPRs.length > 0 && (
-                  <View style={styles.potentialPrLine} testID={`potential-pr-${item.id}`}>
-                    <Ionicons name="sparkles-outline" size={12} color={T.accent} />
-                    <Text style={styles.potentialPrText}>
-                      {formatPotentialPRLine(rowPotentialPRs)}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            );
-          }}
-          ListFooterComponent={
+                  ))}
+                </ScrollView>
+              </>
+            )}
+          </View>
+        )}
+
+        {/* ── Scrollable content ───────────────────────────────── */}
+        {exercises.length === 0 ? (
+          <View style={styles.center}>
+            <Text style={styles.mutedText}>Tap below to add an exercise</Text>
             <TouchableOpacity
-              style={styles.addExSmallBtn}
+              style={styles.addExBtn}
               onPress={() => setPickerVisible(true)}
               testID="add-exercise-tab"
             >
-              <Ionicons name="add" size={15} color={T.muted} />
-              <Text style={styles.addExSmallText}>Add exercise</Text>
+              <Ionicons name="add" size={20} color={T.accentInk} />
+              <Text style={styles.addExBtnText}>Add Exercise</Text>
             </TouchableOpacity>
-          }
-        />
-      )}
-
-      {/* ── Logger (pinned bottom) ───────────────────────────── */}
-      {exercises.length > 0 && activeExercise && (
-        <View style={styles.loggerBlock}>
-          {ENABLE_TYPED_VOICE_DEBUG && (
-            <View style={styles.voiceDebug}>
-              <View style={styles.voiceInputRow}>
-                <TextInput
-                  style={styles.voiceInput}
-                  value={voiceText}
-                  onChangeText={setVoiceText}
-                  placeholder="Typed voice debug"
-                  placeholderTextColor={T.muted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  onSubmitEditing={handleVoiceDebugSubmit}
-                  returnKeyType="done"
-                />
-                <TouchableOpacity style={styles.voiceRunBtn} onPress={handleVoiceDebugSubmit}>
-                  <Ionicons name="play" size={14} color={T.accentInk} />
-                </TouchableOpacity>
-              </View>
-              <VoiceConfirm result={voiceResult} />
-              {voiceResult?.confidence === 'medium' || voiceResult?.requiresConfirmation ? (
-                <TouchableOpacity
-                  style={styles.voiceConfirmBtn}
-                  onPress={() => voiceResult && void commitVoiceResult(voiceResult)}
-                >
-                  <Text style={styles.voiceConfirmText}>Confirm</Text>
-                </TouchableOpacity>
-              ) : null}
-              {voiceMessage && <Text style={styles.voiceMessage}>{voiceMessage}</Text>}
-            </View>
-          )}
-
-          {/* Suggestion line */}
-          <TouchableOpacity
-            style={styles.suggestionRow}
-            disabled={!suggestionHasValue}
-            onPress={() => {
-              if (suggestion.weight !== null) setWeight(suggestion.weight);
-              if (suggestion.reps !== null) setReps(suggestion.reps);
-              setRpe(null);
-            }}
-            testID="suggestion-row"
-          >
-            <View style={styles.suggestionDot} />
-            <Text style={styles.suggestionText} numberOfLines={1}>
-              Suggest ·{' '}
-              <Text style={styles.suggestionValue}>
-                {suggestionHasValue
-                  ? `${suggestion.weight ?? '—'} × ${suggestionRepsDisplay}`
-                  : suggestionReason}
-              </Text>
-              {suggestionHasValue ? ` · ${suggestionReason}` : ''}
-            </Text>
-          </TouchableOpacity>
-
-          <View style={styles.nextSetHeader}>
-            <Text style={styles.nextSetLabel}>NEXT SET</Text>
-            <Text style={styles.nextSetValue} numberOfLines={1}>
-              {nextSetSummary}
-            </Text>
           </View>
-
-          <View style={styles.setTypeRow}>
-            {SET_TYPE_OPTIONS.map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={[styles.setTypeBtn, setType === option.value && styles.setTypeBtnActive]}
-                onPress={() => setSetType(option.value)}
-                testID={`set-type-option-${option.value}`}
-              >
-                <Text
-                  style={[
-                    styles.setTypeBtnText,
-                    setType === option.value && styles.setTypeBtnTextActive,
-                  ]}
-                >
-                  {option.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Steppers */}
-          <View style={styles.steppersRow}>
-            <View style={styles.stepperWrap}>
-              <Text style={styles.stepperLabel}>WEIGHT · KG</Text>
-              <View style={styles.stepper}>
-                <TouchableOpacity
-                  style={[styles.stepperBtn, styles.stepperBtnLeft]}
-                  onPress={() => setWeight((w) => Math.max(0, parseFloat((w - 2.5).toFixed(2))))}
-                  onLongPress={() => setWeight((w) => Math.max(0, parseFloat((w - 10).toFixed(2))))}
-                  delayLongPress={400}
-                >
-                  <Text style={styles.stepperBtnText}>−</Text>
-                </TouchableOpacity>
-                <View style={styles.stepperValueWrap}>
-                  <TextInput
-                    style={styles.stepperValueInput}
-                    value={weightInput}
-                    onChangeText={(next) => {
-                      setWeightInput(next);
-                      const parsed = parseNonNegativeNumber(next);
-                      if (parsed !== null) setWeight(parseFloat(parsed.toFixed(2)));
-                    }}
-                    onBlur={() => {
-                      setIsWeightInputFocused(false);
-                      commitWeightInput();
-                    }}
-                    onFocus={() => setIsWeightInputFocused(true)}
-                    onSubmitEditing={commitWeightInput}
-                    keyboardType="decimal-pad"
-                    returnKeyType="done"
-                    selectTextOnFocus
-                    maxLength={7}
-                    testID="weight-input"
-                  />
-                  <Text style={styles.stepperUnit}>kg</Text>
+        ) : (
+          <FlatList
+            data={activeSets}
+            keyExtractor={(s) => s.id}
+            style={styles.scrollArea}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            ListHeaderComponent={
+              <>
+                {/* Today's target */}
+                <View style={styles.targetCard} testID="todays-target-card">
+                  <Text style={styles.targetLabel}>{"TODAY'S TARGET"}</Text>
+                  <Text style={styles.targetValue}>{targetLine}</Text>
+                  {targetCompletion !== null && (
+                    <Text style={styles.targetCompletion}>{targetCompletion}</Text>
+                  )}
                 </View>
-                <TouchableOpacity
-                  style={[styles.stepperBtn, styles.stepperBtnRight]}
-                  onPress={() => setWeight((w) => parseFloat((w + 2.5).toFixed(2)))}
-                  onLongPress={() => setWeight((w) => parseFloat((w + 10).toFixed(2)))}
-                  delayLongPress={400}
-                >
-                  <Text style={styles.stepperBtnText}>+</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
 
-            <View style={styles.stepperWrap}>
-              <Text style={styles.stepperLabel}>REPS</Text>
-              <View style={styles.stepper}>
+                {/* Last-time strip */}
                 <TouchableOpacity
-                  style={[styles.stepperBtn, styles.stepperBtnLeft]}
-                  onPress={() => setReps((r) => Math.max(1, r - 1))}
-                  onLongPress={() => setReps((r) => Math.max(1, r - 5))}
-                  delayLongPress={400}
+                  style={styles.lastTimeCard}
+                  activeOpacity={0.7}
+                  onPress={() => setHistoryVisible(true)}
                 >
-                  <Text style={styles.stepperBtnText}>−</Text>
+                  <Ionicons name="time-outline" size={16} color={T.muted} />
+                  <View style={styles.lastTimeBody}>
+                    <Text style={styles.lastTimeLabel}>
+                      {lastHintText ? 'LAST TIME' : 'NO HISTORY'}
+                    </Text>
+                    <Text style={styles.lastTimeData} numberOfLines={1}>
+                      {lastHintText ?? 'First time logging this exercise'}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={14} color={T.mutedDeep} />
                 </TouchableOpacity>
-                <View style={styles.stepperValueWrap}>
-                  <TextInput
-                    style={styles.stepperValueInput}
-                    value={repsInput}
-                    onChangeText={(next) => {
-                      setRepsInput(next);
-                      const parsed = parsePositiveInteger(next);
-                      if (parsed !== null) setReps(parsed);
-                    }}
-                    onBlur={() => {
-                      setIsRepsInputFocused(false);
-                      commitRepsInput();
-                    }}
-                    onFocus={() => setIsRepsInputFocused(true)}
-                    onSubmitEditing={commitRepsInput}
-                    keyboardType="number-pad"
-                    returnKeyType="done"
-                    selectTextOnFocus
-                    maxLength={3}
-                    testID="reps-input"
-                  />
-                  <Text style={styles.stepperUnit}>rps</Text>
+
+                {/* Sets header */}
+                <View style={styles.setsHeader}>
+                  <Text style={styles.setsLabel}>SETS · {activeSets.length}</Text>
+                  {hasLoggedSets && (
+                    <TouchableOpacity
+                      style={styles.undoBtn}
+                      onPress={() => {
+                        Alert.alert('Undo last set?', undefined, [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Undo', onPress: () => void store.undoLastSet() },
+                        ]);
+                      }}
+                    >
+                      <Ionicons name="arrow-undo" size={13} color={T.textDim} />
+                      <Text style={styles.undoBtnText}>UNDO</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-                <TouchableOpacity
-                  style={[styles.stepperBtn, styles.stepperBtnRight]}
-                  onPress={() => setReps((r) => r + 1)}
-                  onLongPress={() => setReps((r) => r + 5)}
-                  delayLongPress={400}
-                >
-                  <Text style={styles.stepperBtnText}>+</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-
-          {/* RPE chips */}
-          <View style={styles.rpeRow}>
-            <Text style={styles.rpeLabel}>RPE</Text>
-            {RPE_VALUES.map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[styles.rpeChip, rpe === r && styles.rpeChipActive]}
-                onPress={() => setRpe(rpe === r ? null : r)}
-              >
-                <Text style={[styles.rpeChipText, rpe === r && styles.rpeChipTextActive]}>{r}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Log set + Mic */}
-          <View style={styles.logRow}>
-            <TouchableOpacity
-              style={[styles.logBtn, (isLogging || justLogged) && styles.logBtnPressed]}
-              onPress={() => void handleLogSet()}
-              disabled={isLogging}
-              testID="log-set-btn"
-              activeOpacity={0.88}
-            >
-              <Text style={styles.logBtnText}>{logBtnLabel}</Text>
-            </TouchableOpacity>
-            <MicButton />
-          </View>
-        </View>
-      )}
-
-      <ExercisePicker
-        visible={pickerVisible}
-        onSelect={(ex) => {
-          addExercise({
-            id: ex.id,
-            name: ex.name,
-            category: ex.category,
-            default_unit: ex.default_unit,
-          });
-          setPickerVisible(false);
-        }}
-        onClose={() => setPickerVisible(false)}
-      />
-
-      <ExerciseHistorySheet
-        visible={historyVisible}
-        exerciseId={activeExercise?.id ?? null}
-        exerciseName={activeExercise?.name ?? ''}
-        category={activeExercise?.category ?? 'barbell'}
-            targetReps={activeExercise?.targetReps ?? null}
-            targetSets={activeExercise?.targetSets ?? null}
-            targetWeight={activeExercise?.targetWeight ?? null}
-            progressionRule={activeExercise?.progressionRule ?? { rule: 'none' }}
-            progressionExercise={
-              activeExercise?.progressionExercise ?? {
-                category: activeExercise?.category ?? 'barbell',
-              }
+                {activeVolumePR && (
+                  <View style={styles.potentialPrCard} testID="active-volume-pr-pending">
+                    <Ionicons name="sparkles-outline" size={13} color={T.accent} />
+                    <Text style={styles.potentialPrText}>
+                      {formatPotentialPRLine([activeVolumePR])}
+                    </Text>
+                  </View>
+                )}
+              </>
             }
-            defaultUnit={activeExercise?.defaultUnit ?? 'kg'}
-            onClose={() => setHistoryVisible(false)}
-            onApplySuggestion={(next) => {
-          if (next.weight !== null) setWeight(next.weight);
-          if (next.reps !== null) setReps(next.reps);
-          setRpe(null);
-        }}
-      />
-
-      <Modal
-        visible={summaryVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSummaryVisible(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.summarySheet} testID="workout-summary-modal">
-            <View style={styles.editHeader}>
-              <Text style={styles.editTitle}>Workout Summary</Text>
-              <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={() => setSummaryVisible(false)}
-                hitSlop={8}
-                testID="summary-close-btn"
-              >
-                <Ionicons name="close" size={16} color={T.textDim} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.summaryGrid}>
-              <View style={styles.summaryStat}>
-                <Text style={styles.summaryStatLabel}>Elapsed</Text>
-                <Text style={styles.summaryStatValue} testID="summary-elapsed">
-                  {formatElapsed(elapsedSecs)}
+            ListEmptyComponent={
+              <View style={styles.emptySetRow}>
+                <Text style={styles.emptySetText}>
+                  No sets yet. Suggestion below pre-fills the logger.
                 </Text>
               </View>
-              <View style={styles.summaryStat}>
-                <Text style={styles.summaryStatLabel}>Total Sets</Text>
-                <Text style={styles.summaryStatValue} testID="summary-total-sets">
-                  {liveSummary.totalSets}
-                </Text>
-              </View>
-              <View style={styles.summaryStat}>
-                <Text style={styles.summaryStatLabel}>Working Sets</Text>
-                <Text style={styles.summaryStatValue} testID="summary-working-sets">
-                  {liveSummary.workingSets}
-                </Text>
-              </View>
-              <View style={styles.summaryStat}>
-                <Text style={styles.summaryStatLabel}>Volume</Text>
-                <Text style={styles.summaryStatValue} testID="summary-total-volume">
-                  {liveSummary.totalVolume.toLocaleString()} kg
-                </Text>
-              </View>
-              <View style={styles.summaryStat}>
-                <Text style={styles.summaryStatLabel}>Working Volume</Text>
-                <Text style={styles.summaryStatValue} testID="summary-working-volume">
-                  {liveSummary.workingVolume.toLocaleString()} kg
-                </Text>
-              </View>
-            </View>
-
-            <ScrollView
-              style={styles.summaryScroll}
-              contentContainerStyle={styles.summaryExerciseList}
-            >
-              <Text style={styles.summarySectionLabel}>Exercises</Text>
-              {liveSummary.exercises.length === 0 ? (
-                <Text style={styles.summaryEmpty}>No sets logged yet.</Text>
-              ) : (
-                liveSummary.exercises.map(
-                  ({ exercise, completedSets, remainingSets, state, target }) => (
-                    <View key={exercise.id} style={styles.summaryExerciseCard}>
-                      <View style={styles.summaryExerciseHeader}>
-                        <Text style={styles.summaryExerciseName} numberOfLines={1}>
-                          {exercise.name}
-                        </Text>
-                        <Text style={styles.summaryExerciseState}>{state}</Text>
-                      </View>
-                      {target !== null && (
-                        <Text style={styles.summaryTarget}>Target: {target}</Text>
-                      )}
-                      <Text style={styles.summaryDoneLabel}>Done:</Text>
-                      {completedSets.length === 0 ? (
-                        <Text style={styles.summaryEmpty}>None</Text>
-                      ) : (
-                        completedSets.map((set, index) => (
-                          <Text key={set.id} style={styles.summarySetLine}>
-                            {index + 1}. {set.weight ?? '—'} × {set.reps ?? '—'}{' '}
-                            {getSetTypeLabel(set.set_type)}
-                          </Text>
-                        ))
-                      )}
-                      {remainingSets !== null && (
-                        <Text style={styles.summaryLeft} testID={`summary-left-${exercise.id}`}>
-                          Left: {remainingSets} working {remainingSets === 1 ? 'set' : 'sets'}
-                        </Text>
-                      )}
+            }
+            renderItem={({ item, index }) => {
+              const rowPotentialPRs = potentialPRsBySetId.get(item.id) ?? [];
+              return (
+                <View style={styles.setRowWrap}>
+                  <View style={styles.setRow} testID={`set-row-${item.id}`}>
+                    <Text style={styles.setIndex}>#{index + 1}</Text>
+                    <Text style={styles.setTypeChip} testID={`set-type-${item.id}`}>
+                      {getSetTypeLabel(item.set_type, true)}
+                    </Text>
+                    <View style={styles.setMetric}>
+                      <TextInput
+                        style={styles.setMetricInput}
+                        value={
+                          setDrafts[item.id]?.weight ??
+                          (item.weight !== null ? formatWeightInput(item.weight) : '')
+                        }
+                        onChangeText={(next) => updateSetDraft(item.id, 'weight', next)}
+                        onBlur={() => void commitSetWeightInput(item)}
+                        onSubmitEditing={() => void commitSetWeightInput(item)}
+                        keyboardType="decimal-pad"
+                        returnKeyType="done"
+                        placeholder="—"
+                        placeholderTextColor={T.muted}
+                        selectTextOnFocus
+                        maxLength={7}
+                        testID={`set-weight-input-${item.id}`}
+                      />
+                      <Text style={styles.setUnit}>{item.unit}</Text>
                     </View>
-                  ),
-                )
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={editingSet !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setEditingSet(null)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.editSheet}>
-            <View style={styles.editHeader}>
-              <Text style={styles.editTitle}>Edit Set</Text>
+                    <View style={styles.setMetric}>
+                      <TextInput
+                        style={styles.setMetricInput}
+                        value={
+                          setDrafts[item.id]?.reps ?? (item.reps !== null ? String(item.reps) : '')
+                        }
+                        onChangeText={(next) => updateSetDraft(item.id, 'reps', next)}
+                        onBlur={() => void commitSetRepsInput(item)}
+                        onSubmitEditing={() => void commitSetRepsInput(item)}
+                        keyboardType="number-pad"
+                        returnKeyType="done"
+                        placeholder="—"
+                        placeholderTextColor={T.muted}
+                        selectTextOnFocus
+                        maxLength={3}
+                        testID={`set-reps-input-${item.id}`}
+                      />
+                      <Text style={styles.setUnit}>reps</Text>
+                    </View>
+                    <Text style={styles.setRpe}>{item.rpe !== null ? `RPE ${item.rpe}` : '—'}</Text>
+                    <View style={styles.setCheck}>
+                      <Ionicons name="checkmark" size={14} color={T.success} />
+                    </View>
+                    <View style={styles.setActions}>
+                      <TouchableOpacity
+                        style={styles.setActionBtn}
+                        onPress={() => openEditSet(item)}
+                        hitSlop={6}
+                        testID={`edit-set-btn-${item.id}`}
+                      >
+                        <Ionicons name="create-outline" size={14} color={T.textDim} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.setActionBtn}
+                        onPress={() => handleDeleteSet(item)}
+                        hitSlop={6}
+                      >
+                        <Ionicons name="trash-outline" size={14} color={T.danger} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  {rowPotentialPRs.length > 0 && (
+                    <View style={styles.potentialPrLine} testID={`potential-pr-${item.id}`}>
+                      <Ionicons name="sparkles-outline" size={12} color={T.accent} />
+                      <Text style={styles.potentialPrText}>
+                        {formatPotentialPRLine(rowPotentialPRs)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            }}
+            ListFooterComponent={
               <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={() => setEditingSet(null)}
-                hitSlop={8}
+                style={styles.addExSmallBtn}
+                onPress={() => setPickerVisible(true)}
+                testID="add-exercise-tab"
               >
-                <Ionicons name="close" size={16} color={T.textDim} />
+                <Ionicons name="add" size={15} color={T.muted} />
+                <Text style={styles.addExSmallText}>Add exercise</Text>
               </TouchableOpacity>
+            }
+          />
+        )}
+
+        {/* ── Logger (pinned bottom) ───────────────────────────── */}
+        {exercises.length > 0 && activeExercise && (
+          <View style={styles.loggerBlock}>
+            {ENABLE_TYPED_VOICE_DEBUG && (
+              <View style={styles.voiceDebug}>
+                <View style={styles.voiceInputRow}>
+                  <TextInput
+                    style={styles.voiceInput}
+                    value={voiceText}
+                    onChangeText={setVoiceText}
+                    placeholder="Typed voice debug"
+                    placeholderTextColor={T.muted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onSubmitEditing={handleVoiceDebugSubmit}
+                    returnKeyType="done"
+                  />
+                  <TouchableOpacity style={styles.voiceRunBtn} onPress={handleVoiceDebugSubmit}>
+                    <Ionicons name="play" size={14} color={T.accentInk} />
+                  </TouchableOpacity>
+                </View>
+                <VoiceConfirm result={voiceResult} />
+                {voiceResult?.confidence === 'medium' || voiceResult?.requiresConfirmation ? (
+                  <TouchableOpacity
+                    style={styles.voiceConfirmBtn}
+                    onPress={() => voiceResult && void commitVoiceResult(voiceResult)}
+                  >
+                    <Text style={styles.voiceConfirmText}>Confirm</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {voiceMessage && <Text style={styles.voiceMessage}>{voiceMessage}</Text>}
+              </View>
+            )}
+
+            {/* Suggestion line */}
+            <TouchableOpacity
+              style={styles.suggestionRow}
+              disabled={!suggestionHasValue}
+              onPress={() => {
+                if (suggestion.weight !== null) setWeight(suggestion.weight);
+                if (suggestion.reps !== null) setReps(suggestion.reps);
+                setRpe(null);
+              }}
+              testID="suggestion-row"
+            >
+              <View style={styles.suggestionDot} />
+              <Text style={styles.suggestionText} numberOfLines={1}>
+                Suggest ·{' '}
+                <Text style={styles.suggestionValue}>
+                  {suggestionHasValue
+                    ? `${suggestion.weight ?? '—'} × ${suggestionRepsDisplay}`
+                    : suggestionReason}
+                </Text>
+                {suggestionHasValue ? ` · ${suggestionReason}` : ''}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.nextSetHeader}>
+              <Text style={styles.nextSetLabel}>NEXT SET</Text>
+              <Text style={styles.nextSetValue} numberOfLines={1}>
+                {nextSetSummary}
+              </Text>
             </View>
 
+            <View style={styles.setTypeRow}>
+              {SET_TYPE_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[styles.setTypeBtn, setType === option.value && styles.setTypeBtnActive]}
+                  onPress={() => setSetType(option.value)}
+                  testID={`set-type-option-${option.value}`}
+                >
+                  <Text
+                    style={[
+                      styles.setTypeBtnText,
+                      setType === option.value && styles.setTypeBtnTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Steppers */}
             <View style={styles.steppersRow}>
               <View style={styles.stepperWrap}>
-                <Text style={styles.stepperLabel}>
-                  WEIGHT · {editingSet?.unit.toUpperCase() ?? 'KG'}
-                </Text>
+                <Text style={styles.stepperLabel}>WEIGHT · KG</Text>
                 <View style={styles.stepper}>
                   <TouchableOpacity
                     style={[styles.stepperBtn, styles.stepperBtnLeft]}
-                    onPress={() =>
-                      setEditWeight((w) => Math.max(0, parseFloat((w - 2.5).toFixed(2))))
+                    onPress={() => setWeight((w) => Math.max(0, parseFloat((w - 2.5).toFixed(2))))}
+                    onLongPress={() =>
+                      setWeight((w) => Math.max(0, parseFloat((w - 10).toFixed(2))))
                     }
+                    delayLongPress={400}
                   >
                     <Text style={styles.stepperBtnText}>−</Text>
                   </TouchableOpacity>
                   <View style={styles.stepperValueWrap}>
-                    <Text style={styles.stepperValue}>
-                      {editWeight % 1 === 0 ? editWeight : editWeight.toFixed(1)}
-                    </Text>
-                    <Text style={styles.stepperUnit}>{editingSet?.unit ?? 'kg'}</Text>
+                    <TextInput
+                      style={styles.stepperValueInput}
+                      value={weightInput}
+                      onChangeText={(next) => {
+                        setWeightInput(next);
+                        const parsed = parseNonNegativeNumber(next);
+                        if (parsed !== null) setWeight(parseFloat(parsed.toFixed(2)));
+                      }}
+                      onBlur={() => {
+                        setIsWeightInputFocused(false);
+                        commitWeightInput();
+                      }}
+                      onFocus={() => setIsWeightInputFocused(true)}
+                      onSubmitEditing={commitWeightInput}
+                      keyboardType="decimal-pad"
+                      returnKeyType="done"
+                      selectTextOnFocus
+                      maxLength={7}
+                      testID="weight-input"
+                    />
+                    <Text style={styles.stepperUnit}>kg</Text>
                   </View>
                   <TouchableOpacity
                     style={[styles.stepperBtn, styles.stepperBtnRight]}
-                    onPress={() => setEditWeight((w) => parseFloat((w + 2.5).toFixed(2)))}
+                    onPress={() => setWeight((w) => parseFloat((w + 2.5).toFixed(2)))}
+                    onLongPress={() => setWeight((w) => parseFloat((w + 10).toFixed(2)))}
+                    delayLongPress={400}
                   >
                     <Text style={styles.stepperBtnText}>+</Text>
                   </TouchableOpacity>
@@ -1772,17 +1601,40 @@ export default function LiveWorkout() {
                 <View style={styles.stepper}>
                   <TouchableOpacity
                     style={[styles.stepperBtn, styles.stepperBtnLeft]}
-                    onPress={() => setEditReps((r) => Math.max(1, r - 1))}
+                    onPress={() => setReps((r) => Math.max(1, r - 1))}
+                    onLongPress={() => setReps((r) => Math.max(1, r - 5))}
+                    delayLongPress={400}
                   >
                     <Text style={styles.stepperBtnText}>−</Text>
                   </TouchableOpacity>
                   <View style={styles.stepperValueWrap}>
-                    <Text style={styles.stepperValue}>{editReps}</Text>
+                    <TextInput
+                      style={styles.stepperValueInput}
+                      value={repsInput}
+                      onChangeText={(next) => {
+                        setRepsInput(next);
+                        const parsed = parsePositiveInteger(next);
+                        if (parsed !== null) setReps(parsed);
+                      }}
+                      onBlur={() => {
+                        setIsRepsInputFocused(false);
+                        commitRepsInput();
+                      }}
+                      onFocus={() => setIsRepsInputFocused(true)}
+                      onSubmitEditing={commitRepsInput}
+                      keyboardType="number-pad"
+                      returnKeyType="done"
+                      selectTextOnFocus
+                      maxLength={3}
+                      testID="reps-input"
+                    />
                     <Text style={styles.stepperUnit}>rps</Text>
                   </View>
                   <TouchableOpacity
                     style={[styles.stepperBtn, styles.stepperBtnRight]}
-                    onPress={() => setEditReps((r) => r + 1)}
+                    onPress={() => setReps((r) => r + 1)}
+                    onLongPress={() => setReps((r) => r + 5)}
+                    delayLongPress={400}
                   >
                     <Text style={styles.stepperBtnText}>+</Text>
                   </TouchableOpacity>
@@ -1790,63 +1642,306 @@ export default function LiveWorkout() {
               </View>
             </View>
 
+            {/* RPE chips */}
             <View style={styles.rpeRow}>
               <Text style={styles.rpeLabel}>RPE</Text>
-              {RPE_VALUES.map((value) => (
+              {RPE_VALUES.map((r) => (
                 <TouchableOpacity
-                  key={value}
-                  style={[styles.rpeChip, editRpe === value && styles.rpeChipActive]}
-                  onPress={() => setEditRpe(editRpe === value ? null : value)}
+                  key={r}
+                  style={[styles.rpeChip, rpe === r && styles.rpeChipActive]}
+                  onPress={() => setRpe(rpe === r ? null : r)}
+                  testID={`rpe-option-${r}`}
                 >
-                  <Text style={[styles.rpeChipText, editRpe === value && styles.rpeChipTextActive]}>
-                    {value}
+                  <Text style={[styles.rpeChipText, rpe === r && styles.rpeChipTextActive]}>
+                    {r}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <View style={styles.editSetTypeBlock}>
-              <Text style={styles.stepperLabel}>SET TYPE</Text>
-              <View style={styles.setTypeRow}>
-                {SET_TYPE_OPTIONS.map((option) => (
+            {/* Log set + Mic */}
+            <View style={styles.logRow}>
+              <TouchableOpacity
+                style={[styles.logBtn, (isLogging || justLogged) && styles.logBtnPressed]}
+                onPress={() => void handleLogSet()}
+                disabled={isLogging}
+                testID="log-set-btn"
+                activeOpacity={0.88}
+              >
+                <Text style={styles.logBtnText}>{logBtnLabel}</Text>
+              </TouchableOpacity>
+              <MicButton />
+            </View>
+          </View>
+        )}
+
+        <ExercisePicker
+          visible={pickerVisible}
+          onSelect={(ex) => {
+            addExercise({
+              id: ex.id,
+              name: ex.name,
+              category: ex.category,
+              default_unit: ex.default_unit,
+            });
+            setPickerVisible(false);
+          }}
+          onClose={() => setPickerVisible(false)}
+        />
+
+        <ExerciseHistorySheet
+          visible={historyVisible}
+          exerciseId={activeExercise?.id ?? null}
+          exerciseName={activeExercise?.name ?? ''}
+          category={activeExercise?.category ?? 'barbell'}
+          targetReps={activeExercise?.targetReps ?? null}
+          targetSets={activeExercise?.targetSets ?? null}
+          targetWeight={activeExercise?.targetWeight ?? null}
+          progressionRule={activeExercise?.progressionRule ?? { rule: 'none' }}
+          progressionExercise={
+            activeExercise?.progressionExercise ?? {
+              category: activeExercise?.category ?? 'barbell',
+            }
+          }
+          defaultUnit={activeExercise?.defaultUnit ?? 'kg'}
+          onClose={() => setHistoryVisible(false)}
+          onApplySuggestion={(next) => {
+            if (next.weight !== null) setWeight(next.weight);
+            if (next.reps !== null) setReps(next.reps);
+            setRpe(null);
+          }}
+        />
+
+        <Modal
+          visible={summaryVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setSummaryVisible(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.summarySheet} testID="workout-summary-modal">
+              <View style={styles.editHeader}>
+                <Text style={styles.editTitle}>Workout Summary</Text>
+                <TouchableOpacity
+                  style={styles.iconBtn}
+                  onPress={() => setSummaryVisible(false)}
+                  hitSlop={8}
+                  testID="summary-close-btn"
+                >
+                  <Ionicons name="close" size={16} color={T.textDim} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.summaryGrid}>
+                <View style={styles.summaryStat}>
+                  <Text style={styles.summaryStatLabel}>Elapsed</Text>
+                  <Text style={styles.summaryStatValue} testID="summary-elapsed">
+                    {formatElapsed(elapsedSecs)}
+                  </Text>
+                </View>
+                <View style={styles.summaryStat}>
+                  <Text style={styles.summaryStatLabel}>Total Sets</Text>
+                  <Text style={styles.summaryStatValue} testID="summary-total-sets">
+                    {liveSummary.totalSets}
+                  </Text>
+                </View>
+                <View style={styles.summaryStat}>
+                  <Text style={styles.summaryStatLabel}>Working Sets</Text>
+                  <Text style={styles.summaryStatValue} testID="summary-working-sets">
+                    {liveSummary.workingSets}
+                  </Text>
+                </View>
+                <View style={styles.summaryStat}>
+                  <Text style={styles.summaryStatLabel}>Volume</Text>
+                  <Text style={styles.summaryStatValue} testID="summary-total-volume">
+                    {liveSummary.totalVolume.toLocaleString()} kg
+                  </Text>
+                </View>
+                <View style={styles.summaryStat}>
+                  <Text style={styles.summaryStatLabel}>Working Volume</Text>
+                  <Text style={styles.summaryStatValue} testID="summary-working-volume">
+                    {liveSummary.workingVolume.toLocaleString()} kg
+                  </Text>
+                </View>
+              </View>
+
+              <ScrollView
+                style={styles.summaryScroll}
+                contentContainerStyle={styles.summaryExerciseList}
+              >
+                <Text style={styles.summarySectionLabel}>Exercises</Text>
+                {liveSummary.exercises.length === 0 ? (
+                  <Text style={styles.summaryEmpty}>No sets logged yet.</Text>
+                ) : (
+                  liveSummary.exercises.map(
+                    ({ exercise, completedSets, remainingSets, state, target }) => (
+                      <View key={exercise.id} style={styles.summaryExerciseCard}>
+                        <View style={styles.summaryExerciseHeader}>
+                          <Text style={styles.summaryExerciseName} numberOfLines={1}>
+                            {exercise.name}
+                          </Text>
+                          <Text style={styles.summaryExerciseState}>{state}</Text>
+                        </View>
+                        {target !== null && (
+                          <Text style={styles.summaryTarget}>Target: {target}</Text>
+                        )}
+                        <Text style={styles.summaryDoneLabel}>Done:</Text>
+                        {completedSets.length === 0 ? (
+                          <Text style={styles.summaryEmpty}>None</Text>
+                        ) : (
+                          completedSets.map((set, index) => (
+                            <Text key={set.id} style={styles.summarySetLine}>
+                              {index + 1}. {set.weight ?? '—'} × {set.reps ?? '—'}{' '}
+                              {getSetTypeLabel(set.set_type)}
+                            </Text>
+                          ))
+                        )}
+                        {remainingSets !== null && (
+                          <Text style={styles.summaryLeft} testID={`summary-left-${exercise.id}`}>
+                            Left: {remainingSets} working {remainingSets === 1 ? 'set' : 'sets'}
+                          </Text>
+                        )}
+                      </View>
+                    ),
+                  )
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={editingSet !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setEditingSet(null)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.editSheet}>
+              <View style={styles.editHeader}>
+                <Text style={styles.editTitle}>Edit Set</Text>
+                <TouchableOpacity
+                  style={styles.iconBtn}
+                  onPress={() => setEditingSet(null)}
+                  hitSlop={8}
+                >
+                  <Ionicons name="close" size={16} color={T.textDim} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.steppersRow}>
+                <View style={styles.stepperWrap}>
+                  <Text style={styles.stepperLabel}>
+                    WEIGHT · {editingSet?.unit.toUpperCase() ?? 'KG'}
+                  </Text>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity
+                      style={[styles.stepperBtn, styles.stepperBtnLeft]}
+                      onPress={() =>
+                        setEditWeight((w) => Math.max(0, parseFloat((w - 2.5).toFixed(2))))
+                      }
+                    >
+                      <Text style={styles.stepperBtnText}>−</Text>
+                    </TouchableOpacity>
+                    <View style={styles.stepperValueWrap}>
+                      <Text style={styles.stepperValue}>
+                        {editWeight % 1 === 0 ? editWeight : editWeight.toFixed(1)}
+                      </Text>
+                      <Text style={styles.stepperUnit}>{editingSet?.unit ?? 'kg'}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.stepperBtn, styles.stepperBtnRight]}
+                      onPress={() => setEditWeight((w) => parseFloat((w + 2.5).toFixed(2)))}
+                    >
+                      <Text style={styles.stepperBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.stepperWrap}>
+                  <Text style={styles.stepperLabel}>REPS</Text>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity
+                      style={[styles.stepperBtn, styles.stepperBtnLeft]}
+                      onPress={() => setEditReps((r) => Math.max(1, r - 1))}
+                    >
+                      <Text style={styles.stepperBtnText}>−</Text>
+                    </TouchableOpacity>
+                    <View style={styles.stepperValueWrap}>
+                      <Text style={styles.stepperValue}>{editReps}</Text>
+                      <Text style={styles.stepperUnit}>rps</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.stepperBtn, styles.stepperBtnRight]}
+                      onPress={() => setEditReps((r) => r + 1)}
+                    >
+                      <Text style={styles.stepperBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.rpeRow}>
+                <Text style={styles.rpeLabel}>RPE</Text>
+                {RPE_VALUES.map((value) => (
                   <TouchableOpacity
-                    key={option.value}
-                    style={[
-                      styles.setTypeBtn,
-                      editSetType === option.value && styles.setTypeBtnActive,
-                    ]}
-                    onPress={() => setEditSetType(option.value)}
-                    testID={`edit-set-type-option-${option.value}`}
+                    key={value}
+                    style={[styles.rpeChip, editRpe === value && styles.rpeChipActive]}
+                    onPress={() => setEditRpe(editRpe === value ? null : value)}
                   >
                     <Text
-                      style={[
-                        styles.setTypeBtnText,
-                        editSetType === option.value && styles.setTypeBtnTextActive,
-                      ]}
+                      style={[styles.rpeChipText, editRpe === value && styles.rpeChipTextActive]}
                     >
-                      {option.label}
+                      {value}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
 
-            <TouchableOpacity
-              style={styles.saveEditBtn}
-              onPress={() => void handleSaveEdit()}
-              testID="save-edit-set-btn"
-            >
-              <Text style={styles.saveEditText}>Save Changes</Text>
-            </TouchableOpacity>
+              <View style={styles.editSetTypeBlock}>
+                <Text style={styles.stepperLabel}>SET TYPE</Text>
+                <View style={styles.setTypeRow}>
+                  {SET_TYPE_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.setTypeBtn,
+                        editSetType === option.value && styles.setTypeBtnActive,
+                      ]}
+                      onPress={() => setEditSetType(option.value)}
+                      testID={`edit-set-type-option-${option.value}`}
+                    >
+                      <Text
+                        style={[
+                          styles.setTypeBtnText,
+                          editSetType === option.value && styles.setTypeBtnTextActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.saveEditBtn}
+                onPress={() => void handleSaveEdit()}
+                testID="save-edit-set-btn"
+              >
+                <Text style={styles.saveEditText}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
+  keyboardAvoiding: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
 
   topBar: {
@@ -2234,6 +2329,7 @@ const styles = StyleSheet.create({
   },
   addExBtnText: { fontSize: 15, fontWeight: '600', color: T.accentInk },
   mutedText: { color: T.muted, fontSize: 14 },
+  errorTitle: { color: T.text, fontSize: 20, fontWeight: '700' },
 
   loggerBlock: {
     borderTopWidth: 1,

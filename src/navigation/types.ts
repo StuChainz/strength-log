@@ -4,7 +4,7 @@ import type { CompositeNavigationProp, RouteProp } from '@react-navigation/nativ
 
 export type RootStackParamList = {
   Main: undefined;
-  LiveWorkout: { templateId?: string } | undefined;
+  LiveWorkout: { templateId?: string; sessionId?: string } | undefined;
   EndWorkoutSummary: { sessionId: string };
   PostSessionTags: { sessionId: string };
   Settings: undefined;

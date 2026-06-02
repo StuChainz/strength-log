@@ -234,6 +234,23 @@ describe('ExercisePicker', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('keeps the add-exercise search input inside a keyboard-aware modal layout', async () => {
+    const { getByTestId } = render(<ExercisePicker {...defaultProps} />);
+    await waitFor(() => expect(getByTestId('picker-search-input')).toBeTruthy());
+
+    const keyboardWrapper = getByTestId('picker-keyboard-avoiding');
+    expect(keyboardWrapper).toBeTruthy();
+
+    fireEvent(getByTestId('picker-search-input'), 'focus');
+    fireEvent.changeText(getByTestId('picker-search-input'), 'squat');
+
+    await waitFor(() =>
+      expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
+        query: 'squat',
+      }),
+    );
+  });
+
   it('filters exercises by search query', async () => {
     const { getByTestId, queryByTestId } = render(<ExercisePicker {...defaultProps} />);
     await waitFor(() => expect(getByTestId('picker-exercise-ex-1')).toBeTruthy());
@@ -328,9 +345,7 @@ describe('ExercisePicker', () => {
   });
 
   it('resets search and filter when reopened', async () => {
-    const { getByTestId, queryByTestId, rerender } = render(
-      <ExercisePicker {...defaultProps} />,
-    );
+    const { getByTestId, queryByTestId, rerender } = render(<ExercisePicker {...defaultProps} />);
     await waitFor(() => expect(getByTestId('picker-exercise-ex-1')).toBeTruthy());
 
     // Apply a search filter

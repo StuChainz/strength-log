@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { openDb } from '@/db/client';
 import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
 import {
@@ -83,7 +93,11 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
       onRequestClose={onClose}
       testID="exercise-picker-modal"
     >
-      <View style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        testID="picker-keyboard-avoiding"
+      >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Select Exercise</Text>
@@ -137,6 +151,7 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
             data={exercises}
             keyExtractor={(item) => item.id}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
             ListEmptyComponent={
               <View style={styles.center}>
                 <Text style={styles.muted}>
@@ -162,7 +177,7 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
             ItemSeparatorComponent={() => <View style={styles.separator} />}
           />
         )}
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

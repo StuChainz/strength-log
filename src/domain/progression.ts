@@ -585,6 +585,80 @@ function withDefaults(s: ProgressionSuggestion, input: ProgressionInput): Progre
   };
 }
 
+function plannedNextSetSuggestion(input: ProgressionInput): ProgressionSuggestion | null {
+  const { templateTarget, progressionRule } = input;
+  const isAmrap = isNextSetTheAmrapSet(input);
+  const hasPlannedValue =
+    templateTarget.targetWeight !== null || templateTarget.targetReps !== null || isAmrap;
+
+  if (!hasPlannedValue) return null;
+
+  return withDefaults(
+    {
+      label: isAmrap ? 'AMRAP' : 'Planned target',
+      reason: isAmrap ? 'Planned AMRAP set' : 'Planned target',
+      weight: templateTarget.targetWeight,
+      reps: isAmrap ? null : templateTarget.targetReps,
+      rpe: null,
+      unit: templateTarget.unit,
+      source: progressionRule.rule === 'none' ? 'fallback' : 'template_rule',
+      rule: progressionRule.rule,
+      isAmrap,
+      amrapMinReps: isAmrap ? templateTarget.targetReps : undefined,
+      confidence: 'high',
+      requiresUserAction: false,
+    },
+    input,
+  );
+}
+
+function repeatLatestLoggedSetSuggestion(input: ProgressionInput): ProgressionSuggestion | null {
+  const lastSet = lastWorkingSet(input.recentSets);
+  if (!lastSet || (lastSet.weight === null && lastSet.reps === null)) return null;
+
+  let label = 'Repeat logged set';
+  let reason = 'Repeat logged set';
+  let confidence: ConfidenceLabel = 'medium';
+
+  if (input.progressionRule.rule === 'rpe_gated' && lastSet.rpe !== null) {
+    const cap = input.progressionRule.rpeCap ?? 8.5;
+    if (lastSet.rpe > cap) {
+      label = 'RPE cap: repeat logged set';
+      reason = `RPE ${displayNumber(lastSet.rpe)} exceeds cap ${displayNumber(cap)}: repeat logged set`;
+      confidence = 'high';
+    } else {
+      label = 'RPE under cap: repeat logged set';
+      reason = `RPE ${displayNumber(lastSet.rpe)} at or under cap ${displayNumber(cap)}: repeat logged set`;
+    }
+  }
+
+  return withDefaults(
+    {
+      label,
+      reason,
+      weight: lastSet.weight,
+      reps: lastSet.reps,
+      rpe: null,
+      unit: lastSet.unit,
+      source: input.progressionRule.rule === 'none' ? 'fallback' : 'template_rule',
+      rule: input.progressionRule.rule,
+      confidence,
+      requiresUserAction: false,
+    },
+    input,
+  );
+}
+
+export function getLiveWorkoutSuggestion(input: ProgressionInput): ProgressionSuggestion {
+  const latestLogged = repeatLatestLoggedSetSuggestion(input);
+  if (latestLogged) return latestLogged;
+
+  const planned = plannedNextSetSuggestion(input);
+  if (planned) return planned;
+
+  return getProgressionSuggestion(input);
+}
+
 export function getProgressionSuggestion(input: ProgressionInput): ProgressionSuggestion {
   const amrapGate = amrapThresholdSuggestion(input);
   if (amrapGate) return withDefaults(withAmrapOverride(input, amrapGate), input);

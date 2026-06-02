@@ -1,11 +1,13 @@
 import { Component, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { openDb } from '@/db/client';
 import { RootNavigator } from '@/navigation/RootNavigator';
+import { registerRestTimerNotificationNavigation } from '@/notifications/restTimerNotifications';
 import { T } from '@/theme/tokens';
+import type { RootStackParamList } from '@/navigation/types';
 
 const AppTheme = {
   ...DarkTheme,
@@ -56,6 +58,7 @@ export default function App() {
   const [bootState, setBootState] = useState<'booting' | 'ready' | 'error'>('booting');
   const [bootError, setBootError] = useState<Error | null>(null);
   const bootAttemptRef = useRef(0);
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
 
   const boot = useCallback(() => {
     const bootAttempt = bootAttemptRef.current + 1;
@@ -85,11 +88,16 @@ export default function App() {
     };
   }, [boot]);
 
+  useEffect(() => {
+    if (bootState !== 'ready') return;
+    return registerRestTimerNotificationNavigation(navigationRef);
+  }, [bootState, navigationRef]);
+
   return (
     <StartupBoundary>
       <SafeAreaProvider>
         {bootState === 'ready' ? (
-          <NavigationContainer theme={AppTheme}>
+          <NavigationContainer ref={navigationRef} theme={AppTheme}>
             <RootNavigator />
           </NavigationContainer>
         ) : bootState === 'error' ? (

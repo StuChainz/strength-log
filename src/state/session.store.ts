@@ -56,7 +56,7 @@ export interface LogSetParams {
   clientEventId?: string;
 }
 
-export type StorePhase = 'loading' | 'prompt_resume' | 'active' | 'ended';
+export type StorePhase = 'loading' | 'prompt_resume' | 'active' | 'ended' | 'error';
 
 export interface UseSessionStoreReturn {
   phase: StorePhase;
@@ -178,6 +178,10 @@ async function recordFinalPrsSafely(db: SQLiteDatabase, sessionId: string): Prom
   }
 }
 
+function startErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function useSessionStore(templateId: string | undefined): UseSessionStoreReturn {
   const [phase, setPhase] = useState<StorePhase>('loading');
   const [session, setSession] = useState<WorkoutSession | null>(null);
@@ -240,7 +244,13 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
         setSession(sess);
         setPhase('active');
       }
-    })().catch(() => {});
+    })().catch((error) => {
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.warn('[session] start failed', startErrorMessage(error));
+      }
+      if (!cancelled) setPhase('error');
+    });
 
     return () => {
       cancelled = true;
@@ -279,19 +289,31 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
   const discardAndStart = useCallback(async () => {
     const db = dbRef.current;
     if (!db || !existingSession) return;
-    await dbDiscardSession(db, existingSession.id);
-    setExistingSession(null);
-    setRecovery(null);
-    const sess = await createSession(db, { templateId: templateId ?? null, name: null });
-    setResumedStartedAt(null);
-    if (templateId) {
-      const exs = await loadExercisesForTemplate(db, templateId);
-      setExercises(exs);
-      setActiveExerciseId(exs[0]?.id ?? null);
+    try {
+      const sessionsToDiscard =
+        recovery?.status === 'none' ? [existingSession] : (recovery?.sessions ?? [existingSession]);
+      for (const sessionToDiscard of sessionsToDiscard) {
+        await dbDiscardSession(db, sessionToDiscard.id);
+      }
+      setExistingSession(null);
+      setRecovery(null);
+      const sess = await createSession(db, { templateId: templateId ?? null, name: null });
+      setResumedStartedAt(null);
+      if (templateId) {
+        const exs = await loadExercisesForTemplate(db, templateId);
+        setExercises(exs);
+        setActiveExerciseId(exs[0]?.id ?? null);
+      }
+      setSession(sess);
+      setPhase('active');
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.warn('[session] discard and start failed', startErrorMessage(error));
+      }
+      setPhase('error');
     }
-    setSession(sess);
-    setPhase('active');
-  }, [existingSession, templateId]);
+  }, [existingSession, recovery, templateId]);
 
   const logSet = useCallback(
     async (params: LogSetParams) => {
