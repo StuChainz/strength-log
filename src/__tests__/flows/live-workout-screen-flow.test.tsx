@@ -943,15 +943,46 @@ describe('LiveWorkout screen core flow', () => {
     expect(getByTestId('set-type-drop-set').props.children).toBe('DROP');
   });
 
-  it('shows a subtle live potential PR indicator after a qualifying set', async () => {
+  it('shows a compact live PR indicator after a qualifying set', async () => {
     const store = activeStore();
     useSessionStoreMock.mockReturnValue(store);
 
-    const { getAllByText, getByTestId, getByText } = render(<LiveWorkout />);
+    const { getByTestId, getByText, queryByText } = render(<LiveWorkout />);
 
-    await waitFor(() => expect(getByTestId('potential-pr-set-1')).toBeTruthy());
-    expect(getByText(/Potential rep PR/)).toBeTruthy();
-    expect(getAllByText(/PR pending until workout is saved/).length).toBeGreaterThan(0);
+    await waitFor(() => expect(getByTestId('set-pr-badge-set-1')).toBeTruthy());
+    expect(getByText('3 PRs today')).toBeTruthy();
+    expect(queryByText(/PR pending until workout is saved/)).toBeNull();
+  });
+
+  it('consolidates multiple live PRs instead of stacking pending banners', async () => {
+    const store = activeStore({
+      sets: [
+        {
+          ...activeStore().sets[0]!,
+          id: 'set-1',
+          weight: 82.5,
+          reps: 5,
+          logged_at: 1,
+        },
+        {
+          ...activeStore().sets[0]!,
+          id: 'set-2',
+          position: 1,
+          weight: 90,
+          reps: 5,
+          logged_at: 2,
+          client_set_id: 'client-set-2',
+        },
+      ],
+    });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getAllByTestId, getByTestId, getByText, queryAllByText } = render(<LiveWorkout />);
+
+    await waitFor(() => expect(getByTestId('live-pr-summary')).toBeTruthy());
+    expect(getByText('3 PRs today')).toBeTruthy();
+    expect(getAllByTestId(/set-pr-badge-/)).toHaveLength(1);
+    expect(queryAllByText(/PR pending until workout is saved/)).toHaveLength(0);
   });
 
   it('does not show live potential PR indicators for warm-up sets', () => {
@@ -960,9 +991,9 @@ describe('LiveWorkout screen core flow', () => {
     });
     useSessionStoreMock.mockReturnValue(store);
 
-    const { queryByText } = render(<LiveWorkout />);
+    const { queryByTestId, queryByText } = render(<LiveWorkout />);
 
-    expect(queryByText(/Potential rep PR/)).toBeNull();
+    expect(queryByTestId('live-pr-summary')).toBeNull();
     expect(queryByText(/PR pending until workout is saved/)).toBeNull();
   });
 
@@ -979,28 +1010,28 @@ describe('LiveWorkout screen core flow', () => {
     useSessionStoreMock.mockReturnValue(strongStore);
     const screen = render(<LiveWorkout />);
 
-    await waitFor(() => expect(screen.getByText(/Potential rep PR/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('set-pr-badge-set-1')).toBeTruthy());
 
     const weakerStore = activeStore({
       sets: [{ ...activeStore().sets[0]!, weight: 75, reps: 5 }],
     });
     useSessionStoreMock.mockReturnValue(weakerStore);
     screen.rerender(<LiveWorkout />);
-    await waitFor(() => expect(screen.queryByText(/Potential rep PR/)).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('live-pr-summary')).toBeNull());
 
     const deletedStore = activeStore({
       sets: [{ ...activeStore().sets[0]!, weight: 85, reps: 5, deleted_at: 123 }],
     });
     useSessionStoreMock.mockReturnValue(deletedStore);
     screen.rerender(<LiveWorkout />);
-    expect(screen.queryByText(/Potential rep PR/)).toBeNull();
+    expect(screen.queryByTestId('live-pr-summary')).toBeNull();
 
     const warmupStore = activeStore({
       sets: [{ ...activeStore().sets[0]!, weight: 85, reps: 5, set_type: 'warmup', is_warmup: 1 }],
     });
     useSessionStoreMock.mockReturnValue(warmupStore);
     screen.rerender(<LiveWorkout />);
-    expect(screen.queryByText(/Potential rep PR/)).toBeNull();
+    expect(screen.queryByTestId('live-pr-summary')).toBeNull();
   });
 
   it('does not write final PR rows from the live workout screen', () => {

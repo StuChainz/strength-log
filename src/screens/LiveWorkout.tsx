@@ -198,9 +198,8 @@ function getRecentHistoryBuckets(sets: WorkoutSet[]): {
   };
 }
 
-function formatPotentialPRLine(indicators: Pick<LivePotentialPR, 'label'>[]): string {
-  const labels = Array.from(new Set(indicators.map((indicator) => indicator.label)));
-  return `${labels.join(' · ')} · PR pending until workout is saved`;
+function formatLivePRCount(count: number): string {
+  return `${count} PR${count === 1 ? '' : 's'} today`;
 }
 
 function scheduleRestNotificationSafely(durationSeconds: number, sessionId: string) {
@@ -386,10 +385,9 @@ export default function LiveWorkout() {
     }
     return bySetId;
   }, [potentialPRs]);
-  const activeVolumePR = potentialPRs.find(
-    (indicator) =>
-      indicator.exercise_id === activeExerciseId && indicator.record_type === 'session_volume',
-  );
+  const activePotentialPRCount = potentialPRs.filter(
+    (indicator) => indicator.exercise_id === activeExerciseId,
+  ).length;
   const restRemainingSeconds = restTimer ? getRestTimerRemainingSeconds(restTimer, restNow) : 0;
   const restTimerExerciseName =
     restTimer?.exerciseName ??
@@ -1337,29 +1335,31 @@ export default function LiveWorkout() {
                 {/* Sets header */}
                 <View style={styles.setsHeader}>
                   <Text style={styles.setsLabel}>SETS · {activeSets.length}</Text>
-                  {hasLoggedSets && (
-                    <TouchableOpacity
-                      style={styles.undoBtn}
-                      onPress={() => {
-                        Alert.alert('Undo last set?', undefined, [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Undo', onPress: () => void store.undoLastSet() },
-                        ]);
-                      }}
-                    >
-                      <Ionicons name="arrow-undo" size={13} color={T.textDim} />
-                      <Text style={styles.undoBtnText}>UNDO</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-                {activeVolumePR && (
-                  <View style={styles.potentialPrCard} testID="active-volume-pr-pending">
-                    <Ionicons name="sparkles-outline" size={13} color={T.accent} />
-                    <Text style={styles.potentialPrText}>
-                      {formatPotentialPRLine([activeVolumePR])}
-                    </Text>
+                  <View style={styles.setsHeaderActions}>
+                    {activePotentialPRCount > 0 && (
+                      <View style={styles.livePrSummary} testID="live-pr-summary">
+                        <Ionicons name="sparkles-outline" size={12} color={T.accent} />
+                        <Text style={styles.livePrSummaryText}>
+                          {formatLivePRCount(activePotentialPRCount)}
+                        </Text>
+                      </View>
+                    )}
+                    {hasLoggedSets && (
+                      <TouchableOpacity
+                        style={styles.undoBtn}
+                        onPress={() => {
+                          Alert.alert('Undo last set?', undefined, [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Undo', onPress: () => void store.undoLastSet() },
+                          ]);
+                        }}
+                      >
+                        <Ionicons name="arrow-undo" size={13} color={T.textDim} />
+                        <Text style={styles.undoBtnText}>UNDO</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
-                )}
+                </View>
               </>
             }
             ListEmptyComponent={
@@ -1421,6 +1421,11 @@ export default function LiveWorkout() {
                     <View style={styles.setCheck}>
                       <Ionicons name="checkmark" size={14} color={T.success} />
                     </View>
+                    {rowPotentialPRs.length > 0 && (
+                      <View style={styles.setPrBadge} testID={`set-pr-badge-${item.id}`}>
+                        <Text style={styles.setPrBadgeText}>PR</Text>
+                      </View>
+                    )}
                     <View style={styles.setActions}>
                       <TouchableOpacity
                         style={styles.setActionBtn}
@@ -1439,14 +1444,6 @@ export default function LiveWorkout() {
                       </TouchableOpacity>
                     </View>
                   </View>
-                  {rowPotentialPRs.length > 0 && (
-                    <View style={styles.potentialPrLine} testID={`potential-pr-${item.id}`}>
-                      <Ionicons name="sparkles-outline" size={12} color={T.accent} />
-                      <Text style={styles.potentialPrText}>
-                        {formatPotentialPRLine(rowPotentialPRs)}
-                      </Text>
-                    </View>
-                  )}
                 </View>
               );
             }}
@@ -2182,6 +2179,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+    gap: 10,
   },
   setsLabel: {
     fontFamily: 'Courier New',
@@ -2190,6 +2188,29 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: T.muted,
     fontWeight: '500',
+  },
+  setsHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    flexShrink: 1,
+  },
+  livePrSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: T.surface,
+  },
+  livePrSummaryText: {
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    color: T.textDim,
   },
   undoBtn: {
     flexDirection: 'row',
@@ -2255,6 +2276,21 @@ const styles = StyleSheet.create({
   setRpe: { flex: 0.8, fontFamily: 'Courier New', fontSize: 12, color: T.textDim },
   setUnit: { fontSize: 10, color: T.muted },
   setCheck: { width: 28, alignItems: 'center' },
+  setPrBadge: {
+    minWidth: 26,
+    height: 22,
+    borderRadius: 999,
+    backgroundColor: T.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  setPrBadgeText: {
+    color: T.accentInk,
+    fontFamily: 'Courier New',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   setActions: { flexDirection: 'row', gap: 4, flexShrink: 0 },
   setActionBtn: {
     width: 28,
@@ -2266,32 +2302,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  potentialPrCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    backgroundColor: T.surface,
-    borderWidth: 1,
-    borderColor: T.border,
-    borderRadius: 10,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-    marginBottom: 8,
-  },
-  potentialPrLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingTop: 5,
-  },
-  potentialPrText: {
-    flex: 1,
-    color: T.textDim,
-    fontFamily: 'Courier New',
-    fontSize: 10.5,
-  },
-
   emptySetRow: {
     paddingVertical: 14,
     paddingHorizontal: 14,
