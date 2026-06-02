@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import MusclesWorkedSection from '@/components/MusclesWorkedSection';
 import { openDb } from '@/db/client';
 import { getWorkoutSummary, type WorkoutSummary } from '@/db/repositories/sessionSummary.repo';
+import { formatWorkoutVolumeKg } from '@/domain/volume';
 import { T } from '@/theme/tokens';
 import type {
   EndWorkoutSummaryNavigationProp,
@@ -27,7 +28,7 @@ function formatPR(pr: ExercisePRWithExercise): string {
   if (pr.record_type === 'estimated_1rm') {
     return `${pr.exercise_name}: ${pr.value.toFixed(1)}${pr.unit} estimated 1RM`;
   }
-  return `${pr.exercise_name}: ${Math.round(pr.value)}${pr.unit} session volume`;
+  return `${pr.exercise_name}: ${formatWorkoutVolumeKg(pr.value)} session volume`;
 }
 
 export default function EndWorkoutSummary() {
@@ -76,8 +77,8 @@ export default function EndWorkoutSummary() {
               <Text style={styles.metricLabel}>sets</Text>
             </View>
             <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>{Math.round(summary.volume)}</Text>
-              <Text style={styles.metricLabel}>kg volume</Text>
+              <Text style={styles.metricValue}>{formatWorkoutVolumeKg(summary.volume)}</Text>
+              <Text style={styles.metricLabel}>volume</Text>
             </View>
             <View style={styles.metricCard}>
               <Text style={styles.metricValue}>{summary.durationMin}</Text>

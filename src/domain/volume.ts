@@ -41,6 +41,20 @@ export function calculateWorkingSessionVolume(sets: WorkingVolumeSet[]): number 
   );
 }
 
+const wholeKgFormatter = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 0,
+});
+
+export function formatWorkoutVolumeKg(volume: number): string {
+  if (volume >= 10_000) {
+    const tonnes = Math.round((volume / 1000) * 10) / 10;
+    const formattedTonnes = tonnes % 1 === 0 ? wholeKgFormatter.format(tonnes) : tonnes.toFixed(1);
+    return `${formattedTonnes} tonnes`;
+  }
+
+  return `${wholeKgFormatter.format(Math.round(volume))} kg`;
+}
+
 export function calculateWorkoutSummarySoFar(
   sets: (Pick<WorkoutSet, 'exercise_id' | 'weight' | 'reps' | 'deleted_at'> & {
     set_type?: SetType;

@@ -30,6 +30,7 @@ import { detectLivePotentialPRs, type LivePotentialPR, type PreviousPRData } fro
 import {
   calculateSessionVolume,
   calculateWorkingSessionVolume,
+  formatWorkoutVolumeKg,
   isWorkingSet,
 } from '@/domain/volume';
 import { newId, normalizeName } from '@/domain/ids';
@@ -39,6 +40,7 @@ import {
   isRestTimerDone,
 } from '@/domain/restTimer';
 import { isStaleCommand } from '@/voice/confidence';
+import { isTypedVoiceDebugVisible } from '@/voice/debugVisibility';
 import { parseVoiceCommand } from '@/voice/parser';
 import {
   cancelRestTimerNotification,
@@ -65,7 +67,7 @@ const SET_TYPE_OPTIONS: { value: SetType; label: string; rowLabel: string }[] = 
 ];
 const REST_TIMER_PRESETS_SECONDS = [60, 90, 120, 180] as const;
 const REST_TIMER_INCREMENT_SECONDS = 15;
-const ENABLE_TYPED_VOICE_DEBUG = process.env.NODE_ENV !== 'production';
+const ENABLE_TYPED_VOICE_DEBUG = isTypedVoiceDebugVisible();
 
 type RestTimerState = {
   durationSeconds: number;
@@ -1343,10 +1345,7 @@ export default function LiveWorkout() {
                     testID={`edit-set-btn-${item.id}`}
                   >
                     <View
-                      style={[
-                        styles.setRow,
-                        rowPotentialPRs.length > 0 && styles.setRowPr,
-                      ]}
+                      style={[styles.setRow, rowPotentialPRs.length > 0 && styles.setRowPr]}
                       testID={`set-row-${item.id}`}
                     >
                       <Text style={styles.setIndex}>#{index + 1}</Text>
@@ -1732,13 +1731,13 @@ export default function LiveWorkout() {
                 <View style={styles.summaryStat}>
                   <Text style={styles.summaryStatLabel}>Volume</Text>
                   <Text style={styles.summaryStatValue} testID="summary-total-volume">
-                    {liveSummary.totalVolume.toLocaleString()} kg
+                    {formatWorkoutVolumeKg(liveSummary.totalVolume)}
                   </Text>
                 </View>
                 <View style={styles.summaryStat}>
                   <Text style={styles.summaryStatLabel}>Working Volume</Text>
                   <Text style={styles.summaryStatValue} testID="summary-working-volume">
-                    {liveSummary.workingVolume.toLocaleString()} kg
+                    {formatWorkoutVolumeKg(liveSummary.workingVolume)}
                   </Text>
                 </View>
               </View>

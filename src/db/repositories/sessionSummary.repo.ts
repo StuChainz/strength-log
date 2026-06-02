@@ -6,7 +6,19 @@ import {
   type SessionMuscleSummary,
 } from '@/domain/sessionMuscles';
 import { calculateSessionVolume } from '@/domain/volume';
-import type { MuscleGroup, WorkoutSession, WorkoutSet } from '@/domain/types';
+import type { MuscleGroup, SessionNote, WorkoutSession, WorkoutSet } from '@/domain/types';
+import type { SessionTag } from './tags.repo';
+
+export interface WorkoutSummarySet extends WorkoutSet {
+  exercise_name: string;
+}
+
+export interface WorkoutSummaryExercise {
+  exerciseId: string;
+  name: string;
+  sets: WorkoutSummarySet[];
+  volume: number;
+}
 
 export interface WorkoutSummary {
   session: WorkoutSession;
@@ -16,6 +28,9 @@ export interface WorkoutSummary {
   prCount: number;
   prs: ExercisePRWithExercise[];
   muscleSummary: SessionMuscleSummary;
+  exercises: WorkoutSummaryExercise[];
+  tags: SessionTag[];
+  note: SessionNote | null;
 }
 
 export async function getWorkoutSummary(
@@ -28,13 +43,20 @@ export async function getWorkoutSummary(
   );
   if (!session) return null;
 
-  const sets = await db.getAllAsync<WorkoutSet>(
-    `SELECT * FROM workout_sets
-      WHERE session_id = ?
-        AND deleted_at IS NULL`,
+  const sets = await db.getAllAsync<WorkoutSummarySet>(
+    `SELECT ws.*, COALESCE(ex.name, 'Exercise') AS exercise_name
+       FROM workout_sets ws
+       LEFT JOIN exercises ex ON ex.id = ws.exercise_id
+      WHERE ws.session_id = ?
+        AND ws.deleted_at IS NULL
+      ORDER BY ws.logged_at ASC, ws.position ASC`,
     [sessionId],
   );
-  const prs = await getFinalPRsBySession(db, sessionId);
+  const [prs, tags, note] = await Promise.all([
+    getFinalPRsBySession(db, sessionId),
+    getSessionTags(db, sessionId),
+    getSessionNote(db, sessionId),
+  ]);
   const exerciseMetadata = await getSessionExerciseMuscleMetadata(db, sets);
 
   const endedAt = session.ended_at ?? Date.now();
@@ -46,7 +68,51 @@ export async function getWorkoutSummary(
     prCount: prs.length,
     prs,
     muscleSummary: calculateSessionMuscleSummary(session, sets, exerciseMetadata),
+    exercises: groupSummaryExercises(sets),
+    tags,
+    note,
   };
+}
+
+function groupSummaryExercises(sets: WorkoutSummarySet[]): WorkoutSummaryExercise[] {
+  const byExercise = new Map<string, WorkoutSummaryExercise>();
+
+  for (const set of sets) {
+    let exercise = byExercise.get(set.exercise_id);
+    if (!exercise) {
+      exercise = {
+        exerciseId: set.exercise_id,
+        name: set.exercise_name,
+        sets: [],
+        volume: 0,
+      };
+      byExercise.set(set.exercise_id, exercise);
+    }
+    exercise.sets.push(set);
+  }
+
+  return Array.from(byExercise.values()).map((exercise) => {
+    const sets = [...exercise.sets].sort((a, b) => a.position - b.position);
+    return {
+      ...exercise,
+      sets,
+      volume: calculateSessionVolume(sets),
+    };
+  });
+}
+
+async function getSessionTags(db: SQLiteDatabase, sessionId: string): Promise<SessionTag[]> {
+  const rows = await db.getAllAsync<{ tag: SessionTag }>(
+    'SELECT tag FROM post_session_tags WHERE session_id = ? ORDER BY tag ASC',
+    [sessionId],
+  );
+  return rows.map((row) => row.tag);
+}
+
+async function getSessionNote(db: SQLiteDatabase, sessionId: string): Promise<SessionNote | null> {
+  return db.getFirstAsync<SessionNote>('SELECT * FROM session_notes WHERE session_id = ?', [
+    sessionId,
+  ]);
 }
 
 async function getSessionExerciseMuscleMetadata(

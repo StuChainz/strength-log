@@ -39,6 +39,9 @@ const baseSummary = {
   prCount: 0,
   prs: [],
   muscleSummary: {},
+  exercises: [],
+  tags: [],
+  note: null,
 };
 
 describe('EndWorkoutSummary', () => {
@@ -104,7 +107,7 @@ describe('EndWorkoutSummary', () => {
     await waitFor(() => expect(getByText('NEW PRs')).toBeTruthy());
     expect(getByText('Bench Press: 80kg × 5 rep PR')).toBeTruthy();
     expect(getByText('Bench Press: 93.3kg estimated 1RM')).toBeTruthy();
-    expect(getByText('Cable Fly: 320kg session volume')).toBeTruthy();
+    expect(getByText('Cable Fly: 320 kg session volume')).toBeTruthy();
   });
 
   it('handles sessions with no PRs without crashing', async () => {

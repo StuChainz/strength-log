@@ -8,6 +8,7 @@ export type RootStackParamList = {
   LiveWorkout: { templateId?: string; sessionId?: string } | undefined;
   EndWorkoutSummary: { sessionId: string };
   PostSessionTags: { sessionId: string };
+  WorkoutDetails: { sessionId: string };
   Settings: undefined;
   TemplateBuilder: { templateId?: string };
   ExerciseEdit: { exerciseId?: string };
@@ -73,12 +74,15 @@ export type PostSessionTagsNavigationProp = NativeStackNavigationProp<
 >;
 export type PostSessionTagsRouteProp = RouteProp<RootStackParamList, 'PostSessionTags'>;
 
+export type WorkoutDetailsNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'WorkoutDetails'
+>;
+export type WorkoutDetailsRouteProp = RouteProp<RootStackParamList, 'WorkoutDetails'>;
+
 export type SettingsNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Settings'>;
 
-export type OnboardingNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  'Onboarding'
->;
+export type OnboardingNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Onboarding'>;
 
 export type ProgramLibraryNavigationProp = NativeStackNavigationProp<
   RootStackParamList,

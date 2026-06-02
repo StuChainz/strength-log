@@ -11,6 +11,7 @@ import ProgramPreview from '@/screens/ProgramPreview';
 import LiveWorkout from '@/screens/LiveWorkout';
 import EndWorkoutSummary from '@/screens/EndWorkoutSummary';
 import PostSessionTags from '@/screens/PostSessionTags';
+import WorkoutDetails from '@/screens/WorkoutDetails';
 import Settings from '@/screens/Settings';
 import Insights from '@/screens/Insights';
 import TrainingVolume from '@/screens/TrainingVolume';
@@ -104,6 +105,7 @@ export function RootNavigator({ showOnboarding }: { showOnboarding: boolean }) {
       <Stack.Screen name="LiveWorkout" component={LiveWorkout} />
       <Stack.Screen name="EndWorkoutSummary" component={EndWorkoutSummary} />
       <Stack.Screen name="PostSessionTags" component={PostSessionTags} />
+      <Stack.Screen name="WorkoutDetails" component={WorkoutDetails} />
       <Stack.Screen name="Settings" component={Settings} />
       <Stack.Screen
         name="TemplateBuilder"

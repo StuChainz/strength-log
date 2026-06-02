@@ -4,6 +4,7 @@ import {
   calculateWorkingSessionVolume,
   calculateWorkoutSummarySoFar,
   estimateOneRepMax,
+  formatWorkoutVolumeKg,
 } from '@/domain/volume';
 
 describe('volume helpers', () => {
@@ -85,6 +86,18 @@ describe('volume helpers', () => {
         { weight: 60, reps: 5, set_type: 'drop', deleted_at: null },
       ]),
     ).toBe(700);
+  });
+
+  it('formats sub-10,000kg workout volume with thousands separators', () => {
+    expect(formatWorkoutVolumeKg(950)).toBe('950 kg');
+    expect(formatWorkoutVolumeKg(1500)).toBe('1,500 kg');
+    expect(formatWorkoutVolumeKg(8450)).toBe('8,450 kg');
+  });
+
+  it('formats 10,000kg and higher workout volume in tonnes', () => {
+    expect(formatWorkoutVolumeKg(12_500)).toBe('12.5 tonnes');
+    expect(formatWorkoutVolumeKg(24_800)).toBe('24.8 tonnes');
+    expect(formatWorkoutVolumeKg(10_000)).toBe('10 tonnes');
   });
 
   it('estimates one-rep max with Epley and hides higher-rep sets', () => {

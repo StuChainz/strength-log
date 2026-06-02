@@ -5,7 +5,6 @@ import {
   ScrollView,
   Share,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -141,19 +140,6 @@ export default function Settings() {
           </View>
         </View>
 
-        <View style={styles.row}>
-          <View style={styles.rowText}>
-            <Text style={styles.rowTitle}>Voice mode</Text>
-            <Text style={styles.rowSub}>Typed parser only; real ASR stays off.</Text>
-          </View>
-          <Switch
-            value={settings.voiceMode}
-            onValueChange={(value) => void update('voiceMode', value)}
-            trackColor={{ false: T.surface3, true: T.accent }}
-            thumbColor={settings.voiceMode ? T.accentInk : T.textDim}
-          />
-        </View>
-
         <TouchableOpacity
           style={styles.actionRow}
           onPress={() => void exportData()}
@@ -218,21 +204,6 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: T.accent },
   segmentText: { color: T.textDim, fontSize: 12, fontWeight: '700' },
   segmentTextActive: { color: T.accentInk },
-  row: {
-    marginTop: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 14,
-    backgroundColor: T.surface,
-    borderWidth: 1,
-    borderColor: T.border,
-    borderRadius: 12,
-    padding: 14,
-  },
-  rowText: { flex: 1 },
-  rowTitle: { color: T.text, fontSize: 15, fontWeight: '700' },
-  rowSub: { color: T.muted, fontSize: 12, marginTop: 3 },
   actionRow: {
     marginTop: 12,
     flexDirection: 'row',

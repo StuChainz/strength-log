@@ -867,8 +867,8 @@ describe('LiveWorkout screen core flow', () => {
     expect(getByTestId('workout-summary-modal')).toBeTruthy();
     expect(getByTestId('summary-total-sets').props.children).toBe(2);
     expect(getByTestId('summary-working-sets').props.children).toBe(2);
-    expect(getByTestId('summary-total-volume').props.children).toEqual(['900', ' kg']);
-    expect(getByTestId('summary-working-volume').props.children).toEqual(['900', ' kg']);
+    expect(getByTestId('summary-total-volume').props.children).toBe('900 kg');
+    expect(getByTestId('summary-working-volume').props.children).toBe('900 kg');
     expect(getAllByText('Barbell Bench Press').length).toBeGreaterThanOrEqual(1);
     expect(getByText('Cable Row')).toBeTruthy();
     expect(getByText('Target: 3 × 5 @ 80 kg RPE 8')).toBeTruthy();

@@ -91,6 +91,9 @@ describe('beta UI smoke tests', () => {
       prCount: 0,
       prs: [],
       muscleSummary: {},
+      exercises: [],
+      tags: [],
+      note: null,
     });
     savePostSessionDetailsMock.mockResolvedValue(undefined);
   });
@@ -142,9 +145,12 @@ describe('beta UI smoke tests', () => {
   });
 
   it('Settings can reopen onboarding', async () => {
-    const { getByText } = render(<Settings />);
+    const { getByText, queryByText } = render(<Settings />);
 
     await waitFor(() => expect(getByText('View Onboarding')).toBeTruthy());
+    expect(queryByText('Voice mode')).toBeNull();
+    expect(queryByText('Typed parser only; real ASR stays off.')).toBeNull();
+
     fireEvent.press(getByText('View Onboarding'));
 
     expect(mockNavigate).toHaveBeenCalledWith('Onboarding', { mode: 'revisit' });

@@ -9,6 +9,7 @@ import { getSessionRecovery, type SessionRecovery } from '@/db/repositories/sess
 import { getUntaggedCompletedSession } from '@/db/repositories/tags.repo';
 import { maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
 import { InsightCard } from '@/components/InsightCard';
+import { formatWorkoutVolumeKg } from '@/domain/volume';
 import { T } from '@/theme/tokens';
 import type { WeeklyInsightCard, WorkoutSession } from '@/domain/types';
 import type { HomeNavigationProp } from '@/navigation/types';
@@ -94,11 +95,8 @@ export default function Home() {
     return `${mins}m`;
   };
 
-  const formatVolume = (v: number | null): string => {
-    if (v === null || v === 0) return '';
-    if (v >= 1000) return `${(v / 1000).toFixed(1)}k kg`;
-    return `${v} kg`;
-  };
+  const formatVolume = (v: number | null): string =>
+    v === null || v === 0 ? '' : formatWorkoutVolumeKg(v);
 
   const formatWhen = (ts: number): string => {
     const diff = now - ts;
@@ -219,7 +217,7 @@ export default function Home() {
               <Text style={styles.statValue}>
                 {weekVolume > 0 ? formatVolume(weekVolume) : '—'}
               </Text>
-              <Text style={styles.statUnit}>kg volume</Text>
+              <Text style={styles.statUnit}>volume</Text>
             </View>
             <View style={styles.statCard}>
               <Text style={styles.statValue}>—</Text>
@@ -247,7 +245,13 @@ export default function Home() {
             <Text style={styles.sectionLabel}>RECENT</Text>
             <View style={styles.recentList}>
               {recents.map((r, i) => (
-                <View key={r.id} style={[styles.recentRow, i === 0 && styles.recentRowFirst]}>
+                <TouchableOpacity
+                  key={r.id}
+                  style={[styles.recentRow, i === 0 && styles.recentRowFirst]}
+                  activeOpacity={0.78}
+                  onPress={() => navigation.navigate('WorkoutDetails', { sessionId: r.id })}
+                  testID={`recent-workout-${r.id}`}
+                >
                   <View style={styles.recentInfo}>
                     <Text style={styles.recentName}>{r.name ?? 'Workout'}</Text>
                     <Text style={styles.recentMeta}>
@@ -261,7 +265,7 @@ export default function Home() {
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color={T.mutedDeep} />
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </View>

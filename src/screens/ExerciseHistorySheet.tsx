@@ -17,6 +17,7 @@ import {
   type ProgressionRuleConfig,
   type ProgressionSuggestion,
 } from '@/domain/progression';
+import { formatWorkoutVolumeKg } from '@/domain/volume';
 import { T } from '@/theme/tokens';
 import type { ExerciseCategory, Unit } from '@/domain/types';
 
@@ -117,7 +118,9 @@ export default function ExerciseHistorySheet({
           <View style={styles.header}>
             <View style={styles.headerText}>
               <Text style={styles.eyebrow}>History</Text>
-              <Text style={styles.title} numberOfLines={1}>{exerciseName}</Text>
+              <Text style={styles.title} numberOfLines={1}>
+                {exerciseName}
+              </Text>
             </View>
             <TouchableOpacity style={styles.iconBtn} onPress={onClose} hitSlop={8}>
               <Ionicons name="close" size={16} color={T.textDim} />
@@ -125,7 +128,10 @@ export default function ExerciseHistorySheet({
           </View>
 
           <TouchableOpacity
-            style={[styles.suggestionCard, (!canApply || !onApplySuggestion) && styles.suggestionCardDisabled]}
+            style={[
+              styles.suggestionCard,
+              (!canApply || !onApplySuggestion) && styles.suggestionCardDisabled,
+            ]}
             disabled={!canApply || !onApplySuggestion}
             onPress={() => {
               onApplySuggestion?.(suggestion);
@@ -136,17 +142,21 @@ export default function ExerciseHistorySheet({
               <Ionicons name="trending-up-outline" size={17} color={T.accentInk} />
             </View>
             <View style={styles.suggestionBody}>
-              <Text style={[
-                styles.suggestionLabel,
-                (!canApply || !onApplySuggestion) && styles.suggestionTextDisabled,
-              ]}>
+              <Text
+                style={[
+                  styles.suggestionLabel,
+                  (!canApply || !onApplySuggestion) && styles.suggestionTextDisabled,
+                ]}
+              >
                 {suggestion.reason}
               </Text>
               {canApply ? (
-                <Text style={[
-                  styles.suggestionValue,
-                  !onApplySuggestion && styles.suggestionTextDisabled,
-                ]}>
+                <Text
+                  style={[
+                    styles.suggestionValue,
+                    !onApplySuggestion && styles.suggestionTextDisabled,
+                  ]}
+                >
                   {suggestion.weight ?? '—'} {suggestion.unit} × {suggestion.reps ?? '—'}
                 </Text>
               ) : (
@@ -172,9 +182,13 @@ export default function ExerciseHistorySheet({
                   <View key={session.sessionId} style={styles.historyRow}>
                     <View style={styles.historyTop}>
                       <Text style={styles.historyDate}>{formatDate(session.startedAt)}</Text>
-                      <Text style={styles.historyVolume}>{Math.round(session.volume)} volume</Text>
+                      <Text style={styles.historyVolume}>
+                        {formatWorkoutVolumeKg(session.volume)}
+                      </Text>
                     </View>
-                    <Text style={styles.historySets} numberOfLines={2}>{formatSets(session)}</Text>
+                    <Text style={styles.historySets} numberOfLines={2}>
+                      {formatSets(session)}
+                    </Text>
                     <View style={styles.metricsRow}>
                       <Text style={styles.metric}>
                         Top {session.topSetWeight ?? '—'} × {session.topSetReps ?? '—'}

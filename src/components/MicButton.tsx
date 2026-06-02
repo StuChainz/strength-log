@@ -6,7 +6,7 @@ export function MicButton() {
   return (
     <TouchableOpacity
       style={styles.button}
-      onPress={() => Alert.alert('Coming soon', 'Typed voice parsing is available in debug builds.')}
+      onPress={() => Alert.alert('Coming soon', 'Voice controls are not available yet.')}
       activeOpacity={0.8}
     >
       <Ionicons name="mic-outline" size={22} color={T.muted} />
