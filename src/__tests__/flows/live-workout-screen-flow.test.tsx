@@ -179,6 +179,66 @@ describe('LiveWorkout screen core flow', () => {
     expect(getByText('1 / 3 complete')).toBeTruthy();
   });
 
+  it('shows a local recovery state when workout startup fails', () => {
+    useSessionStoreMock.mockReturnValue(activeStore({ phase: 'error' }));
+
+    const { getByTestId, getByText } = render(<LiveWorkout />);
+
+    expect(getByText('Workout could not start')).toBeTruthy();
+    fireEvent.press(getByTestId('workout-start-error-home'));
+    expect(mockPopToTop).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a migrated duplicate-active-session state discard all blockers and start new', async () => {
+    const newest = {
+      ...activeStore().session!,
+      id: 'new-active',
+      started_at: 2_000,
+      created_at: 2_000,
+      updated_at: 2_000,
+    };
+    const older = {
+      ...activeStore().session!,
+      id: 'old-active',
+      started_at: 1_000,
+      created_at: 1_000,
+      updated_at: 1_000,
+    };
+    const store = activeStore({
+      phase: 'prompt_resume',
+      session: null,
+      existingSession: newest,
+      recovery: {
+        status: 'multiple_active',
+        session: newest,
+        sessions: [newest, older],
+      },
+    });
+    useSessionStoreMock.mockReturnValue(store);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
+    render(<LiveWorkout />);
+
+    await waitFor(() =>
+      expect(alertSpy).toHaveBeenCalledWith(
+        'Multiple Active Workouts',
+        expect.stringContaining('discard them all and start this workout'),
+        expect.arrayContaining([
+          expect.objectContaining({ text: 'Resume Latest' }),
+          expect.objectContaining({ text: 'Discard All + Start', style: 'destructive' }),
+          expect.objectContaining({ text: 'Go Home' }),
+        ]),
+        { cancelable: false },
+      ),
+    );
+
+    const buttons = alertSpy.mock.calls[0]?.[2];
+    buttons?.find((button) => button.text === 'Discard All + Start')?.onPress?.();
+    expect(store.discardAndStart).toHaveBeenCalledTimes(1);
+
+    alertSpy.mockRestore();
+  });
+
   it('renders a clear no-target state', () => {
     const store = activeStore({
       exercises: [

@@ -340,27 +340,24 @@ export default function LiveWorkout() {
     }),
     [activeExercise, activeExerciseId, exercises, lastLoggedSet],
   );
-  const suggestion = useMemo(
-    () => {
-      const { recentSets: lastSessionSets, previousSessionSets } = getRecentHistoryBuckets(lastSets);
-      return getLiveWorkoutSuggestion({
-        exercise: activeExercise?.progressionExercise ?? {
-          category: activeExercise?.category ?? 'barbell',
-        },
-        templateTarget: {
-          targetSets: activeExercise?.targetSets ?? null,
-          targetReps: activeExercise?.targetReps ?? null,
-          targetWeight: activeExercise?.targetWeight ?? null,
-          unit: activeExercise?.defaultUnit ?? 'kg',
-          amrapLastSet: activeExercise?.amrapLastSet ?? false,
-        },
-        progressionRule: activeExercise?.progressionRule ?? { rule: 'none' },
-        recentSets: activeSets,
-        previousSessionSets: lastSessionSets.length > 0 ? lastSessionSets : previousSessionSets,
-      });
-    },
-    [activeExercise, activeSets, lastSets],
-  );
+  const suggestion = useMemo(() => {
+    const { recentSets: lastSessionSets, previousSessionSets } = getRecentHistoryBuckets(lastSets);
+    return getLiveWorkoutSuggestion({
+      exercise: activeExercise?.progressionExercise ?? {
+        category: activeExercise?.category ?? 'barbell',
+      },
+      templateTarget: {
+        targetSets: activeExercise?.targetSets ?? null,
+        targetReps: activeExercise?.targetReps ?? null,
+        targetWeight: activeExercise?.targetWeight ?? null,
+        unit: activeExercise?.defaultUnit ?? 'kg',
+        amrapLastSet: activeExercise?.amrapLastSet ?? false,
+      },
+      progressionRule: activeExercise?.progressionRule ?? { rule: 'none' },
+      recentSets: activeSets,
+      previousSessionSets: lastSessionSets.length > 0 ? lastSessionSets : previousSessionSets,
+    });
+  }, [activeExercise, activeSets, lastSets]);
   const potentialPRs = useMemo(
     () => (previousPRData ? detectLivePotentialPRs(sets, previousPRData) : []),
     [previousPRData, sets],
@@ -377,9 +374,7 @@ export default function LiveWorkout() {
     (indicator) =>
       indicator.exercise_id === activeExerciseId && indicator.record_type === 'session_volume',
   );
-  const restRemainingSeconds = restTimer
-    ? getRestTimerRemainingSeconds(restTimer, restNow)
-    : 0;
+  const restRemainingSeconds = restTimer ? getRestTimerRemainingSeconds(restTimer, restNow) : 0;
   const restTimerExerciseName =
     restTimer?.exerciseName ??
     exercises.find((exercise) => exercise.id === restTimer?.exerciseId)?.name ??
@@ -549,9 +544,10 @@ export default function LiveWorkout() {
     if (recovery?.status === 'multiple_active') {
       Alert.alert(
         'Multiple Active Workouts',
-        `${recovery.sessions.length} workouts are still in progress. Resume the latest one from ${started}; no workouts will be discarded.`,
+        `${recovery.sessions.length} workouts are still in progress. Resume the latest one from ${started}, or discard them all and start this workout.`,
         [
           { text: 'Resume Latest', onPress: resumeExisting },
+          { text: 'Discard All + Start', style: 'destructive', onPress: discardAndStart },
           { text: 'Go Home', onPress: () => navigation.popToTop() },
         ],
         { cancelable: false },
@@ -997,6 +993,23 @@ export default function LiveWorkout() {
     );
   }
 
+  if (phase === 'error') {
+    return (
+      <SafeAreaView style={[styles.safe, styles.center]} edges={['top']}>
+        <Text style={styles.errorTitle}>Workout could not start</Text>
+        <Text style={styles.mutedText}>Go back and try again.</Text>
+        <TouchableOpacity
+          style={styles.addExBtn}
+          onPress={() => navigation.popToTop()}
+          testID="workout-start-error-home"
+        >
+          <Ionicons name="arrow-back" size={18} color={T.accentInk} />
+          <Text style={styles.addExBtnText}>Back Home</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
   const wgt = formatWeightInput(weight);
   const logBtnLabel = justLogged ? 'Logged ✓' : `Log set · ${wgt} × ${reps}`;
   const activeUnit = activeExercise?.defaultUnit ?? 'kg';
@@ -1161,7 +1174,10 @@ export default function LiveWorkout() {
                 contentContainerStyle={styles.manualRestOptions}
               >
                 <TouchableOpacity
-                  style={[styles.manualRestBtn, activeRestSeconds === null && styles.manualRestBtnActive]}
+                  style={[
+                    styles.manualRestBtn,
+                    activeRestSeconds === null && styles.manualRestBtnActive,
+                  ]}
                   onPress={handleClearExerciseRest}
                   testID="manual-rest-off"
                 >
@@ -1603,18 +1619,18 @@ export default function LiveWorkout() {
         exerciseId={activeExercise?.id ?? null}
         exerciseName={activeExercise?.name ?? ''}
         category={activeExercise?.category ?? 'barbell'}
-            targetReps={activeExercise?.targetReps ?? null}
-            targetSets={activeExercise?.targetSets ?? null}
-            targetWeight={activeExercise?.targetWeight ?? null}
-            progressionRule={activeExercise?.progressionRule ?? { rule: 'none' }}
-            progressionExercise={
-              activeExercise?.progressionExercise ?? {
-                category: activeExercise?.category ?? 'barbell',
-              }
-            }
-            defaultUnit={activeExercise?.defaultUnit ?? 'kg'}
-            onClose={() => setHistoryVisible(false)}
-            onApplySuggestion={(next) => {
+        targetReps={activeExercise?.targetReps ?? null}
+        targetSets={activeExercise?.targetSets ?? null}
+        targetWeight={activeExercise?.targetWeight ?? null}
+        progressionRule={activeExercise?.progressionRule ?? { rule: 'none' }}
+        progressionExercise={
+          activeExercise?.progressionExercise ?? {
+            category: activeExercise?.category ?? 'barbell',
+          }
+        }
+        defaultUnit={activeExercise?.defaultUnit ?? 'kg'}
+        onClose={() => setHistoryVisible(false)}
+        onApplySuggestion={(next) => {
           if (next.weight !== null) setWeight(next.weight);
           if (next.reps !== null) setReps(next.reps);
           setRpe(null);
@@ -2234,6 +2250,7 @@ const styles = StyleSheet.create({
   },
   addExBtnText: { fontSize: 15, fontWeight: '600', color: T.accentInk },
   mutedText: { color: T.muted, fontSize: 14 },
+  errorTitle: { color: T.text, fontSize: 20, fontWeight: '700' },
 
   loggerBlock: {
     borderTopWidth: 1,
