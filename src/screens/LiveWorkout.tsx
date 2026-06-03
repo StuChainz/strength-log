@@ -101,13 +101,8 @@ function getSetTypeLabel(setType: SetType, uppercase = false): string {
   return uppercase ? option.rowLabel : option.label.toLowerCase();
 }
 
-function getExerciseHeaderMeta(
-  index: number,
-  count: number,
-  category: string | null | undefined,
-): string {
-  const categoryLabel = category ? category.replace(/_/g, ' ').toUpperCase() : 'EXERCISE';
-  return `EXERCISE ${index + 1} OF ${count} · ${categoryLabel}`;
+function getExerciseCategoryLabel(category: string | null | undefined): string {
+  return category ? category.replace(/_/g, ' ').toUpperCase() : 'EXERCISE';
 }
 
 function getCompactTargetLine(exercise: {
@@ -138,16 +133,6 @@ function getCompactTargetLine(exercise: {
   }
   if (exercise.targetRpe !== null) parts.push(`RPE ${formatWeightInput(exercise.targetRpe)}`);
   return parts.join(' ');
-}
-
-function getSuggestionReason(label: string): string {
-  if (label === 'No suggestion yet.') return 'No suggestion yet';
-  if (label.startsWith('-10%') || label === 'Same weight, one fewer rep.') {
-    return 'Back off after missed reps';
-  }
-  if (label.startsWith('Add ')) return 'Progress after easy set';
-  if (label === 'Same weight, same reps.') return 'Repeat target';
-  return label.replace(/\.$/, '');
 }
 
 function getRecentHistoryBuckets(sets: WorkoutSet[]): {
@@ -1079,16 +1064,12 @@ export default function LiveWorkout() {
       ? `${suggestion.amrapMinReps}+ AMRAP`
       : 'AMRAP'
     : (suggestion.reps ?? '—');
-  const suggestionReason = suggestion.reason || getSuggestionReason(suggestion.label);
+  const suggestionLine = suggestionHasValue
+    ? `${suggestion.weight !== null ? formatWeightInput(suggestion.weight) : '—'} × ${suggestionRepsDisplay}`
+    : '—';
   const nextSetSummary = `${wgt} ${activeUnit} × ${reps} reps${
     rpe !== null ? ` · RPE ${formatWeightInput(rpe)}` : ''
   } · ${getSetTypeLabel(setType)}`;
-  const loggerContextLine = [
-    lastHintText ? `Last · ${lastHintText}` : null,
-    compactTargetLine ? `Target ${compactTargetLine}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -1149,54 +1130,104 @@ export default function LiveWorkout() {
 
         {exercises.length > 0 && (
           <View style={styles.carouselHeader}>
-            <View style={styles.carouselCenter}>
-              <Text style={styles.carouselEyebrow}>
-                {getExerciseHeaderMeta(
-                  activeExerciseIndex,
-                  exercises.length,
-                  activeExercise?.category,
-                )}
-              </Text>
+            <View style={styles.carouselMain}>
+              <View style={styles.exerciseMetaRow}>
+                <Text style={styles.carouselEyebrow} numberOfLines={1}>
+                  {getExerciseCategoryLabel(activeExercise?.category)}
+                </Text>
+                <View style={styles.exerciseNavCluster}>
+                  <TouchableOpacity
+                    style={[styles.arrowBtn, activeExerciseIndex === 0 && styles.arrowBtnDisabled]}
+                    onPress={() =>
+                      activeExerciseIndex > 0 &&
+                      setActiveExerciseId(exercises[activeExerciseIndex - 1].id)
+                    }
+                    disabled={activeExerciseIndex === 0}
+                    hitSlop={8}
+                    accessibilityLabel="Previous exercise"
+                  >
+                    <Ionicons
+                      name="chevron-back"
+                      size={17}
+                      color={activeExerciseIndex === 0 ? T.mutedDeep : T.textDim}
+                    />
+                  </TouchableOpacity>
+                  <Text style={styles.exerciseNavCount}>
+                    Exercise {activeExerciseIndex + 1}/{exercises.length}
+                  </Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.arrowBtn,
+                      activeExerciseIndex >= exercises.length - 1 && styles.arrowBtnDisabled,
+                    ]}
+                    onPress={() =>
+                      activeExerciseIndex < exercises.length - 1 &&
+                      setActiveExerciseId(exercises[activeExerciseIndex + 1].id)
+                    }
+                    disabled={activeExerciseIndex >= exercises.length - 1}
+                    hitSlop={8}
+                    accessibilityLabel="Next exercise"
+                  >
+                    <Ionicons
+                      name="chevron-forward"
+                      size={17}
+                      color={activeExerciseIndex >= exercises.length - 1 ? T.mutedDeep : T.textDim}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
               <Text style={styles.carouselName} numberOfLines={2}>
                 {activeExercise?.name ?? '—'}
               </Text>
-            </View>
-
-            <View style={styles.exerciseNavActions}>
-              <TouchableOpacity
-                style={[styles.arrowBtn, activeExerciseIndex === 0 && styles.arrowBtnDisabled]}
-                onPress={() =>
-                  activeExerciseIndex > 0 &&
-                  setActiveExerciseId(exercises[activeExerciseIndex - 1].id)
-                }
-                disabled={activeExerciseIndex === 0}
-                hitSlop={8}
-              >
-                <Ionicons
-                  name="chevron-back"
-                  size={18}
-                  color={activeExerciseIndex === 0 ? T.mutedDeep : T.textDim}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.arrowBtn,
-                  activeExerciseIndex >= exercises.length - 1 && styles.arrowBtnDisabled,
-                ]}
-                onPress={() =>
-                  activeExerciseIndex < exercises.length - 1 &&
-                  setActiveExerciseId(exercises[activeExerciseIndex + 1].id)
-                }
-                disabled={activeExerciseIndex >= exercises.length - 1}
-                hitSlop={8}
-              >
-                <Ionicons
-                  name="chevron-forward"
-                  size={18}
-                  color={activeExerciseIndex >= exercises.length - 1 ? T.mutedDeep : T.textDim}
-                />
-              </TouchableOpacity>
+              <View style={styles.progressionStrip}>
+                <TouchableOpacity
+                  style={styles.progressionStat}
+                  onPress={() => setHistoryVisible(true)}
+                  activeOpacity={0.75}
+                  accessibilityLabel="Open exercise history"
+                >
+                  <Text style={styles.progressionLabel}>LAST</Text>
+                  <Text style={styles.progressionValue} numberOfLines={1}>
+                    {lastHintText ?? '—'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.progressionStat}
+                  onPress={() => setHistoryVisible(true)}
+                  activeOpacity={0.75}
+                  accessibilityLabel="Open exercise target and history"
+                >
+                  <Text style={styles.progressionLabel}>TARGET</Text>
+                  <Text style={styles.progressionValue} numberOfLines={1}>
+                    {compactTargetLine ?? '—'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.progressionStat}
+                  disabled={!suggestionHasValue}
+                  onPress={() => {
+                    if (suggestion.weight !== null) setWeight(suggestion.weight);
+                    if (suggestion.reps !== null) setReps(suggestion.reps);
+                    setRpe(null);
+                  }}
+                  activeOpacity={0.75}
+                  testID="suggestion-row"
+                  accessibilityLabel="Apply suggested set"
+                >
+                  <Text style={[styles.progressionLabel, styles.progressionLabelSuggested]}>
+                    SUGGESTED
+                  </Text>
+                  <Text
+                    style={[
+                      styles.progressionValue,
+                      suggestionHasValue && styles.progressionValueSuggested,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {suggestionLine}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         )}
@@ -1348,9 +1379,7 @@ export default function LiveWorkout() {
             }
             ListEmptyComponent={
               <View style={styles.emptySetRow}>
-                <Text style={styles.emptySetText}>
-                  No sets yet. Suggestion below pre-fills the logger.
-                </Text>
+                <Text style={styles.emptySetText}>No sets yet. Start with the logger below.</Text>
               </View>
             }
             renderItem={({ item, index }) => {
@@ -1475,33 +1504,12 @@ export default function LiveWorkout() {
               </View>
             )}
 
-            <TouchableOpacity
-              style={styles.nextSetHeader}
-              disabled={!suggestionHasValue}
-              onPress={() => {
-                if (suggestion.weight !== null) setWeight(suggestion.weight);
-                if (suggestion.reps !== null) setReps(suggestion.reps);
-                setRpe(null);
-              }}
-              testID="suggestion-row"
-            >
+            <View style={styles.nextSetHeader}>
               <Text style={styles.nextSetLabel}>NEXT SET</Text>
-              <Text style={styles.nextSetSuggestion} numberOfLines={1}>
-                {suggestionHasValue
-                  ? `• Suggested ${suggestion.weight ?? '—'} × ${suggestionRepsDisplay}`
-                  : suggestionReason}
+              <Text style={styles.nextSetDraft} numberOfLines={1}>
+                {nextSetSummary}
               </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.loggerContextLine}
-              activeOpacity={0.7}
-              onPress={() => setHistoryVisible(true)}
-            >
-              <Text style={styles.loggerContextText} numberOfLines={1}>
-                {loggerContextLine || nextSetSummary}
-              </Text>
-            </TouchableOpacity>
+            </View>
 
             <View style={styles.setTypeRow}>
               {SET_TYPE_OPTIONS.map((option) => (
@@ -1559,7 +1567,6 @@ export default function LiveWorkout() {
                       maxLength={7}
                       testID="weight-input"
                     />
-                    <Text style={styles.stepperUnit}>kg</Text>
                   </View>
                   <TouchableOpacity
                     style={[styles.stepperBtn, styles.stepperBtnRight]}
@@ -1604,7 +1611,6 @@ export default function LiveWorkout() {
                       maxLength={3}
                       testID="reps-input"
                     />
-                    <Text style={styles.stepperUnit}>rps</Text>
                   </View>
                   <TouchableOpacity
                     style={[styles.stepperBtn, styles.stepperBtnRight]}
@@ -2038,28 +2044,45 @@ const styles = StyleSheet.create({
   },
 
   carouselHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
     paddingHorizontal: 22,
-    paddingTop: 12,
-    paddingBottom: 12,
-    gap: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   arrowBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 999,
-    backgroundColor: T.surface,
-    borderWidth: 1,
-    borderColor: T.borderBright,
+    width: 36,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   arrowBtnDisabled: { opacity: 0.3 },
-  exerciseNavActions: { flexDirection: 'row', gap: 10, paddingBottom: 2 },
-  carouselCenter: { flex: 1, alignItems: 'flex-start', minWidth: 0 },
+  carouselMain: { gap: 8 },
+  exerciseMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  exerciseNavCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    backgroundColor: T.surface,
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  exerciseNavCount: {
+    minWidth: 44,
+    textAlign: 'center',
+    color: T.textDim,
+    fontFamily: 'Courier New',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   carouselEyebrow: {
+    flex: 1,
     fontFamily: 'Courier New',
     fontSize: 12,
     color: T.muted,
@@ -2073,7 +2096,36 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: T.text,
     letterSpacing: 0,
-    marginTop: 8,
+  },
+  progressionStrip: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: T.border,
+    paddingVertical: 11,
+    gap: 12,
+  },
+  progressionStat: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  progressionLabel: {
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    letterSpacing: 1.1,
+    color: T.muted,
+    fontWeight: '800',
+  },
+  progressionLabelSuggested: { color: T.accent },
+  progressionValue: {
+    color: T.text,
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '800',
+  },
+  progressionValueSuggested: {
+    color: T.accent,
   },
   restTimerPanel: {
     minHeight: 48,
@@ -2208,13 +2260,13 @@ const styles = StyleSheet.create({
   setRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 74,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    minHeight: 68,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     backgroundColor: T.surface,
     borderWidth: 1,
     borderColor: T.borderBright,
-    borderRadius: 20,
+    borderRadius: 10,
   },
   setRowPr: {
     backgroundColor: '#151308',
@@ -2315,9 +2367,9 @@ const styles = StyleSheet.create({
     borderTopColor: T.border,
     backgroundColor: T.surface,
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 10,
-    gap: 12,
+    gap: 10,
   },
   nextSetHeader: {
     flexDirection: 'row',
@@ -2333,19 +2385,12 @@ const styles = StyleSheet.create({
     color: T.text,
     fontWeight: '800',
   },
-  nextSetSuggestion: {
+  nextSetDraft: {
     flex: 1,
-    color: T.accent,
+    color: T.textDim,
     fontFamily: 'Courier New',
-    fontSize: 14,
+    fontSize: 12,
     textAlign: 'right',
-  },
-  loggerContextLine: { marginTop: -6 },
-  loggerContextText: {
-    color: T.muted,
-    fontFamily: 'Courier New',
-    fontSize: 13,
-    letterSpacing: 0.8,
   },
 
   setTypeRow: {
@@ -2354,15 +2399,15 @@ const styles = StyleSheet.create({
     backgroundColor: T.surface2,
     borderWidth: 1,
     borderColor: T.borderBright,
-    borderRadius: 15,
-    padding: 4,
+    borderRadius: 12,
+    padding: 3,
   },
   setTypeBtn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: 9,
     backgroundColor: 'transparent',
   },
   setTypeBtnActive: { backgroundColor: T.surface3 },
@@ -2393,7 +2438,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   stepperBtn: {
-    width: 44,
+    width: 56,
     flexShrink: 0,
     backgroundColor: T.surface2,
     alignItems: 'center',
@@ -2407,7 +2452,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     gap: 4,
   },
   stepperValueInput: {
@@ -2417,7 +2462,7 @@ const styles = StyleSheet.create({
     margin: 0,
     fontFamily: 'Courier New',
     fontSize: 28,
-    fontWeight: '500',
+    fontWeight: '800',
     color: T.text,
     lineHeight: 32,
     textAlign: 'center',

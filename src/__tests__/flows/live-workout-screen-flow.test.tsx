@@ -190,14 +190,15 @@ describe('LiveWorkout screen core flow', () => {
     jest.useRealTimers();
   });
 
-  it("folds today's target into the next-set logger context", () => {
+  it("shows today's target in the exercise progression strip", () => {
     const store = activeStore();
     useSessionStoreMock.mockReturnValue(store);
 
     const { getByText, queryByText } = render(<LiveWorkout />);
 
     expect(queryByText("TODAY'S TARGET")).toBeNull();
-    expect(getByText('Target 3 × 5 @ 80 kg RPE 8')).toBeTruthy();
+    expect(getByText('TARGET')).toBeTruthy();
+    expect(getByText('3 × 5 @ 80 kg RPE 8')).toBeTruthy();
   });
 
   it('shows a local recovery state when workout startup fails', () => {
@@ -321,7 +322,8 @@ describe('LiveWorkout screen core flow', () => {
 
     const { getByText } = render(<LiveWorkout />);
 
-    expect(getByText(/Suggested 80 × 5/)).toBeTruthy();
+    expect(getByText('SUGGESTED')).toBeTruthy();
+    expect(getByText('80 × 5')).toBeTruthy();
     expect(getByText('NEXT SET')).toBeTruthy();
   });
 
@@ -362,7 +364,7 @@ describe('LiveWorkout screen core flow', () => {
 
     const { getByTestId, getByText } = render(<LiveWorkout />);
 
-    expect(getByText(/Suggested 82.5 × 5/)).toBeTruthy();
+    expect(getByText('82.5 × 5')).toBeTruthy();
     fireEvent.press(getByTestId('suggestion-row'));
 
     await waitFor(() => expect(getByText('Log set · 82.5 × 5')).toBeTruthy());
