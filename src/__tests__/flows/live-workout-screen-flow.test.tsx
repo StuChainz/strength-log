@@ -140,6 +140,7 @@ function activeStore(overrides: Partial<UseSessionStoreReturn> = {}): UseSession
         targetWeight: 80,
         targetRpe: 8,
         restSeconds: null,
+        note: null,
       },
     ],
     sets: [
@@ -336,6 +337,7 @@ describe('LiveWorkout screen core flow', () => {
           targetWeight: null,
           targetRpe: null,
           restSeconds: null,
+          note: null,
         },
       ],
       sets: [],
@@ -965,6 +967,7 @@ describe('LiveWorkout screen core flow', () => {
           targetWeight: 80,
           targetRpe: 8,
           restSeconds: null,
+          note: null,
         },
         {
           id: 'row',
@@ -976,6 +979,7 @@ describe('LiveWorkout screen core flow', () => {
           targetWeight: null,
           targetRpe: null,
           restSeconds: null,
+          note: null,
         },
       ],
       sets: [

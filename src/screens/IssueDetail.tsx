@@ -12,19 +12,28 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { ExercisePicker } from '@/components/ExercisePicker';
+import IssueRoutineEditor, {
+  type IssueRoutineEditorItem,
+  type SaveIssueRoutineInput,
+} from '@/components/IssueRoutineEditor';
 import IssueReactionEditSheet from '@/components/IssueReactionEditSheet';
 import { openDb } from '@/db/client';
 import {
   archiveIssue,
   createIssue,
   createIssueExerciseLink,
+  createIssueRoutine,
   deleteExerciseIssueEvent,
   deleteIssueExerciseLink,
   getIssueById,
   getIssueExerciseLinks,
+  getIssueRoutine,
+  getIssueRoutineItems,
   getIssueRecentEvents,
+  type IssueRoutineSummary,
   type IssueExerciseLinkWithExerciseName,
   type ExerciseIssueEventWithNames,
+  updateIssueRoutine,
   updateIssueExerciseLink,
   updateExerciseIssueEvent,
   updateIssue,
@@ -35,6 +44,11 @@ import type { Exercise, IssueExerciseLinkType } from '@/domain/types';
 
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function formatLastCompleted(ts: number | null): string | null {
+  if (ts === null) return null;
+  return `Last completed ${formatDate(ts)}`;
 }
 
 function formatReaction(value: string): string {
@@ -56,8 +70,12 @@ export default function IssueDetail() {
   const [active, setActive] = useState(true);
   const [events, setEvents] = useState<ExerciseIssueEventWithNames[]>([]);
   const [links, setLinks] = useState<IssueExerciseLinkWithExerciseName[]>([]);
+  const [routine, setRoutine] = useState<IssueRoutineSummary | null>(null);
+  const [routineItems, setRoutineItems] = useState<IssueRoutineEditorItem[]>([]);
   const [linkNoteDrafts, setLinkNoteDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [routineEditorVisible, setRoutineEditorVisible] = useState(false);
+  const [savingRoutine, setSavingRoutine] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<ExerciseIssueEventWithNames | null>(null);
   const [savingReaction, setSavingReaction] = useState(false);
   const [pickerLinkType, setPickerLinkType] = useState<IssueExerciseLinkType | null>(null);
@@ -73,13 +91,26 @@ export default function IssueDetail() {
     setName(issue.name);
     setNote(issue.note ?? '');
     setActive(issue.active === 1);
-    const [linkRows, eventRows] = await Promise.all([
+    const [linkRows, eventRows, routineRow] = await Promise.all([
       getIssueExerciseLinks(db, issueId),
       getIssueRecentEvents(db, issueId, 12),
+      getIssueRoutine(db, issueId),
     ]);
+    const routineItemRows = routineRow ? await getIssueRoutineItems(db, issueId) : [];
     setLinks(linkRows);
     setLinkNoteDrafts(Object.fromEntries(linkRows.map((link) => [link.id, link.note ?? ''])));
     setEvents(eventRows);
+    setRoutine(routineRow);
+    setRoutineItems(
+      routineItemRows.map((item) => ({
+        exerciseId: item.exercise_id,
+        exerciseName: item.exercise_name,
+        exerciseCategory: item.exercise_category,
+        targetSets: item.target_sets,
+        targetReps: item.target_reps,
+        note: item.note,
+      })),
+    );
   }, [issueId, navigation]);
 
   useEffect(() => {
@@ -144,6 +175,81 @@ export default function IssueDetail() {
     const db = await openDb();
     await updateIssueExerciseLink(db, link.id, { note: nextNote });
     await load();
+  };
+
+  const saveRoutine = async (input: SaveIssueRoutineInput) => {
+    if (!issueId) return;
+    setSavingRoutine(true);
+    try {
+      const db = await openDb();
+      if (routine) {
+        await updateIssueRoutine(db, issueId, {
+          name: input.name,
+          items: input.items,
+        });
+      } else {
+        await createIssueRoutine(db, {
+          issueId,
+          name: input.name,
+          items: input.items,
+        });
+      }
+      setRoutineEditorVisible(false);
+      await load();
+    } finally {
+      setSavingRoutine(false);
+    }
+  };
+
+  const runRoutine = () => {
+    if (!routine) return;
+    navigation.navigate('LiveWorkout', { templateId: routine.template_id });
+  };
+
+  const renderRoutine = () => {
+    if (isNew) return null;
+    const lastCompleted = formatLastCompleted(routine?.last_completed_at ?? null);
+    return (
+      <View style={styles.routineBlock}>
+        <View style={styles.routineHeader}>
+          <Text style={styles.sectionLabel}>Issue Routine</Text>
+          <TouchableOpacity
+            style={styles.linkAddBtn}
+            onPress={() => setRoutineEditorVisible(true)}
+            testID={routine ? 'edit-issue-routine-btn' : 'create-issue-routine-btn'}
+          >
+            <Ionicons name={routine ? 'create-outline' : 'add'} size={14} color={T.accentInk} />
+            <Text style={styles.linkAddText}>{routine ? 'Edit' : 'Create routine'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {!routine ? (
+          <Text style={styles.emptyText} testID="issue-routine-empty">
+            No routine linked
+          </Text>
+        ) : (
+          <View style={styles.routineSummary} testID="issue-routine-summary">
+            <View style={styles.routineSummaryText}>
+              <Text style={styles.routineName} numberOfLines={1} testID="issue-routine-name">
+                {routine.routine_name}
+              </Text>
+              <Text style={styles.routineMeta} testID="issue-routine-count">
+                {routine.exercise_count} exercise{routine.exercise_count === 1 ? '' : 's'}
+                {lastCompleted ? ` · ${lastCompleted}` : ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.runRoutineBtn}
+              onPress={runRoutine}
+              testID="run-issue-routine-btn"
+            >
+              <Ionicons name="play" size={14} color={T.accentInk} />
+              <Text style={styles.runRoutineText}>Run Routine</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
   };
 
   const renderExerciseLinks = (linkType: IssueExerciseLinkType) => {
@@ -336,6 +442,8 @@ export default function IssueDetail() {
           </TouchableOpacity>
         )}
 
+        {renderRoutine()}
+
         {!isNew && (
           <>
             {renderExerciseLinks('helpful')}
@@ -388,6 +496,15 @@ export default function IssueDetail() {
         visible={pickerLinkType !== null}
         onSelect={(exercise) => void addExerciseLink(exercise)}
         onClose={() => setPickerLinkType(null)}
+      />
+      <IssueRoutineEditor
+        visible={routineEditorVisible}
+        issueName={name}
+        initialName={routine?.routine_name ?? null}
+        initialItems={routineItems}
+        saving={savingRoutine}
+        onClose={() => setRoutineEditorVisible(false)}
+        onSave={(input) => void saveRoutine(input)}
       />
     </SafeAreaView>
   );
@@ -484,6 +601,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   archiveText: { color: T.danger, fontSize: 14, fontWeight: '700' },
+  routineBlock: {
+    marginTop: 8,
+    gap: 9,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 12,
+  },
+  routineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  routineSummary: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  routineSummaryText: { flex: 1, minWidth: 0 },
+  routineName: { color: T.text, fontSize: 15, fontWeight: '800' },
+  routineMeta: {
+    color: T.textDim,
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    marginTop: 4,
+  },
+  runRoutineBtn: {
+    minHeight: 34,
+    borderRadius: 999,
+    backgroundColor: T.accent,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    flexShrink: 0,
+  },
+  runRoutineText: { color: T.accentInk, fontSize: 12, fontWeight: '900' },
   linkBlock: {
     marginTop: 8,
     gap: 8,

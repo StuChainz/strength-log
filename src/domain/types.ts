@@ -197,6 +197,7 @@ export interface TemplateItem {
   target_weight: number | null;
   target_rpe: number | null;
   rest_seconds: number | null;
+  note: string | null;
   progression_rule: ProgressionRule;
   increment_kg: number | null;
   increment_lb: number | null;
@@ -285,6 +286,14 @@ export interface IssueExerciseLink {
   exercise_id: string;
   link_type: IssueExerciseLinkType;
   note: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface IssueRoutine {
+  id: string;
+  issue_id: string;
+  template_id: string;
   created_at: number;
   updated_at: number;
 }

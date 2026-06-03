@@ -15,7 +15,12 @@ import {
   getTemplateItemsWithExercise,
   updateTemplate,
 } from '@/db/repositories/templates.repo';
-import { createSession, endSession, getInProgressSession } from '@/db/repositories/sessions.repo';
+import {
+  createSession,
+  endSession,
+  getInProgressSession,
+  getSessionRecovery,
+} from '@/db/repositories/sessions.repo';
 import { insertEvent, getEventsBySession } from '@/db/repositories/events.repo';
 import {
   getSetsBySession,
@@ -37,6 +42,12 @@ import { getSavedTags, savePostSessionDetails, SESSION_TAGS } from '@/db/reposit
 import { maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
 import { exportDatabase } from '@/db/repositories/export.repo';
 import { getAppSettings, setAppSetting } from '@/db/repositories/settings.repo';
+import {
+  createIssue,
+  createIssueRoutine,
+  getIssueRoutine,
+  getIssueRoutineItems,
+} from '@/db/repositories/issues.repo';
 import { EXPORT_TABLES } from '@/export/schema';
 import { getProgressionSuggestion } from '@/domain/progression';
 import { estimateOneRepMax } from '@/domain/volume';
@@ -1075,6 +1086,92 @@ describe('core app flow repository acceptance', () => {
     expect(suggestion).toEqual(expect.objectContaining({ weight: 102.5, reps: 5 }));
     expect(await getSetsBySession(db as never, session.id)).toEqual(
       expect.arrayContaining([expect.objectContaining({ weight: 100, reps: 5 })]),
+    );
+  });
+
+  it('runs an Issue Routine as a normal template-backed workout session', async () => {
+    db = await setupDb();
+    const facePull = await createExercise(db as never, {
+      name: 'Routine Face Pull',
+      category: 'cable',
+      primary_muscle: null,
+      default_unit: 'kg',
+    });
+    const pullApart = await createExercise(db as never, {
+      name: 'Routine Band Pull Apart',
+      category: 'other',
+      primary_muscle: null,
+      default_unit: null,
+    });
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+
+    const routine = await createIssueRoutine(db as never, {
+      issueId: issue.id,
+      name: 'Shoulder Pain Routine',
+      items: [
+        { exerciseId: facePull.id, targetSets: 2, targetReps: 15, note: 'Light' },
+        { exerciseId: pullApart.id, targetSets: 2, targetReps: 20 },
+      ],
+    });
+
+    expect(await getIssueRoutineItems(db as never, issue.id)).toEqual([
+      expect.objectContaining({
+        exercise_id: facePull.id,
+        target_sets: 2,
+        target_reps: 15,
+        note: 'Light',
+      }),
+      expect.objectContaining({
+        exercise_id: pullApart.id,
+        target_sets: 2,
+        target_reps: 20,
+      }),
+    ]);
+
+    const session = await createSession(db as never, {
+      templateId: routine.template_id,
+      name: null,
+    });
+
+    expect(await getInProgressSession(db as never)).toEqual(
+      expect.objectContaining({
+        id: session.id,
+        template_id: routine.template_id,
+        status: 'in_progress',
+      }),
+    );
+    await expect(getSessionRecovery(db as never)).resolves.toEqual(
+      expect.objectContaining({
+        status: 'active',
+        session: expect.objectContaining({
+          id: session.id,
+          template_id: routine.template_id,
+        }),
+      }),
+    );
+
+    await appendSet(db, session, {
+      exerciseId: facePull.id,
+      position: 0,
+      weight: null,
+      reps: 15,
+    });
+    await endSession(db as never, session.id, null);
+    await updateSessionExerciseHistoryCache(db as never, session.id);
+
+    expect(await getExerciseHistory(db as never, facePull.id, 5)).toEqual([
+      expect.objectContaining({
+        sessionId: session.id,
+        sets: [expect.objectContaining({ reps: 15, weight: null })],
+      }),
+    ]);
+    expect(await getIssueRoutine(db as never, issue.id)).toEqual(
+      expect.objectContaining({
+        id: routine.id,
+        template_id: routine.template_id,
+        exercise_count: 2,
+        last_completed_at: expect.any(Number),
+      }),
     );
   });
 

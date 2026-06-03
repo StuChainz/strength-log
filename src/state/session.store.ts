@@ -38,6 +38,7 @@ export interface SessionExercise {
   targetWeight: number | null;
   targetRpe: number | null;
   restSeconds: number | null;
+  note: string | null;
   amrapLastSet?: boolean;
   progressionRule?: ProgressionRuleConfig;
   progressionExercise?: ProgressionExercise;
@@ -110,6 +111,7 @@ async function loadExercisesForTemplate(
       targetWeight: item.target_weight,
       targetRpe: item.target_rpe,
       restSeconds: item.rest_seconds,
+      note: item.note,
       amrapLastSet: item.amrap_last_set === 1,
       progressionRule: {
         rule: item.progression_rule ?? 'none',
@@ -144,10 +146,11 @@ async function loadExercisesFromSets(
     targetWeight: null;
     targetRpe: null;
     restSeconds: null;
+    note: null;
   }>(
     `SELECT e.id, e.name, e.category, e.default_unit AS defaultUnit,
             NULL AS targetSets, NULL AS targetReps, NULL AS targetWeight, NULL AS targetRpe,
-            NULL AS restSeconds
+            NULL AS restSeconds, NULL AS note
      FROM (
        SELECT exercise_id, MIN(position) AS min_pos
        FROM workout_sets
@@ -503,6 +506,7 @@ export function useSessionStore(templateId: string | undefined): UseSessionStore
           targetWeight: null,
           targetRpe: null,
           restSeconds: null,
+          note: null,
           progressionRule: { rule: 'none' },
           progressionExercise: { category: exercise.category },
         };

@@ -1,11 +1,18 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import { newId } from '@/domain/ids';
+import {
+  createTemplate,
+  getTemplateItemsWithExercise,
+  updateTemplate,
+  type TemplateItemWithExercise,
+} from '@/db/repositories/templates.repo';
 import type {
   ExerciseIssueEvent,
   Issue,
   IssueExerciseLink,
   IssueExerciseLinkType,
   IssueReactionType,
+  IssueRoutine,
 } from '@/domain/types';
 
 export interface IssueWithReactionCount extends Issue {
@@ -23,6 +30,13 @@ export interface IssueExerciseLinkWithExerciseName extends IssueExerciseLink {
 
 export interface IssueExerciseLinkWithIssueName extends IssueExerciseLink {
   issue_name: string;
+}
+
+export interface IssueRoutineSummary extends IssueRoutine {
+  routine_name: string;
+  routine_note: string | null;
+  exercise_count: number;
+  last_completed_at: number | null;
 }
 
 export interface ExerciseIssueSummary {
@@ -72,6 +86,24 @@ export interface UpdateIssueExerciseLinkInput {
   note?: string | null;
 }
 
+export interface IssueRoutineItemInput {
+  exerciseId: string;
+  targetSets: number;
+  targetReps: number;
+  note?: string | null;
+}
+
+export interface CreateIssueRoutineInput {
+  issueId: string;
+  name: string;
+  items: IssueRoutineItemInput[];
+}
+
+export interface UpdateIssueRoutineInput {
+  name: string;
+  items: IssueRoutineItemInput[];
+}
+
 function cleanText(value: string | null | undefined): string | null {
   const trimmed = value?.trim() ?? '';
   return trimmed.length > 0 ? trimmed : null;
@@ -80,6 +112,12 @@ function cleanText(value: string | null | undefined): string | null {
 function cleanName(name: string): string {
   const trimmed = name.trim();
   if (trimmed.length === 0) throw new Error('Issue name is required');
+  return trimmed;
+}
+
+function cleanRoutineName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) throw new Error('Issue Routine name is required');
   return trimmed;
 }
 
@@ -101,6 +139,38 @@ function validateSeverity(severity: number | null | undefined): number | null {
     throw new Error('Issue severity must be an integer from 1 to 5');
   }
   return severity;
+}
+
+function validateRoutineItems(items: IssueRoutineItemInput[]): IssueRoutineItemInput[] {
+  if (items.length === 0) throw new Error('Issue Routine requires at least one exercise');
+  return items.map((item) => {
+    if (!Number.isInteger(item.targetSets) || item.targetSets <= 0) {
+      throw new Error('Issue Routine target sets must be a positive integer');
+    }
+    if (!Number.isInteger(item.targetReps) || item.targetReps <= 0) {
+      throw new Error('Issue Routine target reps must be a positive integer');
+    }
+    return item;
+  });
+}
+
+function toRoutineTemplateItems(items: IssueRoutineItemInput[]) {
+  return validateRoutineItems(items).map((item) => ({
+    exercise_id: item.exerciseId,
+    target_sets: item.targetSets,
+    target_reps: item.targetReps,
+    target_weight: null,
+    target_rpe: null,
+    rest_seconds: null,
+    note: cleanText(item.note),
+    progression_rule: 'none' as const,
+    increment_kg: null,
+    increment_lb: null,
+    rep_range_min: null,
+    rep_range_max: null,
+    rpe_cap: null,
+    amrap_last_set: false,
+  }));
 }
 
 export async function createIssue(db: SQLiteDatabase, input: CreateIssueInput): Promise<Issue> {
@@ -153,6 +223,87 @@ export async function updateIssue(
 
 export async function archiveIssue(db: SQLiteDatabase, id: string): Promise<void> {
   await updateIssue(db, id, { active: false });
+}
+
+export async function createIssueRoutine(
+  db: SQLiteDatabase,
+  input: CreateIssueRoutineInput,
+): Promise<IssueRoutine> {
+  const issue = await getIssueById(db, input.issueId);
+  if (!issue) throw new Error('Issue not found');
+  const existing = await getIssueRoutine(db, input.issueId);
+  if (existing) throw new Error('Issue already has a linked routine');
+
+  const now = Date.now();
+  const routineId = newId();
+  const template = await createTemplate(db, {
+    name: cleanRoutineName(input.name),
+    notes: null,
+    items: toRoutineTemplateItems(input.items),
+  });
+
+  const routine: IssueRoutine = {
+    id: routineId,
+    issue_id: input.issueId,
+    template_id: template.id,
+    created_at: now,
+    updated_at: now,
+  };
+
+  await db.runAsync(
+    `INSERT INTO issue_routines (id, issue_id, template_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [routine.id, routine.issue_id, routine.template_id, routine.created_at, routine.updated_at],
+  );
+
+  return routine;
+}
+
+export async function updateIssueRoutine(
+  db: SQLiteDatabase,
+  issueId: string,
+  input: UpdateIssueRoutineInput,
+): Promise<void> {
+  const routine = await getIssueRoutine(db, issueId);
+  if (!routine) throw new Error('Issue Routine not found');
+
+  await updateTemplate(db, routine.template_id, {
+    name: cleanRoutineName(input.name),
+    notes: null,
+    items: toRoutineTemplateItems(input.items),
+  });
+
+  await db.runAsync('UPDATE issue_routines SET updated_at = ? WHERE id = ?', [
+    Date.now(),
+    routine.id,
+  ]);
+}
+
+export async function getIssueRoutine(
+  db: SQLiteDatabase,
+  issueId: string,
+): Promise<IssueRoutineSummary | null> {
+  return db.getFirstAsync<IssueRoutineSummary>(
+    `SELECT r.*, t.name AS routine_name, t.notes AS routine_note,
+            COUNT(DISTINCT ti.id) AS exercise_count,
+            MAX(CASE WHEN ws.status = 'completed' THEN ws.ended_at ELSE NULL END) AS last_completed_at
+       FROM issue_routines r
+       JOIN templates t ON t.id = r.template_id
+       LEFT JOIN template_items ti ON ti.template_id = t.id
+       LEFT JOIN workout_sessions ws ON ws.template_id = t.id
+      WHERE r.issue_id = ?
+      GROUP BY r.id`,
+    [issueId],
+  );
+}
+
+export async function getIssueRoutineItems(
+  db: SQLiteDatabase,
+  issueId: string,
+): Promise<TemplateItemWithExercise[]> {
+  const routine = await getIssueRoutine(db, issueId);
+  if (!routine) return [];
+  return getTemplateItemsWithExercise(db, routine.template_id);
 }
 
 export async function getIssues(

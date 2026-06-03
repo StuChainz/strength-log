@@ -347,6 +347,26 @@ CREATE INDEX IF NOT EXISTS idx_issue_exercise_links_exercise
   ON issue_exercise_links (exercise_id);
 `;
 
+const MIGRATION_016 = `
+ALTER TABLE template_items
+  ADD COLUMN note TEXT;
+`;
+
+const MIGRATION_017 = `
+CREATE TABLE IF NOT EXISTS issue_routines (
+  id          TEXT PRIMARY KEY,
+  issue_id    TEXT NOT NULL REFERENCES issues(id),
+  template_id TEXT NOT NULL REFERENCES templates(id),
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL,
+  UNIQUE (issue_id)
+);
+CREATE INDEX IF NOT EXISTS idx_issue_routines_issue
+  ON issue_routines (issue_id);
+CREATE INDEX IF NOT EXISTS idx_issue_routines_template
+  ON issue_routines (template_id);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { name: '001_init', sql: MIGRATION_001 },
   { name: '002_app_settings', sql: MIGRATION_002 },
@@ -363,4 +383,6 @@ export const MIGRATIONS: Migration[] = [
   { name: '013_exercise_metadata_tertiary_muscles', sql: MIGRATION_013 },
   { name: '014_issues', sql: MIGRATION_014 },
   { name: '015_issue_exercise_links', sql: MIGRATION_015 },
+  { name: '016_template_item_note', sql: MIGRATION_016 },
+  { name: '017_issue_routines', sql: MIGRATION_017 },
 ];

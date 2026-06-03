@@ -37,6 +37,7 @@ export interface DraftItemInput {
   target_weight: number | null;
   target_rpe: number | null;
   rest_seconds: number | null;
+  note?: string | null;
   progression_rule?: ProgressionRule | null;
   increment_kg?: number | null;
   increment_lb?: number | null;
@@ -46,7 +47,9 @@ export interface DraftItemInput {
   amrap_last_set?: boolean | 0 | 1 | null;
 }
 
-interface NormalizedDraftItemInput extends Required<Omit<DraftItemInput, 'amrap_last_set'>> {
+interface NormalizedDraftItemInput
+  extends Required<Omit<DraftItemInput, 'amrap_last_set' | 'note'>> {
+  note: string | null;
   progression_rule: ProgressionRule;
   amrap_last_set: 0 | 1;
 }
@@ -69,6 +72,11 @@ function assertPositiveInteger(value: number | null, field: string): void {
   }
 }
 
+function cleanText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function normalizeDraftItem(item: DraftItemInput): NormalizedDraftItemInput {
   const progressionRule = item.progression_rule ?? 'none';
   if (!['none', 'linear', 'double', 'rpe_gated'].includes(progressionRule)) {
@@ -82,6 +90,7 @@ function normalizeDraftItem(item: DraftItemInput): NormalizedDraftItemInput {
     target_weight: item.target_weight,
     target_rpe: item.target_rpe,
     rest_seconds: item.rest_seconds,
+    note: cleanText(item.note),
     progression_rule: progressionRule,
     increment_kg: item.increment_kg ?? null,
     increment_lb: item.increment_lb ?? null,
@@ -189,9 +198,9 @@ export async function createTemplate(
       await db.runAsync(
         `INSERT INTO template_items
            (id, template_id, exercise_id, position, target_sets, target_reps, target_weight,
-            target_rpe, rest_seconds, progression_rule, increment_kg, increment_lb,
+            target_rpe, rest_seconds, note, progression_rule, increment_kg, increment_lb,
             rep_range_min, rep_range_max, rpe_cap, amrap_last_set)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newId(),
           id,
@@ -202,6 +211,7 @@ export async function createTemplate(
           item.target_weight,
           item.target_rpe,
           item.rest_seconds,
+          item.note,
           item.progression_rule,
           item.increment_kg,
           item.increment_lb,
@@ -242,9 +252,9 @@ export async function updateTemplate(
       await db.runAsync(
         `INSERT INTO template_items
            (id, template_id, exercise_id, position, target_sets, target_reps, target_weight,
-            target_rpe, rest_seconds, progression_rule, increment_kg, increment_lb,
+            target_rpe, rest_seconds, note, progression_rule, increment_kg, increment_lb,
             rep_range_min, rep_range_max, rpe_cap, amrap_last_set)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newId(),
           id,
@@ -255,6 +265,7 @@ export async function updateTemplate(
           item.target_weight,
           item.target_rpe,
           item.rest_seconds,
+          item.note,
           item.progression_rule,
           item.increment_kg,
           item.increment_lb,

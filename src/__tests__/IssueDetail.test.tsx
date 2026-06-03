@@ -3,23 +3,28 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import IssueDetail from '@/screens/IssueDetail';
 import { openDb } from '@/db/client';
 import {
+  createIssueRoutine,
   createIssueExerciseLink,
   deleteExerciseIssueEvent,
   deleteIssueExerciseLink,
   getIssueById,
   getIssueExerciseLinks,
+  getIssueRoutine,
+  getIssueRoutineItems,
   getIssueRecentEvents,
   updateIssueExerciseLink,
   updateExerciseIssueEvent,
+  updateIssueRoutine,
 } from '@/db/repositories/issues.repo';
 
 const mockDb = {};
 const mockGoBack = jest.fn();
+const mockNavigate = jest.fn();
 let mockRouteParams: { issueId?: string } | undefined = { issueId: 'issue-1' };
 
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
-  useNavigation: () => ({ goBack: mockGoBack }),
+  useNavigation: () => ({ goBack: mockGoBack, navigate: mockNavigate }),
   useRoute: () => ({ params: mockRouteParams }),
 }));
 
@@ -31,13 +36,17 @@ jest.mock('@/db/repositories/issues.repo', () => ({
   archiveIssue: jest.fn(),
   createIssue: jest.fn(),
   createIssueExerciseLink: jest.fn(),
+  createIssueRoutine: jest.fn(),
   deleteExerciseIssueEvent: jest.fn(),
   deleteIssueExerciseLink: jest.fn(),
   getIssueById: jest.fn(),
   getIssueExerciseLinks: jest.fn(),
+  getIssueRoutine: jest.fn(),
+  getIssueRoutineItems: jest.fn(),
   getIssueRecentEvents: jest.fn(),
   updateIssueExerciseLink: jest.fn(),
   updateExerciseIssueEvent: jest.fn(),
+  updateIssueRoutine: jest.fn(),
   updateIssue: jest.fn(),
 }));
 
@@ -99,6 +108,12 @@ const getIssueExerciseLinksMock = getIssueExerciseLinks as jest.MockedFunction<
 const createIssueExerciseLinkMock = createIssueExerciseLink as jest.MockedFunction<
   typeof createIssueExerciseLink
 >;
+const createIssueRoutineMock = createIssueRoutine as jest.MockedFunction<typeof createIssueRoutine>;
+const getIssueRoutineMock = getIssueRoutine as jest.MockedFunction<typeof getIssueRoutine>;
+const getIssueRoutineItemsMock = getIssueRoutineItems as jest.MockedFunction<
+  typeof getIssueRoutineItems
+>;
+const updateIssueRoutineMock = updateIssueRoutine as jest.MockedFunction<typeof updateIssueRoutine>;
 const updateIssueExerciseLinkMock = updateIssueExerciseLink as jest.MockedFunction<
   typeof updateIssueExerciseLink
 >;
@@ -157,11 +172,52 @@ let exerciseLinks = [
     updated_at: 1,
   },
 ];
+let routine:
+  | {
+      id: string;
+      issue_id: string;
+      template_id: string;
+      created_at: number;
+      updated_at: number;
+      routine_name: string;
+      routine_note: string | null;
+      exercise_count: number;
+      last_completed_at: number | null;
+    }
+  | null = null;
+let routineItems: {
+  id: string;
+  template_id: string;
+  exercise_id: string;
+  exercise_name: string;
+  exercise_category: 'cable';
+  exercise_default_unit: 'kg';
+  exercise_movement_pattern: null;
+  exercise_body_region: null;
+  exercise_mechanics: null;
+  exercise_equipment_json: null;
+  position: number;
+  target_sets: number | null;
+  target_reps: number | null;
+  target_weight: number | null;
+  target_rpe: number | null;
+  rest_seconds: number | null;
+  note: string | null;
+  progression_rule: 'none';
+  increment_kg: null;
+  increment_lb: null;
+  rep_range_min: null;
+  rep_range_max: null;
+  rpe_cap: null;
+  amrap_last_set: 0;
+}[] = [];
 
 describe('IssueDetail reaction correction', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRouteParams = { issueId: 'issue-1' };
+    routine = null;
+    routineItems = [];
     recentEvents = [event];
     exerciseLinks = [
       {
@@ -189,7 +245,17 @@ describe('IssueDetail reaction correction', () => {
     getIssueByIdMock.mockResolvedValue(issue);
     getIssueRecentEventsMock.mockImplementation(async () => recentEvents);
     getIssueExerciseLinksMock.mockImplementation(async () => exerciseLinks);
+    getIssueRoutineMock.mockImplementation(async () => routine);
+    getIssueRoutineItemsMock.mockImplementation(async () => routineItems);
     createIssueExerciseLinkMock.mockResolvedValue(exerciseLinks[0]);
+    createIssueRoutineMock.mockResolvedValue({
+      id: 'routine-1',
+      issue_id: 'issue-1',
+      template_id: 'template-routine',
+      created_at: 1,
+      updated_at: 1,
+    });
+    updateIssueRoutineMock.mockResolvedValue(undefined);
     updateIssueExerciseLinkMock.mockResolvedValue(undefined);
     deleteIssueExerciseLinkMock.mockResolvedValue(undefined);
     updateExerciseIssueEventMock.mockResolvedValue(undefined);
@@ -238,6 +304,100 @@ describe('IssueDetail reaction correction', () => {
       }),
     );
     await waitFor(() => expect(getByText('Face Pull')).toBeTruthy());
+  });
+
+  it('creates an Issue Routine from the shared exercise picker', async () => {
+    createIssueRoutineMock.mockImplementationOnce(async () => {
+      routine = {
+        id: 'routine-1',
+        issue_id: 'issue-1',
+        template_id: 'template-routine',
+        routine_name: 'Shoulder Pain Routine',
+        routine_note: null,
+        exercise_count: 1,
+        last_completed_at: null,
+        created_at: 1,
+        updated_at: 1,
+      };
+      routineItems = [
+        {
+          id: 'routine-item-1',
+          template_id: 'template-routine',
+          exercise_id: 'face-pull',
+          exercise_name: 'Face Pull',
+          exercise_category: 'cable',
+          exercise_default_unit: 'kg',
+          exercise_movement_pattern: null,
+          exercise_body_region: null,
+          exercise_mechanics: null,
+          exercise_equipment_json: null,
+          position: 0,
+          target_sets: 2,
+          target_reps: 15,
+          target_weight: null,
+          target_rpe: null,
+          rest_seconds: null,
+          note: 'Light',
+          progression_rule: 'none',
+          increment_kg: null,
+          increment_lb: null,
+          rep_range_min: null,
+          rep_range_max: null,
+          rpe_cap: null,
+          amrap_last_set: 0,
+        },
+      ];
+      return {
+        id: 'routine-1',
+        issue_id: 'issue-1',
+        template_id: 'template-routine',
+        created_at: 1,
+        updated_at: 1,
+      };
+    });
+
+    const { getByTestId, getByText } = render(<IssueDetail />);
+
+    await waitFor(() => expect(getByTestId('create-issue-routine-btn')).toBeTruthy());
+    expect(getByText('No routine linked')).toBeTruthy();
+    fireEvent.press(getByTestId('create-issue-routine-btn'));
+    fireEvent.press(getByTestId('add-routine-exercise-btn'));
+    fireEvent.press(getByTestId('mock-picker-select-face-pull'));
+    fireEvent.changeText(getByTestId(/^routine-target-sets-/), '2');
+    fireEvent.changeText(getByTestId(/^routine-target-reps-/), '15');
+    fireEvent.changeText(getByTestId(/^routine-note-/), 'Light');
+    fireEvent.press(getByTestId('save-issue-routine-btn'));
+
+    await waitFor(() =>
+      expect(createIssueRoutineMock).toHaveBeenCalledWith(mockDb, {
+        issueId: 'issue-1',
+        name: 'Shoulder Pain Routine',
+        items: [{ exerciseId: 'face-pull', targetSets: 2, targetReps: 15, note: 'Light' }],
+      }),
+    );
+    await waitFor(() => expect(getByTestId('run-issue-routine-btn')).toBeTruthy());
+    expect(getByText('Shoulder Pain Routine')).toBeTruthy();
+  });
+
+  it('runs an Issue Routine through LiveWorkout with the linked template', async () => {
+    routine = {
+      id: 'routine-1',
+      issue_id: 'issue-1',
+      template_id: 'template-routine',
+      routine_name: 'Shoulder Pain Routine',
+      routine_note: null,
+      exercise_count: 1,
+      last_completed_at: null,
+      created_at: 1,
+      updated_at: 1,
+    };
+
+    const { getByTestId } = render(<IssueDetail />);
+
+    await waitFor(() => expect(getByTestId('run-issue-routine-btn')).toBeTruthy());
+    fireEvent.press(getByTestId('run-issue-routine-btn'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('LiveWorkout', { templateId: 'template-routine' });
   });
 
   it('removes an exercise link from Issue detail', async () => {

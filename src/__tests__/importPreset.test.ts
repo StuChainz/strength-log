@@ -88,13 +88,14 @@ function createMockDb(presetExerciseNames: string[], opts: MockOptions = {}) {
           target_weight: params[6] as number | null,
           target_rpe: params[7] as number | null,
           rest_seconds: params[8] as number | null,
-          progression_rule: params[9] as string,
-          increment_kg: params[10] as number | null,
-          increment_lb: params[11] as number | null,
-          rep_range_min: params[12] as number | null,
-          rep_range_max: params[13] as number | null,
-          rpe_cap: params[14] as number | null,
-          amrap_last_set: params[15] as number,
+          note: params[9] as string | null,
+          progression_rule: params[10] as string,
+          increment_kg: params[11] as number | null,
+          increment_lb: params[12] as number | null,
+          rep_range_min: params[13] as number | null,
+          rep_range_max: params[14] as number | null,
+          rpe_cap: params[15] as number | null,
+          amrap_last_set: params[16] as number,
         });
       } else if (/^DELETE FROM template_items WHERE template_id = \?/.test(sql)) {
         const tid = params[0] as string;

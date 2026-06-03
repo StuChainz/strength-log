@@ -1282,6 +1282,11 @@ export default function LiveWorkout() {
               <Text style={styles.carouselName} numberOfLines={2}>
                 {activeExercise?.name ?? '—'}
               </Text>
+              {activeExercise?.note ? (
+                <Text style={styles.exerciseNote} numberOfLines={2} testID="active-exercise-note">
+                  {activeExercise.note}
+                </Text>
+              ) : null}
               {activeExerciseIssueLinks.length > 0 && (
                 <View style={styles.issueLinkContext} testID="live-issue-link-context">
                   <Text style={styles.issueLinkContextLabel}>Linked issue</Text>
@@ -2352,6 +2357,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: T.text,
     letterSpacing: 0,
+  },
+  exerciseNote: {
+    color: T.textDim,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 7,
   },
   issueLinkContext: {
     borderRadius: 10,

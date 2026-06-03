@@ -3,18 +3,22 @@ import {
   archiveIssue,
   createIssue,
   createIssueExerciseLink,
+  createIssueRoutine,
   deleteExerciseIssueEvent,
   deleteIssueExerciseLink,
   getActiveIssueExerciseLinksForExercise,
   getExerciseIssueSummary,
   getIssueById,
   getIssueExerciseLinks,
+  getIssueRoutine,
+  getIssueRoutineItems,
   getIssues,
   getIssueRecentEvents,
   recordExerciseIssueEvent,
   updateIssueExerciseLink,
   updateExerciseIssueEvent,
   updateIssue,
+  updateIssueRoutine,
 } from '@/db/repositories/issues.repo';
 import { newId } from '@/domain/ids';
 import type { Exercise } from '@/domain/types';
@@ -223,6 +227,120 @@ describe('issues repository', () => {
         link_type: 'helpful',
         note: 'Feels controlled',
       }),
+    ]);
+  });
+
+  it('creates an Issue Routine backed by a normal template', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const facePull = await createExercise(db, 'Face Pull');
+    const pullApart = await createExercise(db, 'Band Pull Apart');
+
+    const routine = await createIssueRoutine(db as never, {
+      issueId: issue.id,
+      name: 'Shoulder Pain Routine',
+      items: [
+        { exerciseId: facePull.id, targetSets: 2, targetReps: 15, note: 'Light and smooth' },
+        { exerciseId: pullApart.id, targetSets: 2, targetReps: 20 },
+      ],
+    });
+
+    expect(await getIssueRoutine(db as never, issue.id)).toEqual(
+      expect.objectContaining({
+        id: routine.id,
+        issue_id: issue.id,
+        template_id: routine.template_id,
+        routine_name: 'Shoulder Pain Routine',
+        exercise_count: 2,
+        last_completed_at: null,
+      }),
+    );
+    expect(await getIssueRoutineItems(db as never, issue.id)).toEqual([
+      expect.objectContaining({
+        exercise_id: facePull.id,
+        exercise_name: 'Face Pull',
+        target_sets: 2,
+        target_reps: 15,
+        target_weight: null,
+        progression_rule: 'none',
+        note: 'Light and smooth',
+      }),
+      expect.objectContaining({
+        exercise_id: pullApart.id,
+        exercise_name: 'Band Pull Apart',
+        target_sets: 2,
+        target_reps: 20,
+        note: null,
+      }),
+    ]);
+  });
+
+  it('edits an Issue Routine and removes routine exercises through template items', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const facePull = await createExercise(db, 'Face Pull');
+    const pullApart = await createExercise(db, 'Band Pull Apart');
+    const ytw = await createExercise(db, 'YTW');
+
+    const routine = await createIssueRoutine(db as never, {
+      issueId: issue.id,
+      name: 'Shoulder Pain Routine',
+      items: [
+        { exerciseId: facePull.id, targetSets: 2, targetReps: 15 },
+        { exerciseId: pullApart.id, targetSets: 2, targetReps: 20 },
+      ],
+    });
+
+    await updateIssueRoutine(db as never, issue.id, {
+      name: 'Shoulder Warm-up Routine',
+      items: [{ exerciseId: ytw.id, targetSets: 2, targetReps: 10, note: 'Slow reps' }],
+    });
+
+    expect(await getIssueRoutine(db as never, issue.id)).toEqual(
+      expect.objectContaining({
+        id: routine.id,
+        template_id: routine.template_id,
+        routine_name: 'Shoulder Warm-up Routine',
+        exercise_count: 1,
+      }),
+    );
+    expect(await getIssueRoutineItems(db as never, issue.id)).toEqual([
+      expect.objectContaining({
+        exercise_id: ytw.id,
+        exercise_name: 'YTW',
+        target_sets: 2,
+        target_reps: 10,
+        note: 'Slow reps',
+      }),
+    ]);
+    expect(
+      await db.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM template_items WHERE template_id = ?',
+        [routine.template_id],
+      ),
+    ).toEqual({ count: 1 });
+  });
+
+  it('archives an Issue without deleting linked routine data', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const facePull = await createExercise(db, 'Face Pull');
+    const routine = await createIssueRoutine(db as never, {
+      issueId: issue.id,
+      name: 'Shoulder Pain Routine',
+      items: [{ exerciseId: facePull.id, targetSets: 2, targetReps: 15 }],
+    });
+
+    await archiveIssue(db as never, issue.id);
+
+    expect(await getIssueById(db as never, issue.id)).toEqual(
+      expect.objectContaining({ active: 0 }),
+    );
+    expect(await getIssueRoutine(db as never, issue.id)).toEqual(
+      expect.objectContaining({ id: routine.id, template_id: routine.template_id }),
+    );
+    expect(await getIssueRoutineItems(db as never, issue.id)).toEqual([
+      expect.objectContaining({ exercise_id: facePull.id }),
     ]);
   });
 
