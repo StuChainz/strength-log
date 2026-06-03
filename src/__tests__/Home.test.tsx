@@ -136,16 +136,16 @@ describe('Home screen', () => {
         {
           muscle: 'chest',
           totalExposure: 18,
-          directSets: 18,
-          indirectSets: 0,
+          directContribution: 18,
+          indirectContribution: 0,
           directSources: [],
           indirectSources: [],
         },
         {
           muscle: 'triceps',
           totalExposure: 12,
-          directSets: 6,
-          indirectSets: 6,
+          directContribution: 6,
+          indirectContribution: 6,
           directSources: [],
           indirectSources: [],
         },
@@ -271,6 +271,7 @@ describe('Home screen', () => {
         deleted_at: null,
         primary_muscles_json: '["chest"]',
         secondary_muscles_json: '["triceps","front_delts"]',
+        tertiary_muscles_json: null,
       },
       {
         session_id: 'session-1',
@@ -281,6 +282,7 @@ describe('Home screen', () => {
         deleted_at: null,
         primary_muscles_json: '["chest"]',
         secondary_muscles_json: '["triceps","front_delts"]',
+        tertiary_muscles_json: null,
       },
     ];
     configureDbMock();
@@ -294,7 +296,7 @@ describe('Home screen', () => {
     expect(screen.getByText('17 sets')).toBeTruthy();
     expect(screen.getByText(/2 PRs/)).toBeTruthy();
     expect(screen.getByText('Chest 2')).toBeTruthy();
-    expect(screen.getByText('Triceps 2')).toBeTruthy();
+    expect(screen.getByText('Triceps 1')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('recent-workout-session-1'));
     expect(mockNavigate).toHaveBeenCalledWith('WorkoutDetails', { sessionId: 'session-1' });

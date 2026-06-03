@@ -67,6 +67,7 @@ describe('exercises repository metadata', () => {
         body_region: 'upper_body',
         primary_muscles_json: '["chest"]',
         secondary_muscles_json: '["triceps","front_delts"]',
+        tertiary_muscles_json: '["abs"]',
         equipment_json: '["barbell","bench"]',
         mechanics: 'compound',
         laterality: 'bilateral',
@@ -97,6 +98,7 @@ describe('exercises repository metadata', () => {
     expect(exercises[0].metadata?.force_type).toBe('push');
     expect(exercises[0].aliases).toEqual(['bench', 'flat bench']);
     expect(exercises[0].metadata?.primary_muscles).toEqual(['chest']);
+    expect(exercises[0].metadata?.tertiary_muscles).toEqual(['abs']);
     expect(exercises[0].metadata?.equipment).toEqual(['barbell', 'bench']);
     expect(exercises[1].metadata).toBeNull();
   });
@@ -120,6 +122,7 @@ describe('exercises repository metadata', () => {
       body_region: null,
       primary_muscles_json: null,
       secondary_muscles_json: null,
+      tertiary_muscles_json: null,
       equipment_json: null,
       mechanics: null,
       laterality: null,
@@ -188,6 +191,7 @@ describe('exercises repository metadata', () => {
       'bilateral',
       '%"chest"%',
       '%"chest"%',
+      '%"chest"%',
       '%"barbell"%',
       'curated_seed',
       'curated_seed:barbell_bench_press',
@@ -227,6 +231,7 @@ describe('exercises repository metadata', () => {
         body_region: 'upper_body',
         primary_muscles_json: '["lats"]',
         secondary_muscles_json: '["biceps","upper_back"]',
+        tertiary_muscles_json: '["forearms"]',
         equipment_json: '["bodyweight","pull_up_bar"]',
         mechanics: 'compound',
         laterality: 'bilateral',
@@ -239,6 +244,7 @@ describe('exercises repository metadata', () => {
         body_region: 'upper_body',
         primary_muscles_json: '["chest"]',
         secondary_muscles_json: '["triceps"]',
+        tertiary_muscles_json: '["front_delts"]',
         equipment_json: '["barbell","bench"]',
         mechanics: 'compound',
         laterality: 'bilateral',
@@ -251,6 +257,7 @@ describe('exercises repository metadata', () => {
         body_region: null,
         primary_muscles_json: 'not json',
         secondary_muscles_json: null,
+        tertiary_muscles_json: null,
         equipment_json: '[]',
         mechanics: null,
         laterality: null,
@@ -270,7 +277,16 @@ describe('exercises repository metadata', () => {
     expect(facets.lateralities).toEqual(['bilateral']);
     expect(facets.primary_muscles).toEqual(['chest', 'lats']);
     expect(facets.secondary_muscles).toEqual(['upper_back', 'biceps', 'triceps']);
-    expect(facets.muscles).toEqual(['chest', 'upper_back', 'lats', 'biceps', 'triceps']);
+    expect(facets.tertiary_muscles).toEqual(['front_delts', 'forearms']);
+    expect(facets.muscles).toEqual([
+      'chest',
+      'upper_back',
+      'lats',
+      'front_delts',
+      'biceps',
+      'triceps',
+      'forearms',
+    ]);
     expect(facets.equipment).toEqual(['barbell', 'bodyweight', 'bench', 'pull_up_bar']);
     expect(facets.substitution_groups).toEqual(['horizontal_press', 'vertical_pull']);
     expect(facets.sources).toEqual(['curated_seed']);
@@ -322,6 +338,7 @@ describe('exercises repository metadata', () => {
           body_region: 'upper_body',
           primary_muscles_json: '["chest"]',
           secondary_muscles_json: '["triceps"]',
+          tertiary_muscles_json: null,
           equipment_json: '["barbell"]',
           mechanics: 'compound',
           laterality: 'bilateral',
@@ -349,6 +366,7 @@ describe('exercises repository metadata', () => {
           body_region: 'upper_body',
           primary_muscles_json: '["chest"]',
           secondary_muscles_json: '["triceps"]',
+          tertiary_muscles_json: null,
           equipment_json: '["bodyweight"]',
           mechanics: 'compound',
           laterality: 'bilateral',

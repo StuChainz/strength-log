@@ -9,6 +9,7 @@ export interface SerializedExerciseMetadataInput {
   body_region: ExerciseMetadataInput['body_region'];
   primary_muscles_json: string;
   secondary_muscles_json: string;
+  tertiary_muscles_json: string;
   equipment_json: string;
   mechanics: ExerciseMetadataInput['mechanics'];
   laterality: ExerciseMetadataInput['laterality'];
@@ -27,6 +28,7 @@ export function serializeExerciseMetadataInput(input: unknown): SerializedExerci
     body_region: metadata.body_region,
     primary_muscles_json: JSON.stringify(metadata.primary_muscles),
     secondary_muscles_json: JSON.stringify(metadata.secondary_muscles),
+    tertiary_muscles_json: JSON.stringify(metadata.tertiary_muscles),
     equipment_json: JSON.stringify(metadata.equipment),
     mechanics: metadata.mechanics,
     laterality: metadata.laterality,

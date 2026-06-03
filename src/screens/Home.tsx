@@ -99,6 +99,7 @@ interface RecentMuscleRow {
   deleted_at: number | null;
   primary_muscles_json: string | null;
   secondary_muscles_json: string | null;
+  tertiary_muscles_json: string | null;
 }
 
 interface MuscleChip {
@@ -164,6 +165,7 @@ function toExposureSet(row: RecentMuscleRow): TrainingVolumeExposureSet {
     deleted_at: row.deleted_at,
     primary_muscles: parseMuscleArray(row.primary_muscles_json),
     secondary_muscles: parseMuscleArray(row.secondary_muscles_json),
+    tertiary_muscles: parseMuscleArray(row.tertiary_muscles_json),
   };
 }
 
@@ -604,7 +606,8 @@ async function getRecentMuscleRows(
             ws.is_warmup,
             ws.deleted_at,
             em.primary_muscles_json,
-            em.secondary_muscles_json
+            em.secondary_muscles_json,
+            em.tertiary_muscles_json
        FROM workout_sets ws
        LEFT JOIN exercises e ON e.id = ws.exercise_id
        LEFT JOIN exercise_metadata em ON em.exercise_id = ws.exercise_id

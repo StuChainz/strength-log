@@ -142,6 +142,7 @@ export interface ExerciseMetadata {
   body_region: BodyRegion | null;
   primary_muscles_json: string;
   secondary_muscles_json: string;
+  tertiary_muscles_json: string;
   equipment_json: string;
   mechanics: Mechanics | null;
   laterality: Laterality | null;
@@ -159,6 +160,7 @@ export interface ExerciseMetadataView {
   body_region: BodyRegion | null;
   primary_muscles: MuscleGroup[];
   secondary_muscles: MuscleGroup[];
+  tertiary_muscles: MuscleGroup[];
   equipment: Equipment[];
   mechanics: Mechanics | null;
   laterality: Laterality | null;

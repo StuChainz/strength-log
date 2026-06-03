@@ -96,35 +96,38 @@ describe('TrainingVolume', () => {
       muscles: [
         {
           muscle: 'triceps',
-          totalExposure: 16,
-          directSets: 8,
-          indirectSets: 8,
+          totalExposure: 12.25,
+          directContribution: 8,
+          indirectContribution: 4.25,
           directSources: [
-            { exercise_id: 'skull-crusher', exercise_name: 'Skull Crusher', sets: 3 },
-            { exercise_id: 'pushdown', exercise_name: 'Pushdown', sets: 3 },
-            { exercise_id: 'overhead-ext', exercise_name: 'Overhead Ext', sets: 2 },
+            { exercise_id: 'skull-crusher', exercise_name: 'Skull Crusher', contribution: 3 },
+            { exercise_id: 'pushdown', exercise_name: 'Pushdown', contribution: 3 },
+            { exercise_id: 'overhead-ext', exercise_name: 'Overhead Ext', contribution: 2 },
           ],
           indirectSources: [
-            { exercise_id: 'bench', exercise_name: 'Bench Press', sets: 3 },
-            { exercise_id: 'incline-db', exercise_name: 'Incline DB Press', sets: 3 },
-            { exercise_id: 'dips', exercise_name: 'Dips', sets: 2 },
+            { exercise_id: 'bench', exercise_name: 'Bench Press', contribution: 1.5 },
+            { exercise_id: 'incline-db', exercise_name: 'Incline DB Press', contribution: 1.5 },
+            { exercise_id: 'dips', exercise_name: 'Dips', contribution: 1.25 },
           ],
         },
       ],
     });
 
-    const { getByTestId, getByText, queryByText } = render(<TrainingVolume />);
+    const { getAllByText, getByTestId, getByText, queryByText } = render(<TrainingVolume />);
 
     await waitFor(() => expect(getByText('Triceps')).toBeTruthy());
     expect(queryByText('Skull Crusher')).toBeNull();
 
     fireEvent.press(getByTestId('training-volume-toggle-triceps'));
 
-    expect(getByText('Total Exposure')).toBeTruthy();
-    expect(getByText('Direct Sets')).toBeTruthy();
-    expect(getByText('Indirect Sets')).toBeTruthy();
+    expect(getByText('Effective Sets')).toBeTruthy();
+    expect(getByText('Direct Contribution')).toBeTruthy();
+    expect(getByText('Indirect Contribution')).toBeTruthy();
     expect(getByText('Direct Sources')).toBeTruthy();
     expect(getByText('Indirect Sources')).toBeTruthy();
+    expect(getAllByText('12.3')).toHaveLength(2);
+    expect(getByText('4.3')).toBeTruthy();
+    expect(getAllByText('+1.5')).toHaveLength(2);
     expect(getByText('Skull Crusher')).toBeTruthy();
     expect(getByText('Pushdown')).toBeTruthy();
     expect(getByText('Overhead Ext')).toBeTruthy();

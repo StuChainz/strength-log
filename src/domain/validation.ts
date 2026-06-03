@@ -37,6 +37,7 @@ export const ExerciseMetadataInputSchema = z.object({
   body_region: BodyRegionSchema,
   primary_muscles: z.array(MuscleGroupSchema),
   secondary_muscles: z.array(MuscleGroupSchema),
+  tertiary_muscles: z.array(MuscleGroupSchema).default([]),
   equipment: z.array(EquipmentSchema),
   mechanics: MechanicsSchema,
   laterality: LateralitySchema,

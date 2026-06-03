@@ -11,14 +11,14 @@ export type SessionMuscleSummary = Partial<Record<MuscleGroup, number>>;
 export interface ExerciseMuscleContribution {
   exercise_id: string;
   exercise_name: string;
-  sets: number;
+  contribution: number;
 }
 
 export interface TrainingVolumeMuscleExposure {
   muscle: MuscleGroup;
   totalExposure: number;
-  directSets: number;
-  indirectSets: number;
+  directContribution: number;
+  indirectContribution: number;
   directSources: ExerciseMuscleContribution[];
   indirectSources: ExerciseMuscleContribution[];
 }
@@ -27,6 +27,7 @@ export interface TrainingVolumeExposureSet extends SessionMuscleSet {
   exercise_name: string;
   primary_muscles: MuscleGroup[];
   secondary_muscles: MuscleGroup[];
+  tertiary_muscles?: MuscleGroup[];
 }
 
 export type SessionMuscleSet = Pick<WorkoutSet, 'exercise_id'> &
@@ -34,11 +35,12 @@ export type SessionMuscleSet = Pick<WorkoutSet, 'exercise_id'> &
 
 export type ExerciseMuscleMetadata = Pick<
   ExerciseMetadataView,
-  'exercise_id' | 'primary_muscles' | 'secondary_muscles'
+  'exercise_id' | 'primary_muscles' | 'secondary_muscles' | 'tertiary_muscles'
 >;
 
 const PRIMARY_MUSCLE_CREDIT = 1;
 const SECONDARY_MUSCLE_CREDIT = 0.5;
+const TERTIARY_MUSCLE_CREDIT = 0.25;
 
 export function calculateSessionMuscleSummary(
   session: Pick<WorkoutSession, 'status'>,
@@ -60,14 +62,22 @@ export function calculateSessionMuscleSummary(
 
     const primaryMuscles = uniqueMuscles(metadata.primary_muscles);
     const primaryMuscleSet = new Set(primaryMuscles);
+    const secondaryMuscles = uniqueMuscles(metadata.secondary_muscles).filter(
+      (muscle) => !primaryMuscleSet.has(muscle),
+    );
+    const secondaryMuscleSet = new Set(secondaryMuscles);
 
     for (const muscle of primaryMuscles) {
       addMuscleCredit(totals, muscle, PRIMARY_MUSCLE_CREDIT);
     }
 
-    for (const muscle of uniqueMuscles(metadata.secondary_muscles)) {
-      if (primaryMuscleSet.has(muscle)) continue;
+    for (const muscle of secondaryMuscles) {
       addMuscleCredit(totals, muscle, SECONDARY_MUSCLE_CREDIT);
+    }
+
+    for (const muscle of uniqueMuscles(metadata.tertiary_muscles ?? [])) {
+      if (primaryMuscleSet.has(muscle) || secondaryMuscleSet.has(muscle)) continue;
+      addMuscleCredit(totals, muscle, TERTIARY_MUSCLE_CREDIT);
     }
   }
 
@@ -80,8 +90,8 @@ export function calculateTrainingVolumeMuscleExposure(
   const totals = new Map<
     MuscleGroup,
     {
-      directSets: number;
-      indirectSets: number;
+      directContribution: number;
+      indirectContribution: number;
       directSources: Map<string, ExerciseMuscleContribution>;
       indirectSources: Map<string, ExerciseMuscleContribution>;
     }
@@ -92,19 +102,29 @@ export function calculateTrainingVolumeMuscleExposure(
 
     const primaryMuscles = uniqueMuscles(set.primary_muscles);
     const primaryMuscleSet = new Set(primaryMuscles);
+    const secondaryMuscles = uniqueMuscles(set.secondary_muscles).filter(
+      (muscle) => !primaryMuscleSet.has(muscle),
+    );
+    const secondaryMuscleSet = new Set(secondaryMuscles);
 
     for (const muscle of primaryMuscles) {
       const entry = getExposureEntry(totals, muscle);
-      entry.directSets += 1;
-      addExerciseContribution(entry.directSources, set);
+      entry.directContribution += PRIMARY_MUSCLE_CREDIT;
+      addExerciseContribution(entry.directSources, set, PRIMARY_MUSCLE_CREDIT);
     }
 
-    for (const muscle of uniqueMuscles(set.secondary_muscles)) {
-      if (primaryMuscleSet.has(muscle)) continue;
+    for (const muscle of secondaryMuscles) {
+      const entry = getExposureEntry(totals, muscle);
+      entry.indirectContribution += SECONDARY_MUSCLE_CREDIT;
+      addExerciseContribution(entry.indirectSources, set, SECONDARY_MUSCLE_CREDIT);
+    }
+
+    for (const muscle of uniqueMuscles(set.tertiary_muscles ?? [])) {
+      if (primaryMuscleSet.has(muscle) || secondaryMuscleSet.has(muscle)) continue;
 
       const entry = getExposureEntry(totals, muscle);
-      entry.indirectSets += 1;
-      addExerciseContribution(entry.indirectSources, set);
+      entry.indirectContribution += TERTIARY_MUSCLE_CREDIT;
+      addExerciseContribution(entry.indirectSources, set, TERTIARY_MUSCLE_CREDIT);
     }
   }
 
@@ -117,9 +137,9 @@ export function calculateTrainingVolumeMuscleExposure(
 
     return {
       muscle,
-      totalExposure: entry.directSets + entry.indirectSets,
-      directSets: entry.directSets,
-      indirectSets: entry.indirectSets,
+      totalExposure: entry.directContribution + entry.indirectContribution,
+      directContribution: entry.directContribution,
+      indirectContribution: entry.indirectContribution,
       directSources,
       indirectSources,
     };
@@ -145,8 +165,8 @@ function getExposureEntry(
   totals: Map<
     MuscleGroup,
     {
-      directSets: number;
-      indirectSets: number;
+      directContribution: number;
+      indirectContribution: number;
       directSources: Map<string, ExerciseMuscleContribution>;
       indirectSources: Map<string, ExerciseMuscleContribution>;
     }
@@ -156,8 +176,8 @@ function getExposureEntry(
   let entry = totals.get(muscle);
   if (!entry) {
     entry = {
-      directSets: 0,
-      indirectSets: 0,
+      directContribution: 0,
+      indirectContribution: 0,
       directSources: new Map(),
       indirectSources: new Map(),
     };
@@ -169,17 +189,18 @@ function getExposureEntry(
 function addExerciseContribution(
   sources: Map<string, ExerciseMuscleContribution>,
   set: TrainingVolumeExposureSet,
+  contribution: number,
 ): void {
   const current = sources.get(set.exercise_id);
   if (current) {
-    current.sets += 1;
+    current.contribution += contribution;
     return;
   }
 
   sources.set(set.exercise_id, {
     exercise_id: set.exercise_id,
     exercise_name: set.exercise_name,
-    sets: 1,
+    contribution,
   });
 }
 
@@ -187,7 +208,7 @@ function sortExerciseContributions(
   sources: Map<string, ExerciseMuscleContribution>,
 ): ExerciseMuscleContribution[] {
   return [...sources.values()].sort(
-    (a, b) => b.sets - a.sets || a.exercise_name.localeCompare(b.exercise_name),
+    (a, b) => b.contribution - a.contribution || a.exercise_name.localeCompare(b.exercise_name),
   );
 }
 

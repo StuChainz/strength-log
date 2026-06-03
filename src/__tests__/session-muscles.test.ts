@@ -37,11 +37,16 @@ function metadata(
   exerciseId: string,
   primaryMuscles: MuscleGroup[],
   secondaryMuscles: MuscleGroup[] = [],
-): Pick<ExerciseMetadataView, 'exercise_id' | 'primary_muscles' | 'secondary_muscles'> {
+  tertiaryMuscles: MuscleGroup[] = [],
+): Pick<
+  ExerciseMetadataView,
+  'exercise_id' | 'primary_muscles' | 'secondary_muscles' | 'tertiary_muscles'
+> {
   return {
     exercise_id: exerciseId,
     primary_muscles: primaryMuscles,
     secondary_muscles: secondaryMuscles,
+    tertiary_muscles: tertiaryMuscles,
   };
 }
 
@@ -89,6 +94,20 @@ describe('session muscle calculations', () => {
     expect(summary).toEqual<SessionMuscleSummary>({
       front_delts: 2,
       triceps: 1,
+    });
+  });
+
+  it('applies tertiary muscle weighting', () => {
+    const summary = calculateSessionMuscleSummary(
+      session(),
+      [set('squat'), set('squat'), set('squat'), set('squat')],
+      [metadata('squat', ['quads'], ['glutes'], ['hamstrings'])],
+    );
+
+    expect(summary).toEqual<SessionMuscleSummary>({
+      quads: 4,
+      glutes: 2,
+      hamstrings: 1,
     });
   });
 
@@ -143,6 +162,7 @@ function exposureSet(
     is_warmup: 0 | 1;
     deleted_at: number | null;
   }> = {},
+  tertiaryMuscles: MuscleGroup[] = [],
 ): TrainingVolumeExposureSet {
   const setType = overrides.set_type ?? 'working';
 
@@ -151,6 +171,7 @@ function exposureSet(
     exercise_name: exerciseName,
     primary_muscles: primaryMuscles,
     secondary_muscles: secondaryMuscles,
+    tertiary_muscles: tertiaryMuscles,
     set_type: setType,
     is_warmup: overrides.is_warmup ?? (setType === 'warmup' ? 1 : 0),
     deleted_at: overrides.deleted_at ?? null,
@@ -158,7 +179,26 @@ function exposureSet(
 }
 
 describe('training volume exposure calculations', () => {
-  it('calculates direct and indirect set counts without secondary weighting', () => {
+  it('counts primary muscles as 1.0 effective set per counted set', () => {
+    const exposure = calculateTrainingVolumeMuscleExposure([
+      exposureSet('curl', 'Curl', ['biceps']),
+      exposureSet('curl', 'Curl', ['biceps']),
+      exposureSet('curl', 'Curl', ['biceps']),
+    ]);
+
+    expect(exposure).toEqual([
+      {
+        muscle: 'biceps',
+        totalExposure: 3,
+        directContribution: 3,
+        indirectContribution: 0,
+        directSources: [{ exercise_id: 'curl', exercise_name: 'Curl', contribution: 3 }],
+        indirectSources: [],
+      },
+    ]);
+  });
+
+  it('counts secondary muscles as 0.5 effective set per counted set', () => {
     const exposure = calculateTrainingVolumeMuscleExposure([
       exposureSet('bench', 'Bench Press', ['chest'], ['triceps', 'front_delts']),
       exposureSet('bench', 'Bench Press', ['chest'], ['triceps', 'front_delts']),
@@ -169,28 +209,49 @@ describe('training volume exposure calculations', () => {
       {
         muscle: 'chest',
         totalExposure: 3,
-        directSets: 3,
-        indirectSets: 0,
-        directSources: [{ exercise_id: 'bench', exercise_name: 'Bench Press', sets: 3 }],
+        directContribution: 3,
+        indirectContribution: 0,
+        directSources: [{ exercise_id: 'bench', exercise_name: 'Bench Press', contribution: 3 }],
         indirectSources: [],
       },
       {
         muscle: 'front_delts',
-        totalExposure: 3,
-        directSets: 0,
-        indirectSets: 3,
+        totalExposure: 1.5,
+        directContribution: 0,
+        indirectContribution: 1.5,
         directSources: [],
-        indirectSources: [{ exercise_id: 'bench', exercise_name: 'Bench Press', sets: 3 }],
+        indirectSources: [
+          { exercise_id: 'bench', exercise_name: 'Bench Press', contribution: 1.5 },
+        ],
       },
       {
         muscle: 'triceps',
-        totalExposure: 3,
-        directSets: 0,
-        indirectSets: 3,
+        totalExposure: 1.5,
+        directContribution: 0,
+        indirectContribution: 1.5,
         directSources: [],
-        indirectSources: [{ exercise_id: 'bench', exercise_name: 'Bench Press', sets: 3 }],
+        indirectSources: [
+          { exercise_id: 'bench', exercise_name: 'Bench Press', contribution: 1.5 },
+        ],
       },
     ]);
+  });
+
+  it('counts tertiary muscles as 0.25 effective set per counted set', () => {
+    const exposure = calculateTrainingVolumeMuscleExposure([
+      exposureSet('squat', 'Back Squat', ['quads'], ['glutes'], {}, ['hamstrings']),
+      exposureSet('squat', 'Back Squat', ['quads'], ['glutes'], {}, ['hamstrings']),
+      exposureSet('squat', 'Back Squat', ['quads'], ['glutes'], {}, ['hamstrings']),
+      exposureSet('squat', 'Back Squat', ['quads'], ['glutes'], {}, ['hamstrings']),
+    ]);
+
+    expect(exposure.find((row) => row.muscle === 'hamstrings')).toMatchObject({
+      totalExposure: 1,
+      directContribution: 0,
+      indirectContribution: 1,
+      directSources: [],
+      indirectSources: [{ exercise_id: 'squat', exercise_name: 'Back Squat', contribution: 1 }],
+    });
   });
 
   it('aggregates multiple workouts and ranks by total exposure', () => {
@@ -203,14 +264,47 @@ describe('training volume exposure calculations', () => {
     ]);
 
     expect(exposure.map((row) => [row.muscle, row.totalExposure])).toEqual([
-      ['triceps', 5],
+      ['triceps', 4],
       ['chest', 2],
     ]);
     expect(exposure.find((row) => row.muscle === 'triceps')).toMatchObject({
-      directSets: 3,
-      indirectSets: 2,
-      directSources: [{ exercise_id: 'pushdown', exercise_name: 'Pushdown', sets: 3 }],
-      indirectSources: [{ exercise_id: 'bench', exercise_name: 'Bench Press', sets: 2 }],
+      directContribution: 3,
+      indirectContribution: 1,
+      directSources: [{ exercise_id: 'pushdown', exercise_name: 'Pushdown', contribution: 3 }],
+      indirectSources: [{ exercise_id: 'bench', exercise_name: 'Bench Press', contribution: 1 }],
+    });
+  });
+
+  it('separates direct and indirect contributions and sources', () => {
+    const exposure = calculateTrainingVolumeMuscleExposure([
+      exposureSet('leg-curl', 'Lying Leg Curl', ['hamstrings']),
+      exposureSet('leg-curl', 'Lying Leg Curl', ['hamstrings']),
+      exposureSet('leg-curl', 'Lying Leg Curl', ['hamstrings']),
+      exposureSet('leg-curl', 'Lying Leg Curl', ['hamstrings']),
+      exposureSet('leg-curl', 'Lying Leg Curl', ['hamstrings']),
+      exposureSet('deadlift', 'Barbell Deadlift', ['hamstrings', 'glutes']),
+      exposureSet('squat', 'Barbell Back Squat', ['quads'], ['glutes'], {}, ['hamstrings']),
+      exposureSet('squat', 'Barbell Back Squat', ['quads'], ['glutes'], {}, ['hamstrings']),
+      exposureSet('squat', 'Barbell Back Squat', ['quads'], ['glutes'], {}, ['hamstrings']),
+      exposureSet('squat', 'Barbell Back Squat', ['quads'], ['glutes'], {}, ['hamstrings']),
+      exposureSet('leg-press', 'Leg Press', ['quads'], [], {}, ['hamstrings']),
+      exposureSet('leg-press', 'Leg Press', ['quads'], [], {}, ['hamstrings']),
+      exposureSet('leg-press', 'Leg Press', ['quads'], [], {}, ['hamstrings']),
+      exposureSet('leg-press', 'Leg Press', ['quads'], [], {}, ['hamstrings']),
+    ]);
+
+    expect(exposure.find((row) => row.muscle === 'hamstrings')).toMatchObject({
+      totalExposure: 8,
+      directContribution: 6,
+      indirectContribution: 2,
+      directSources: [
+        { exercise_id: 'leg-curl', exercise_name: 'Lying Leg Curl', contribution: 5 },
+        { exercise_id: 'deadlift', exercise_name: 'Barbell Deadlift', contribution: 1 },
+      ],
+      indirectSources: [
+        { exercise_id: 'squat', exercise_name: 'Barbell Back Squat', contribution: 1 },
+        { exercise_id: 'leg-press', exercise_name: 'Leg Press', contribution: 1 },
+      ],
     });
   });
 
@@ -223,7 +317,7 @@ describe('training volume exposure calculations', () => {
 
     expect(exposure.map((row) => [row.muscle, row.totalExposure])).toEqual([
       ['biceps', 1],
-      ['forearms', 1],
+      ['forearms', 0.5],
     ]);
   });
 

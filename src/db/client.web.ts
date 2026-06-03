@@ -229,14 +229,15 @@ function run(
       body_region: params[3] as ExerciseMetadata['body_region'],
       primary_muscles_json: String(params[4] ?? '[]'),
       secondary_muscles_json: String(params[5] ?? '[]'),
-      equipment_json: String(params[6] ?? '[]'),
-      mechanics: params[7] as ExerciseMetadata['mechanics'],
-      laterality: params[8] as ExerciseMetadata['laterality'],
-      difficulty: params[9] === null ? null : Number(params[9]),
-      substitution_group: params[10] as string | null,
-      source: String(params[11]),
-      source_id: params[12] as string | null,
-      updated_at: Number(params[13]),
+      tertiary_muscles_json: String(params[6] ?? '[]'),
+      equipment_json: String(params[7] ?? '[]'),
+      mechanics: params[8] as ExerciseMetadata['mechanics'],
+      laterality: params[9] as ExerciseMetadata['laterality'],
+      difficulty: params[10] === null ? null : Number(params[10]),
+      substitution_group: params[11] as string | null,
+      source: String(params[12]),
+      source_id: params[13] as string | null,
+      updated_at: Number(params[14]),
     };
     const index = store.exercise_metadata.findIndex((row) => row.exercise_id === next.exercise_id);
     if (index === -1) {
@@ -346,11 +347,18 @@ function filterExercisesWithMetadata(
   if (hasCombinedMuscleFilter) {
     const primaryNeedle = params[paramIndex++];
     const secondaryNeedle = params[paramIndex++];
+    const tertiaryNeedle = /m\.tertiary_muscles_json LIKE \?/i.test(normalizedSql)
+      ? params[paramIndex++]
+      : null;
     rows = rows.filter((exercise) => {
       const metadata = metadataFor(exercise);
       return (
         Boolean(metadata?.primary_muscles_json.includes(stripLike(primaryNeedle))) ||
-        Boolean(metadata?.secondary_muscles_json.includes(stripLike(secondaryNeedle)))
+        Boolean(metadata?.secondary_muscles_json.includes(stripLike(secondaryNeedle))) ||
+        Boolean(
+          tertiaryNeedle &&
+            metadata?.tertiary_muscles_json?.includes(stripLike(tertiaryNeedle)),
+        )
       );
     });
   }
@@ -362,6 +370,12 @@ function filterExercisesWithMetadata(
     const needle = stripLike(params[paramIndex++]);
     rows = rows.filter((exercise) =>
       metadataFor(exercise)?.secondary_muscles_json.includes(needle),
+    );
+  }
+  if (!hasCombinedMuscleFilter && /m\.tertiary_muscles_json LIKE \?/i.test(normalizedSql)) {
+    const needle = stripLike(params[paramIndex++]);
+    rows = rows.filter((exercise) =>
+      metadataFor(exercise)?.tertiary_muscles_json?.includes(needle),
     );
   }
   if (/m\.equipment_json LIKE \?/i.test(normalizedSql)) {
@@ -407,6 +421,7 @@ function toExerciseWithMetadataRow(store: WebDbStore, exercise: Exercise): Recor
     body_region: metadata?.body_region ?? null,
     primary_muscles_json: metadata?.primary_muscles_json ?? null,
     secondary_muscles_json: metadata?.secondary_muscles_json ?? null,
+    tertiary_muscles_json: metadata?.tertiary_muscles_json ?? null,
     equipment_json: metadata?.equipment_json ?? null,
     mechanics: metadata?.mechanics ?? null,
     laterality: metadata?.laterality ?? null,

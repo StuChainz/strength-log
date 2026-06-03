@@ -28,6 +28,7 @@ interface SeedExerciseMetadata {
   body_region: BodyRegion;
   primary_muscles: MuscleGroup[];
   secondary_muscles: MuscleGroup[];
+  tertiary_muscles: MuscleGroup[];
   equipment: Equipment[];
   mechanics: Mechanics;
   laterality: Laterality;
@@ -43,6 +44,7 @@ interface CuratedSeedExercise extends Omit<SeedExercise, 'default_unit'> {
   body_region: BodyRegion;
   primary_muscles: MuscleGroup[];
   secondary_muscles: MuscleGroup[];
+  tertiary_muscles?: MuscleGroup[];
   equipment?: Equipment[];
   mechanics: Mechanics;
   laterality: Laterality;
@@ -244,6 +246,7 @@ export const SEED_EXERCISE_METADATA: SeedExerciseMetadata[] = CURATED_SEED_EXERC
     body_region: exercise.body_region,
     primary_muscles: exercise.primary_muscles,
     secondary_muscles: exercise.secondary_muscles,
+    tertiary_muscles: exercise.tertiary_muscles ?? [],
     equipment: exercise.equipment ?? [exercise.category],
     mechanics: exercise.mechanics,
     laterality: exercise.laterality,
@@ -321,16 +324,17 @@ async function seedExerciseMetadata(db: SQLiteDatabase): Promise<void> {
       await db.runAsync(
         `INSERT INTO exercise_metadata
            (exercise_id, movement_pattern, force_type, body_region,
-            primary_muscles_json, secondary_muscles_json, equipment_json,
-            mechanics, laterality, difficulty, substitution_group, source,
-            source_id, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            primary_muscles_json, secondary_muscles_json, tertiary_muscles_json,
+            equipment_json, mechanics, laterality, difficulty,
+            substitution_group, source, source_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(exercise_id) DO UPDATE SET
            movement_pattern = excluded.movement_pattern,
            force_type = excluded.force_type,
            body_region = excluded.body_region,
            primary_muscles_json = excluded.primary_muscles_json,
            secondary_muscles_json = excluded.secondary_muscles_json,
+           tertiary_muscles_json = excluded.tertiary_muscles_json,
            equipment_json = excluded.equipment_json,
            mechanics = excluded.mechanics,
            laterality = excluded.laterality,
@@ -346,6 +350,7 @@ async function seedExerciseMetadata(db: SQLiteDatabase): Promise<void> {
              exercise_metadata.body_region IS NOT excluded.body_region OR
              exercise_metadata.primary_muscles_json IS NOT excluded.primary_muscles_json OR
              exercise_metadata.secondary_muscles_json IS NOT excluded.secondary_muscles_json OR
+             exercise_metadata.tertiary_muscles_json IS NOT excluded.tertiary_muscles_json OR
              exercise_metadata.equipment_json IS NOT excluded.equipment_json OR
              exercise_metadata.mechanics IS NOT excluded.mechanics OR
              exercise_metadata.laterality IS NOT excluded.laterality OR
@@ -361,6 +366,7 @@ async function seedExerciseMetadata(db: SQLiteDatabase): Promise<void> {
           metadata.body_region,
           metadata.primary_muscles_json,
           metadata.secondary_muscles_json,
+          metadata.tertiary_muscles_json,
           metadata.equipment_json,
           metadata.mechanics,
           metadata.laterality,

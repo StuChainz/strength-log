@@ -28,6 +28,7 @@ describe('exercise metadata formatting', () => {
           body_region: 'upper_body',
           primary_muscles: ['chest'],
           secondary_muscles: ['triceps'],
+          tertiary_muscles: [],
           equipment: ['dumbbell', 'bench'],
           mechanics: 'compound',
           laterality: 'bilateral',

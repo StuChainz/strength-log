@@ -22,6 +22,7 @@ describe('exercise metadata input serialization', () => {
       body_region: 'upper_body',
       primary_muscles_json: '["chest"]',
       secondary_muscles_json: '["triceps","front_delts"]',
+      tertiary_muscles_json: '[]',
       equipment_json: '["barbell","bench"]',
       mechanics: 'compound',
       laterality: 'bilateral',

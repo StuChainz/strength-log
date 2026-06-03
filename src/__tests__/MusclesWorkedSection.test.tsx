@@ -72,11 +72,13 @@ describe('MusclesWorkedSection', () => {
           exercise_id: 'bench',
           primary_muscles: ['chest'],
           secondary_muscles: ['front_delts', 'triceps'],
+          tertiary_muscles: [],
         },
         {
           exercise_id: 'row',
           primary_muscles: ['upper_back'],
           secondary_muscles: ['biceps'],
+          tertiary_muscles: [],
         },
       ],
     );

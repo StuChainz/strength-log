@@ -298,6 +298,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_one_in_progress_session
   WHERE status = 'in_progress';
 `;
 
+const MIGRATION_013 = `
+ALTER TABLE exercise_metadata
+  ADD COLUMN tertiary_muscles_json TEXT NOT NULL DEFAULT '[]';
+`;
+
 export const MIGRATIONS: Migration[] = [
   { name: '001_init', sql: MIGRATION_001 },
   { name: '002_app_settings', sql: MIGRATION_002 },
@@ -311,4 +316,5 @@ export const MIGRATIONS: Migration[] = [
   { name: '010_template_item_amrap_last_set', sql: MIGRATION_010 },
   { name: '011_one_in_progress_session', sql: MIGRATION_011 },
   { name: '012_one_in_progress_session_unique_index', sql: MIGRATION_012 },
+  { name: '013_exercise_metadata_tertiary_muscles', sql: MIGRATION_013 },
 ];

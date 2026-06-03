@@ -71,6 +71,7 @@ async function insertExercise(
   name: string,
   primaryMuscles: string[],
   secondaryMuscles: string[],
+  tertiaryMuscles: string[] = [],
 ): Promise<void> {
   const now = 1;
   await db.runAsync(
@@ -82,9 +83,16 @@ async function insertExercise(
   );
   await db.runAsync(
     `INSERT INTO exercise_metadata
-       (exercise_id, primary_muscles_json, secondary_muscles_json, equipment_json, source, updated_at)
-     VALUES (?, ?, ?, '[]', 'test', ?)`,
-    [id, JSON.stringify(primaryMuscles), JSON.stringify(secondaryMuscles), now],
+       (exercise_id, primary_muscles_json, secondary_muscles_json, tertiary_muscles_json,
+        equipment_json, source, updated_at)
+     VALUES (?, ?, ?, ?, '[]', 'test', ?)`,
+    [
+      id,
+      JSON.stringify(primaryMuscles),
+      JSON.stringify(secondaryMuscles),
+      JSON.stringify(tertiaryMuscles),
+      now,
+    ],
   );
 }
 
@@ -161,14 +169,14 @@ describe('training volume repository', () => {
 
     expect(report.window.startAt).toBe(now - 7 * DAY_MS);
     expect(report.muscles.map((row) => [row.muscle, row.totalExposure])).toEqual([
-      ['triceps', 3],
       ['chest', 2],
+      ['triceps', 2],
     ]);
     expect(report.muscles.find((row) => row.muscle === 'triceps')).toMatchObject({
-      directSets: 1,
-      indirectSets: 2,
-      directSources: [{ exercise_id: 'pushdown', exercise_name: 'Pushdown', sets: 1 }],
-      indirectSources: [{ exercise_id: 'bench', exercise_name: 'Bench Press', sets: 2 }],
+      directContribution: 1,
+      indirectContribution: 1,
+      directSources: [{ exercise_id: 'pushdown', exercise_name: 'Pushdown', contribution: 1 }],
+      indirectSources: [{ exercise_id: 'bench', exercise_name: 'Bench Press', contribution: 1 }],
     });
 
     await db.closeAsync();
@@ -197,8 +205,12 @@ describe('training volume repository', () => {
 
     expect(sevenDayReport.window).toMatchObject({ id: '7d', label: '7D', days: 7 });
     expect(thirtyDayReport.window).toMatchObject({ id: '30d', label: '30D', days: 30 });
-    expect(sevenDayReport.muscles.find((row) => row.muscle === 'chest')?.directSets).toBe(1);
-    expect(thirtyDayReport.muscles.find((row) => row.muscle === 'chest')?.directSets).toBe(2);
+    expect(sevenDayReport.muscles.find((row) => row.muscle === 'chest')?.directContribution).toBe(
+      1,
+    );
+    expect(thirtyDayReport.muscles.find((row) => row.muscle === 'chest')?.directContribution).toBe(
+      2,
+    );
 
     await db.closeAsync();
   });

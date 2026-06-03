@@ -37,6 +37,7 @@ export interface ExerciseMetadataFilters {
   muscle?: MuscleGroup | string;
   primary_muscle?: MuscleGroup | string;
   secondary_muscle?: MuscleGroup | string;
+  tertiary_muscle?: MuscleGroup | string;
   equipment?: Equipment | string;
   source?: string;
   source_id?: string;
@@ -50,6 +51,7 @@ export interface ExerciseMetadataFacets {
   lateralities: Laterality[];
   primary_muscles: MuscleGroup[];
   secondary_muscles: MuscleGroup[];
+  tertiary_muscles: MuscleGroup[];
   muscles: MuscleGroup[];
   equipment: Equipment[];
   substitution_groups: string[];
@@ -71,6 +73,7 @@ type ExerciseWithMetadataRow = Exercise & {
   body_region: ExerciseMetadata['body_region'] | null;
   primary_muscles_json: string | null;
   secondary_muscles_json: string | null;
+  tertiary_muscles_json: string | null;
   equipment_json: string | null;
   mechanics: ExerciseMetadata['mechanics'] | null;
   laterality: ExerciseMetadata['laterality'] | null;
@@ -87,6 +90,7 @@ type ExerciseMetadataFacetRow = {
   body_region: ExerciseMetadata['body_region'] | null;
   primary_muscles_json: string | null;
   secondary_muscles_json: string | null;
+  tertiary_muscles_json: string | null;
   equipment_json: string | null;
   mechanics: ExerciseMetadata['mechanics'] | null;
   laterality: ExerciseMetadata['laterality'] | null;
@@ -184,9 +188,13 @@ export async function getExercisesWithMetadata(
     params.push(filters.laterality);
   }
   if (filters.muscle) {
-    where.push('(m.primary_muscles_json LIKE ? OR m.secondary_muscles_json LIKE ?)');
+    where.push(
+      `(m.primary_muscles_json LIKE ?
+        OR m.secondary_muscles_json LIKE ?
+        OR m.tertiary_muscles_json LIKE ?)`,
+    );
     const needle = jsonArrayContainsNeedle(filters.muscle);
-    params.push(needle, needle);
+    params.push(needle, needle, needle);
   }
   if (filters.primary_muscle) {
     where.push('m.primary_muscles_json LIKE ?');
@@ -195,6 +203,10 @@ export async function getExercisesWithMetadata(
   if (filters.secondary_muscle) {
     where.push('m.secondary_muscles_json LIKE ?');
     params.push(jsonArrayContainsNeedle(filters.secondary_muscle));
+  }
+  if (filters.tertiary_muscle) {
+    where.push('m.tertiary_muscles_json LIKE ?');
+    params.push(jsonArrayContainsNeedle(filters.tertiary_muscle));
   }
   if (filters.equipment) {
     where.push('m.equipment_json LIKE ?');
@@ -236,6 +248,7 @@ export async function getExercisesWithMetadata(
          m.body_region,
          m.primary_muscles_json,
          m.secondary_muscles_json,
+         m.tertiary_muscles_json,
          m.equipment_json,
          m.mechanics,
          m.laterality,
@@ -268,6 +281,7 @@ export async function getExerciseMetadataFacets(
        m.body_region,
        m.primary_muscles_json,
        m.secondary_muscles_json,
+       m.tertiary_muscles_json,
        m.equipment_json,
        m.mechanics,
        m.laterality,
@@ -285,6 +299,7 @@ export async function getExerciseMetadataFacets(
   const lateralities = new Set<Laterality>();
   const primaryMuscles = new Set<MuscleGroup>();
   const secondaryMuscles = new Set<MuscleGroup>();
+  const tertiaryMuscles = new Set<MuscleGroup>();
   const equipment = new Set<Equipment>();
   const substitutionGroups = new Set<string>();
   const sources = new Set<string>();
@@ -303,6 +318,9 @@ export async function getExerciseMetadataFacets(
     parseStringArray<MuscleGroup>(row.secondary_muscles_json).forEach((value) =>
       secondaryMuscles.add(value),
     );
+    parseStringArray<MuscleGroup>(row.tertiary_muscles_json).forEach((value) =>
+      tertiaryMuscles.add(value),
+    );
     parseStringArray<Equipment>(row.equipment_json).forEach((value) => equipment.add(value));
   });
 
@@ -314,8 +332,9 @@ export async function getExerciseMetadataFacets(
     lateralities: sortByKnownOrder([...lateralities], LATERALITY_TYPES),
     primary_muscles: sortByKnownOrder([...primaryMuscles], MUSCLE_GROUPS),
     secondary_muscles: sortByKnownOrder([...secondaryMuscles], MUSCLE_GROUPS),
+    tertiary_muscles: sortByKnownOrder([...tertiaryMuscles], MUSCLE_GROUPS),
     muscles: sortByKnownOrder(
-      [...new Set([...primaryMuscles, ...secondaryMuscles])],
+      [...new Set([...primaryMuscles, ...secondaryMuscles, ...tertiaryMuscles])],
       MUSCLE_GROUPS,
     ),
     equipment: sortByKnownOrder([...equipment], EQUIPMENT),
@@ -454,6 +473,7 @@ function rowToExerciseWithMetadata(row: ExerciseWithMetadataRow): ExerciseWithMe
     body_region: row.body_region,
     primary_muscles: parseStringArray<MuscleGroup>(row.primary_muscles_json),
     secondary_muscles: parseStringArray<MuscleGroup>(row.secondary_muscles_json),
+    tertiary_muscles: parseStringArray<MuscleGroup>(row.tertiary_muscles_json),
     equipment: parseStringArray<Equipment>(row.equipment_json),
     mechanics: row.mechanics,
     laterality: row.laterality,
@@ -510,6 +530,7 @@ async function getExercisesWithoutMetadataTable(
        NULL AS body_region,
        NULL AS primary_muscles_json,
        NULL AS secondary_muscles_json,
+       NULL AS tertiary_muscles_json,
        NULL AS equipment_json,
        NULL AS mechanics,
        NULL AS laterality,
@@ -537,6 +558,7 @@ function requiresMetadataTable(filters: ExerciseMetadataFilters): boolean {
     filters.muscle ||
     filters.primary_muscle ||
     filters.secondary_muscle ||
+    filters.tertiary_muscle ||
     filters.equipment ||
     filters.source ||
     filters.source_id,

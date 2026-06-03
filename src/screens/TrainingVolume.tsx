@@ -26,6 +26,11 @@ import { MUSCLE_LABELS } from '@/domain/muscleLabels';
 import { T } from '@/theme/tokens';
 import type { TrainingVolumeNavigationProp } from '@/navigation/types';
 
+function formatEffectiveSetValue(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 function SourceList({ title, sources }: { title: string; sources: ExerciseMuscleContribution[] }) {
   return (
     <View style={styles.sourceBlock}>
@@ -36,7 +41,7 @@ function SourceList({ title, sources }: { title: string; sources: ExerciseMuscle
         sources.map((source) => (
           <View key={source.exercise_id} style={styles.sourceRow}>
             <Text style={styles.sourceName}>{source.exercise_name}</Text>
-            <Text style={styles.sourceSets}>{source.sets}</Text>
+            <Text style={styles.sourceSets}>+{formatEffectiveSetValue(source.contribution)}</Text>
           </View>
         ))
       )}
@@ -54,6 +59,9 @@ function MuscleRow({
   onPress: () => void;
 }) {
   const label = MUSCLE_LABELS[exposure.muscle];
+  const totalExposure = formatEffectiveSetValue(exposure.totalExposure);
+  const directContribution = formatEffectiveSetValue(exposure.directContribution);
+  const indirectContribution = formatEffectiveSetValue(exposure.indirectContribution);
 
   return (
     <View style={styles.rowWrap} testID={`training-volume-row-${exposure.muscle}`}>
@@ -65,7 +73,7 @@ function MuscleRow({
       >
         <Text style={styles.muscleName}>{label}</Text>
         <View style={styles.rowRight}>
-          <Text style={styles.totalValue}>{exposure.totalExposure}</Text>
+          <Text style={styles.totalValue}>{totalExposure}</Text>
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={T.muted} />
         </View>
       </TouchableOpacity>
@@ -73,16 +81,16 @@ function MuscleRow({
       {expanded && (
         <View style={styles.detail} testID={`training-volume-detail-${exposure.muscle}`}>
           <View style={styles.detailLine}>
-            <Text style={styles.detailLabel}>Total Exposure</Text>
-            <Text style={styles.detailValue}>{exposure.totalExposure}</Text>
+            <Text style={styles.detailLabel}>Effective Sets</Text>
+            <Text style={styles.detailValue}>{totalExposure}</Text>
           </View>
           <View style={styles.detailLine}>
-            <Text style={styles.detailLabel}>Direct Sets</Text>
-            <Text style={styles.detailValue}>{exposure.directSets}</Text>
+            <Text style={styles.detailLabel}>Direct Contribution</Text>
+            <Text style={styles.detailValue}>{directContribution}</Text>
           </View>
           <View style={styles.detailLine}>
-            <Text style={styles.detailLabel}>Indirect Sets</Text>
-            <Text style={styles.detailValue}>{exposure.indirectSets}</Text>
+            <Text style={styles.detailLabel}>Indirect Contribution</Text>
+            <Text style={styles.detailValue}>{indirectContribution}</Text>
           </View>
 
           <View style={styles.divider} />

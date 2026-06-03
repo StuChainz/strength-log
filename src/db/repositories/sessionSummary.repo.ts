@@ -127,8 +127,9 @@ async function getSessionExerciseMuscleMetadata(
       exercise_id: string;
       primary_muscles_json: string | null;
       secondary_muscles_json: string | null;
+      tertiary_muscles_json: string | null;
     }>(
-      `SELECT exercise_id, primary_muscles_json, secondary_muscles_json
+      `SELECT exercise_id, primary_muscles_json, secondary_muscles_json, tertiary_muscles_json
        FROM exercise_metadata
        WHERE exercise_id IN (${exerciseIds.map(() => '?').join(',')})`,
       exerciseIds,
@@ -138,6 +139,7 @@ async function getSessionExerciseMuscleMetadata(
       exercise_id: row.exercise_id,
       primary_muscles: parseMuscleArray(row.primary_muscles_json),
       secondary_muscles: parseMuscleArray(row.secondary_muscles_json),
+      tertiary_muscles: parseMuscleArray(row.tertiary_muscles_json),
     }));
   } catch (error) {
     if (!isMissingMetadataTableError(error)) throw error;
