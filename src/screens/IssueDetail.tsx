@@ -11,13 +11,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import IssueReactionEditSheet from '@/components/IssueReactionEditSheet';
 import { openDb } from '@/db/client';
 import {
   archiveIssue,
   createIssue,
+  deleteExerciseIssueEvent,
   getIssueById,
   getIssueRecentEvents,
   type ExerciseIssueEventWithNames,
+  updateExerciseIssueEvent,
   updateIssue,
 } from '@/db/repositories/issues.repo';
 import { T } from '@/theme/tokens';
@@ -42,6 +45,8 @@ export default function IssueDetail() {
   const [active, setActive] = useState(true);
   const [events, setEvents] = useState<ExerciseIssueEventWithNames[]>([]);
   const [saving, setSaving] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<ExerciseIssueEventWithNames | null>(null);
+  const [savingReaction, setSavingReaction] = useState(false);
 
   const load = useCallback(async () => {
     if (!issueId) return;
@@ -99,6 +104,51 @@ export default function IssueDetail() {
         },
       },
     ]);
+  };
+
+  const saveReaction = async (input: {
+    reactionType: 'aggravated' | 'helped';
+    severity: number;
+    note: string;
+  }) => {
+    if (!selectedEvent) return;
+    setSavingReaction(true);
+    try {
+      const db = await openDb();
+      await updateExerciseIssueEvent(db, selectedEvent.id, {
+        reactionType: input.reactionType,
+        severity: input.severity,
+        note: input.note,
+      });
+      setSelectedEvent(null);
+      await load();
+    } finally {
+      setSavingReaction(false);
+    }
+  };
+
+  const confirmDeleteReaction = () => {
+    if (!selectedEvent) return;
+    Alert.alert(
+      'Delete this issue record?',
+      'This removes the personal note from your history.\nIt does not delete the Issue.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            const eventId = selectedEvent.id;
+            void openDb()
+              .then((db) => deleteExerciseIssueEvent(db, eventId))
+              .then(async () => {
+                setSelectedEvent(null);
+                await load();
+              });
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -183,7 +233,13 @@ export default function IssueDetail() {
               <Text style={styles.emptyText}>No exercise reactions recorded yet.</Text>
             ) : (
               events.map((event) => (
-                <View key={event.id} style={styles.eventRow}>
+                <TouchableOpacity
+                  key={event.id}
+                  style={styles.eventRow}
+                  activeOpacity={0.78}
+                  onPress={() => setSelectedEvent(event)}
+                  testID={`issue-reaction-row-${event.id}`}
+                >
                   <View style={styles.eventTop}>
                     <Text style={styles.eventExercise} numberOfLines={1}>
                       {event.exercise_name}
@@ -195,12 +251,22 @@ export default function IssueDetail() {
                     {event.severity !== null ? ` · ${event.severity}/5` : ''}
                   </Text>
                   {event.note ? <Text style={styles.eventNote}>{event.note}</Text> : null}
-                </View>
+                </TouchableOpacity>
               ))
             )}
           </View>
         )}
       </ScrollView>
+      <IssueReactionEditSheet
+        visible={selectedEvent !== null}
+        event={selectedEvent}
+        title="Edit Issue Record"
+        subtitle={selectedEvent?.exercise_name ?? null}
+        saving={savingReaction}
+        onClose={() => setSelectedEvent(null)}
+        onSave={(input) => void saveReaction(input)}
+        onDelete={confirmDeleteReaction}
+      />
     </SafeAreaView>
   );
 }

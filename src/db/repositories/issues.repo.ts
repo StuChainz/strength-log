@@ -18,6 +18,7 @@ export interface ExerciseIssueSummary {
   helpedCount: number;
   lastNote: string | null;
   lastCreatedAt: number;
+  latestEvent: ExerciseIssueEvent;
 }
 
 export interface CreateIssueInput {
@@ -36,6 +37,12 @@ export interface RecordExerciseIssueEventInput {
   exerciseId: string;
   sessionId?: string | null;
   reactionType: IssueReactionType;
+  severity?: number | null;
+  note?: string | null;
+}
+
+export interface UpdateExerciseIssueEventInput {
+  reactionType?: IssueReactionType;
   severity?: number | null;
   note?: string | null;
 }
@@ -183,6 +190,40 @@ export async function recordExerciseIssueEvent(
   return event;
 }
 
+export async function updateExerciseIssueEvent(
+  db: SQLiteDatabase,
+  id: string,
+  input: UpdateExerciseIssueEventInput,
+): Promise<void> {
+  const sets: string[] = [];
+  const values: (string | number | null)[] = [];
+
+  if (input.reactionType !== undefined) {
+    validateReactionType(input.reactionType);
+    sets.push('reaction_type = ?');
+    values.push(input.reactionType);
+  }
+  if (input.severity !== undefined) {
+    sets.push('severity = ?');
+    values.push(validateSeverity(input.severity));
+  }
+  if (input.note !== undefined) {
+    sets.push('note = ?');
+    values.push(cleanText(input.note));
+  }
+  if (sets.length === 0) return;
+
+  values.push(id);
+  await db.runAsync(`UPDATE exercise_issue_events SET ${sets.join(', ')} WHERE id = ?`, values);
+}
+
+export async function deleteExerciseIssueEvent(
+  db: SQLiteDatabase,
+  id: string,
+): Promise<void> {
+  await db.runAsync('DELETE FROM exercise_issue_events WHERE id = ?', [id]);
+}
+
 export async function getIssueRecentEvents(
   db: SQLiteDatabase,
   issueId: string,
@@ -205,13 +246,18 @@ export async function getExerciseIssueSummary(
   exerciseId: string,
 ): Promise<ExerciseIssueSummary[]> {
   const rows = await db.getAllAsync<{
+    id: string;
     issue_id: string;
     issue_name: string;
+    exercise_id: string;
+    session_id: string | null;
     reaction_type: IssueReactionType;
+    severity: number | null;
     note: string | null;
     created_at: number;
   }>(
-    `SELECT e.issue_id, i.name AS issue_name, e.reaction_type, e.note, e.created_at
+    `SELECT e.id, e.issue_id, i.name AS issue_name, e.exercise_id, e.session_id,
+            e.reaction_type, e.severity, e.note, e.created_at
        FROM exercise_issue_events e
        JOIN issues i ON i.id = e.issue_id
       WHERE e.exercise_id = ?
@@ -230,6 +276,16 @@ export async function getExerciseIssueSummary(
         helpedCount: 0,
         lastNote: null,
         lastCreatedAt: row.created_at,
+        latestEvent: {
+          id: row.id,
+          issue_id: row.issue_id,
+          exercise_id: row.exercise_id,
+          session_id: row.session_id,
+          reaction_type: row.reaction_type,
+          severity: row.severity,
+          note: row.note,
+          created_at: row.created_at,
+        },
       };
       byIssue.set(row.issue_id, summary);
     }

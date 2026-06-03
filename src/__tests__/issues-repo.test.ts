@@ -2,10 +2,13 @@ import { MIGRATIONS } from '@/db/migrations';
 import {
   archiveIssue,
   createIssue,
+  deleteExerciseIssueEvent,
   getExerciseIssueSummary,
   getIssueById,
   getIssues,
+  getIssueRecentEvents,
   recordExerciseIssueEvent,
+  updateExerciseIssueEvent,
   updateIssue,
 } from '@/db/repositories/issues.repo';
 import { newId } from '@/domain/ids';
@@ -238,6 +241,105 @@ describe('issues repository', () => {
     ).rejects.toThrow('Issue severity must be an integer from 1 to 5');
   });
 
+  it('edits reaction type on an Issue reaction', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const exercise = await createExercise(db);
+    const event = await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      reactionType: 'aggravated',
+      severity: 3,
+    });
+
+    await updateExerciseIssueEvent(db as never, event.id, { reactionType: 'helped' });
+
+    expect(
+      await db.getFirstAsync('SELECT reaction_type FROM exercise_issue_events WHERE id = ?', [
+        event.id,
+      ]),
+    ).toEqual({ reaction_type: 'helped' });
+  });
+
+  it('edits severity on an Issue reaction', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Knee pain' });
+    const exercise = await createExercise(db);
+    const event = await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      reactionType: 'aggravated',
+      severity: 2,
+    });
+
+    await updateExerciseIssueEvent(db as never, event.id, { severity: 5 });
+
+    expect(
+      await db.getFirstAsync('SELECT severity FROM exercise_issue_events WHERE id = ?', [
+        event.id,
+      ]),
+    ).toEqual({ severity: 5 });
+  });
+
+  it('edits note on an Issue reaction', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Elbow discomfort' });
+    const exercise = await createExercise(db);
+    const event = await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      reactionType: 'helped',
+      severity: 1,
+      note: 'Original note',
+    });
+
+    await updateExerciseIssueEvent(db as never, event.id, { note: '  Better after warmup  ' });
+
+    expect(
+      await db.getFirstAsync('SELECT note FROM exercise_issue_events WHERE id = ?', [event.id]),
+    ).toEqual({ note: 'Better after warmup' });
+  });
+
+  it('deletes an Issue reaction without deleting the Issue', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Lower back pain' });
+    const exercise = await createExercise(db);
+    const event = await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      reactionType: 'aggravated',
+      severity: 4,
+      note: 'Accidental record',
+    });
+
+    await deleteExerciseIssueEvent(db as never, event.id);
+
+    expect(
+      await db.getFirstAsync('SELECT * FROM exercise_issue_events WHERE id = ?', [event.id]),
+    ).toBeNull();
+    expect(await getIssueById(db as never, issue.id)).toEqual(
+      expect.objectContaining({ id: issue.id, name: 'Lower back pain' }),
+    );
+  });
+
+  it('removes deleted reactions from Exercise History summaries and Issue detail rows', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const exercise = await createExercise(db, 'Bench Press');
+    const deleted = await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      reactionType: 'aggravated',
+      severity: 3,
+      note: 'Delete me',
+    });
+
+    await deleteExerciseIssueEvent(db as never, deleted.id);
+
+    expect(await getExerciseIssueSummary(db as never, exercise.id)).toEqual([]);
+    expect(await getIssueRecentEvents(db as never, issue.id)).toEqual([]);
+  });
+
   it('summarizes exercise Issue history counts and latest note', async () => {
     db = await setupDb();
     const issue = await createIssue(db as never, { name: 'Lower back pain' });
@@ -267,14 +369,19 @@ describe('issues repository', () => {
     });
 
     expect(await getExerciseIssueSummary(db as never, exercise.id)).toEqual([
-      {
+      expect.objectContaining({
         issueId: issue.id,
         issueName: 'Lower back pain',
         aggravatedCount: 2,
         helpedCount: 1,
         lastNote: 'Tingling after set 2',
         lastCreatedAt: 1_900_000_000_002,
-      },
+        latestEvent: expect.objectContaining({
+          issue_id: issue.id,
+          reaction_type: 'helped',
+          severity: 1,
+        }),
+      }),
     ]);
   });
 });
