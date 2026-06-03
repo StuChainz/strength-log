@@ -15,6 +15,8 @@ const REQUIRED_TABLES = [
   'workout_events',
   'workout_sets',
   'exercise_prs',
+  'issues',
+  'exercise_issue_events',
   'exercise_history_cache',
   'post_session_tags',
   'session_notes',
@@ -69,6 +71,8 @@ export async function resetLocalData(): Promise<void> {
     DROP TABLE IF EXISTS session_notes;
     DROP TABLE IF EXISTS post_session_tags;
     DROP TABLE IF EXISTS exercise_history_cache;
+    DROP TABLE IF EXISTS exercise_issue_events;
+    DROP TABLE IF EXISTS issues;
     DROP TABLE IF EXISTS exercise_prs;
     DROP TABLE IF EXISTS workout_sets;
     DROP TABLE IF EXISTS workout_events;

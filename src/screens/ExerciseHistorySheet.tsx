@@ -12,6 +12,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getExerciseHistory, type ExerciseHistorySession } from '@/db/repositories/history.repo';
 import {
+  getExerciseIssueSummary,
+  type ExerciseIssueSummary,
+} from '@/db/repositories/issues.repo';
+import {
   getProgressionSuggestion,
   type ProgressionExercise,
   type ProgressionRuleConfig,
@@ -66,6 +70,7 @@ export default function ExerciseHistorySheet({
   onApplySuggestion,
 }: ExerciseHistorySheetProps) {
   const [history, setHistory] = useState<ExerciseHistorySession[]>([]);
+  const [issueSummary, setIssueSummary] = useState<ExerciseIssueSummary[]>([]);
   const [loadedExerciseId, setLoadedExerciseId] = useState<string | null>(null);
   const loading = visible && exerciseId !== null && loadedExerciseId !== exerciseId;
 
@@ -73,10 +78,14 @@ export default function ExerciseHistorySheet({
     if (!visible || !exerciseId) return;
     let cancelled = false;
     openDb()
-      .then((db) => getExerciseHistory(db, exerciseId, 5))
-      .then((rows) => {
+      .then(async (db) => ({
+        historyRows: await getExerciseHistory(db, exerciseId, 5),
+        issueRows: await getExerciseIssueSummary(db, exerciseId),
+      }))
+      .then(({ historyRows, issueRows }) => {
         if (!cancelled) {
-          setHistory(rows);
+          setHistory(historyRows);
+          setIssueSummary(issueRows);
           setLoadedExerciseId(exerciseId);
         }
       });
@@ -173,6 +182,33 @@ export default function ExerciseHistorySheet({
             </View>
           ) : (
             <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+              {issueSummary.length > 0 && (
+                <View style={styles.issueHistoryBlock}>
+                  <Text style={styles.issueHistoryTitle}>Issue history</Text>
+                  {issueSummary.map((item) => (
+                    <View key={item.issueId} style={styles.issueHistoryRow}>
+                      <Text style={styles.issueHistoryName}>{item.issueName}</Text>
+                      {item.aggravatedCount > 0 && (
+                        <Text style={styles.issueHistoryLine}>
+                          Aggravated {item.aggravatedCount}{' '}
+                          {item.aggravatedCount === 1 ? 'time' : 'times'}
+                        </Text>
+                      )}
+                      {item.helpedCount > 0 && (
+                        <Text style={styles.issueHistoryLine}>
+                          Helped {item.helpedCount} {item.helpedCount === 1 ? 'time' : 'times'}
+                        </Text>
+                      )}
+                      {item.lastNote ? (
+                        <Text style={styles.issueHistoryNote} numberOfLines={2}>
+                          Last note: {item.lastNote}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {history.length === 0 ? (
                 <View style={styles.empty}>
                   <Text style={styles.emptyText}>No completed sessions yet.</Text>
@@ -279,6 +315,28 @@ const styles = StyleSheet.create({
   loading: { paddingVertical: 32 },
   list: { marginTop: 12 },
   listContent: { gap: 8 },
+  issueHistoryBlock: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+  },
+  issueHistoryTitle: {
+    color: T.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  issueHistoryRow: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 8,
+    gap: 4,
+  },
+  issueHistoryName: { color: T.text, fontSize: 13, fontWeight: '700' },
+  issueHistoryLine: { color: T.textDim, fontFamily: 'Courier New', fontSize: 12 },
+  issueHistoryNote: { color: T.muted, fontSize: 12 },
   empty: {
     borderWidth: 1,
     borderStyle: 'dashed',

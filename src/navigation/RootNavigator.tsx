@@ -13,6 +13,8 @@ import EndWorkoutSummary from '@/screens/EndWorkoutSummary';
 import PostSessionTags from '@/screens/PostSessionTags';
 import WorkoutDetails from '@/screens/WorkoutDetails';
 import Settings from '@/screens/Settings';
+import Issues from '@/screens/Issues';
+import IssueDetail from '@/screens/IssueDetail';
 import Insights from '@/screens/Insights';
 import TrainingVolume from '@/screens/TrainingVolume';
 import Onboarding from '@/screens/Onboarding';
@@ -107,6 +109,8 @@ export function RootNavigator({ showOnboarding }: { showOnboarding: boolean }) {
       <Stack.Screen name="PostSessionTags" component={PostSessionTags} />
       <Stack.Screen name="WorkoutDetails" component={WorkoutDetails} />
       <Stack.Screen name="Settings" component={Settings} />
+      <Stack.Screen name="Issues" component={Issues} />
+      <Stack.Screen name="IssueDetail" component={IssueDetail} />
       <Stack.Screen
         name="TemplateBuilder"
         component={TemplateBuilder}

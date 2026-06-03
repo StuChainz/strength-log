@@ -19,6 +19,10 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { insertEvent, getLatestRestTimerEvent } from '@/db/repositories/events.repo';
+import {
+  getActiveIssues,
+  recordExerciseIssueEvent,
+} from '@/db/repositories/issues.repo';
 import { getPreviousPRDataForExercises } from '@/db/repositories/prs.repo';
 import { useSessionStore } from '@/state/session.store';
 import { ExercisePicker } from '@/components/ExercisePicker';
@@ -48,7 +52,7 @@ import {
 } from '@/notifications/restTimerNotifications';
 import { T } from '@/theme/tokens';
 import type { LiveWorkoutNavigationProp, LiveWorkoutRouteProp } from '@/navigation/types';
-import type { EventType, SetType, WorkoutSet } from '@/domain/types';
+import type { EventType, Issue, IssueReactionType, SetType, WorkoutSet } from '@/domain/types';
 import type {
   RestTimerCancelledPayload,
   RestTimerCompletedPayload,
@@ -227,6 +231,13 @@ export default function LiveWorkout() {
   const [editSetType, setEditSetType] = useState<SetType>('working');
   const [historyVisible, setHistoryVisible] = useState(false);
   const [summaryVisible, setSummaryVisible] = useState(false);
+  const [issueSheetVisible, setIssueSheetVisible] = useState(false);
+  const [activeIssues, setActiveIssues] = useState<Issue[]>([]);
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  const [issueReaction, setIssueReaction] = useState<IssueReactionType>('aggravated');
+  const [issueSeverity, setIssueSeverity] = useState<number | null>(null);
+  const [issueNote, setIssueNote] = useState('');
+  const [issueSaving, setIssueSaving] = useState(false);
   const [previousPRData, setPreviousPRData] = useState<PreviousPRData | null>(null);
   const [voiceText, setVoiceText] = useState('');
   const [voiceResult, setVoiceResult] = useState<IntentResult | null>(null);
@@ -397,6 +408,22 @@ export default function LiveWorkout() {
       cancelled = true;
     };
   }, [exerciseIdsKey, session]);
+
+  useEffect(() => {
+    if (phase !== 'active') return;
+    let cancelled = false;
+    openDb()
+      .then((db) => getActiveIssues(db))
+      .then((rows) => {
+        if (cancelled) return;
+        setActiveIssues(rows);
+        setSelectedIssueId((current) => current ?? rows[0]?.id ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [phase]);
 
   // Elapsed timer
   useEffect(() => {
@@ -926,6 +953,35 @@ export default function LiveWorkout() {
     [store],
   );
 
+  const openIssueSheet = useCallback(() => {
+    setSelectedIssueId((current) => current ?? activeIssues[0]?.id ?? null);
+    setIssueReaction('aggravated');
+    setIssueSeverity(null);
+    setIssueNote('');
+    setIssueSheetVisible(true);
+  }, [activeIssues]);
+
+  const handleSaveIssueReaction = useCallback(async () => {
+    if (!activeExerciseId || !selectedIssueId || issueSeverity === null) return;
+    setIssueSaving(true);
+    try {
+      const db = await openDb();
+      await recordExerciseIssueEvent(db, {
+        issueId: selectedIssueId,
+        exerciseId: activeExerciseId,
+        sessionId: session?.id ?? null,
+        reactionType: issueReaction,
+        severity: issueSeverity,
+        note: issueNote,
+      });
+      setIssueSheetVisible(false);
+      setIssueNote('');
+      setIssueSeverity(null);
+    } finally {
+      setIssueSaving(false);
+    }
+  }, [activeExerciseId, issueNote, issueReaction, issueSeverity, selectedIssueId, session?.id]);
+
   const commitVoiceResult = useCallback(
     async (parsed: IntentResult) => {
       if (isStaleCommand(parsed.recognisedAt)) {
@@ -1070,6 +1126,8 @@ export default function LiveWorkout() {
   const nextSetSummary = `${wgt} ${activeUnit} × ${reps} reps${
     rpe !== null ? ` · RPE ${formatWeightInput(rpe)}` : ''
   } · ${getSetTypeLabel(setType)}`;
+  const canSaveIssueReaction =
+    activeExerciseId !== null && selectedIssueId !== null && issueSeverity !== null && !issueSaving;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -1111,6 +1169,15 @@ export default function LiveWorkout() {
           >
             <Ionicons name="document-text-outline" size={16} color={T.text} />
             <Text style={styles.summaryActionText}>Summary</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.summaryActionBtn}
+            onPress={openIssueSheet}
+            hitSlop={8}
+            testID="issue-reaction-btn"
+          >
+            <Ionicons name="alert-circle-outline" size={16} color={T.text} />
+            <Text style={styles.summaryActionText}>Issue</Text>
           </TouchableOpacity>
         </View>
 
@@ -1716,6 +1783,144 @@ export default function LiveWorkout() {
         />
 
         <Modal
+          visible={issueSheetVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIssueSheetVisible(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.issueSheet} testID="issue-reaction-sheet">
+              <View style={styles.editHeader}>
+                <Text style={styles.editTitle}>Issue</Text>
+                <TouchableOpacity
+                  style={styles.iconBtn}
+                  onPress={() => setIssueSheetVisible(false)}
+                  hitSlop={8}
+                >
+                  <Ionicons name="close" size={16} color={T.textDim} />
+                </TouchableOpacity>
+              </View>
+
+              {activeIssues.length === 0 ? (
+                <View style={styles.issueEmpty}>
+                  <Text style={styles.issueEmptyText}>Create an Issue in Settings first.</Text>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.issueField}>
+                    <Text style={styles.issueSheetLabel}>Issue</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.issueChipRow}
+                    >
+                      {activeIssues.map((issue) => (
+                        <TouchableOpacity
+                          key={issue.id}
+                          style={[
+                            styles.issueSelectChip,
+                            selectedIssueId === issue.id && styles.issueSelectChipActive,
+                          ]}
+                          onPress={() => setSelectedIssueId(issue.id)}
+                          testID={`issue-option-${issue.id}`}
+                        >
+                          <Text
+                            style={[
+                              styles.issueSelectText,
+                              selectedIssueId === issue.id && styles.issueSelectTextActive,
+                            ]}
+                          >
+                            {issue.name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+
+                  <View style={styles.issueField}>
+                    <Text style={styles.issueSheetLabel}>Reaction</Text>
+                    <View style={styles.issueSegmented}>
+                      {(['aggravated', 'helped'] as IssueReactionType[]).map((reaction) => (
+                        <TouchableOpacity
+                          key={reaction}
+                          style={[
+                            styles.issueSegment,
+                            issueReaction === reaction && styles.issueSegmentActive,
+                          ]}
+                          onPress={() => setIssueReaction(reaction)}
+                          testID={`issue-reaction-${reaction}`}
+                        >
+                          <Text
+                            style={[
+                              styles.issueSegmentText,
+                              issueReaction === reaction && styles.issueSegmentTextActive,
+                            ]}
+                          >
+                            {reaction === 'aggravated' ? 'Aggravated' : 'Helped'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  <View style={styles.issueField}>
+                    <Text style={styles.issueSheetLabel}>Severity</Text>
+                    <View style={styles.severityRow}>
+                      {[1, 2, 3, 4, 5].map((value) => (
+                        <TouchableOpacity
+                          key={value}
+                          style={[
+                            styles.severityBtn,
+                            issueSeverity === value && styles.severityBtnActive,
+                          ]}
+                          onPress={() => setIssueSeverity(value)}
+                          testID={`issue-severity-${value}`}
+                        >
+                          <Text
+                            style={[
+                              styles.severityText,
+                              issueSeverity === value && styles.severityTextActive,
+                            ]}
+                          >
+                            {value}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  <View style={styles.issueField}>
+                    <Text style={styles.issueSheetLabel}>Optional note</Text>
+                    <TextInput
+                      style={styles.issueNoteInput}
+                      value={issueNote}
+                      onChangeText={setIssueNote}
+                      placeholder="Tingling after set 2"
+                      placeholderTextColor={T.muted}
+                      multiline
+                      textAlignVertical="top"
+                      testID="issue-note-quick-input"
+                    />
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.saveEditBtn,
+                      !canSaveIssueReaction && styles.issueSaveBtnDisabled,
+                    ]}
+                    disabled={!canSaveIssueReaction}
+                    onPress={() => void handleSaveIssueReaction()}
+                    testID="save-issue-reaction-btn"
+                  >
+                    <Text style={styles.saveEditText}>{issueSaving ? 'Saving...' : 'Save'}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
           visible={summaryVisible}
           transparent
           animationType="fade"
@@ -1968,6 +2173,7 @@ const styles = StyleSheet.create({
   summaryActionRow: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
+    gap: 8,
     paddingHorizontal: 20,
     paddingBottom: 4,
   },
@@ -2593,6 +2799,89 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     gap: 14,
   },
+  issueSheet: {
+    backgroundColor: T.bg,
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 28,
+    gap: 14,
+  },
+  issueEmpty: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+  },
+  issueEmptyText: { color: T.muted, fontSize: 13 },
+  issueField: { gap: 8 },
+  issueSheetLabel: {
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    color: T.muted,
+  },
+  issueChipRow: { gap: 7 },
+  issueSelectChip: {
+    minHeight: 36,
+    justifyContent: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    backgroundColor: T.surface,
+    paddingHorizontal: 13,
+  },
+  issueSelectChipActive: { backgroundColor: T.text, borderColor: T.text },
+  issueSelectText: { color: T.textDim, fontSize: 13, fontWeight: '700' },
+  issueSelectTextActive: { color: T.bg },
+  issueSegmented: {
+    flexDirection: 'row',
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    borderRadius: 12,
+    padding: 3,
+  },
+  issueSegment: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 9,
+  },
+  issueSegmentActive: { backgroundColor: T.surface3 },
+  issueSegmentText: { color: T.textDim, fontSize: 13, fontWeight: '700' },
+  issueSegmentTextActive: { color: T.text },
+  severityRow: { flexDirection: 'row', gap: 7 },
+  severityBtn: {
+    flex: 1,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surface,
+  },
+  severityBtnActive: { backgroundColor: T.text, borderColor: T.text },
+  severityText: { color: T.textDim, fontFamily: 'Courier New', fontSize: 13, fontWeight: '700' },
+  severityTextActive: { color: T.bg },
+  issueNoteInput: {
+    minHeight: 78,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    color: T.text,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  issueSaveBtnDisabled: { opacity: 0.45 },
   summarySheet: {
     backgroundColor: T.bg,
     borderTopWidth: 1,

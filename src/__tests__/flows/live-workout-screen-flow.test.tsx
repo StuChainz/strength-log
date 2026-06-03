@@ -2,6 +2,8 @@ import React from 'react';
 import { Alert, Vibration } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import LiveWorkout from '@/screens/LiveWorkout';
+import { openDb } from '@/db/client';
+import { getActiveIssues, recordExerciseIssueEvent } from '@/db/repositories/issues.repo';
 import { getPreviousPRDataForExercises } from '@/db/repositories/prs.repo';
 import { getLiveWorkoutSuggestion } from '@/domain/progression';
 import {
@@ -49,6 +51,11 @@ jest.mock('@/db/repositories/events.repo', () => ({
   insertEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@/db/repositories/issues.repo', () => ({
+  getActiveIssues: jest.fn(),
+  recordExerciseIssueEvent: jest.fn(),
+}));
+
 jest.mock('@/domain/progression', () => ({
   getLiveWorkoutSuggestion: jest.fn(() => ({
     label: 'No suggestion yet.',
@@ -84,6 +91,11 @@ const getPreviousPRDataForExercisesMock = getPreviousPRDataForExercises as jest.
 >;
 const getLiveWorkoutSuggestionMock = getLiveWorkoutSuggestion as jest.MockedFunction<
   typeof getLiveWorkoutSuggestion
+>;
+const openDbMock = openDb as jest.MockedFunction<typeof openDb>;
+const getActiveIssuesMock = getActiveIssues as jest.MockedFunction<typeof getActiveIssues>;
+const recordExerciseIssueEventMock = recordExerciseIssueEvent as jest.MockedFunction<
+  typeof recordExerciseIssueEvent
 >;
 const scheduleRestTimerNotificationMock = scheduleRestTimerNotification as jest.MockedFunction<
   typeof scheduleRestTimerNotification
@@ -163,6 +175,7 @@ describe('LiveWorkout screen core flow', () => {
     jest.useRealTimers();
     mockCanGoBack = true;
     mockRouteParams = {};
+    openDbMock.mockResolvedValue(mockDb as never);
     mockDb.getAllAsync.mockResolvedValue([]);
     mockDb.getFirstAsync.mockResolvedValue(null);
     mockDb.runAsync.mockResolvedValue({ changes: 0, lastInsertRowId: 0 });
@@ -170,6 +183,26 @@ describe('LiveWorkout screen core flow', () => {
       repMaxes: [],
       estimated1RMs: [],
       sessionVolumes: [],
+    });
+    getActiveIssuesMock.mockResolvedValue([
+      {
+        id: 'issue-shoulder',
+        name: 'Shoulder Pain',
+        note: null,
+        active: 1,
+        created_at: 1,
+        updated_at: 1,
+      },
+    ]);
+    recordExerciseIssueEventMock.mockResolvedValue({
+      id: 'event-1',
+      issue_id: 'issue-shoulder',
+      exercise_id: 'bench',
+      session_id: 'session-1',
+      reaction_type: 'aggravated',
+      severity: 3,
+      note: null,
+      created_at: 1,
     });
     getLiveWorkoutSuggestionMock.mockReturnValue({
       label: 'No suggestion yet.',
@@ -401,6 +434,60 @@ describe('LiveWorkout screen core flow', () => {
     );
 
     alertSpy.mockRestore();
+  });
+
+  it('records an aggravated Issue reaction without blocking normal set logging', async () => {
+    const store = activeStore();
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId } = render(<LiveWorkout />);
+
+    await waitFor(() => expect(getActiveIssuesMock).toHaveBeenCalledTimes(1));
+    fireEvent.press(getByTestId('issue-reaction-btn'));
+    await waitFor(() => expect(getByTestId('issue-reaction-sheet')).toBeTruthy());
+    fireEvent.press(getByTestId('issue-reaction-aggravated'));
+    fireEvent.press(getByTestId('issue-severity-3'));
+    fireEvent.changeText(getByTestId('issue-note-quick-input'), 'Tingling after set 2');
+    fireEvent.press(getByTestId('save-issue-reaction-btn'));
+
+    await waitFor(() =>
+      expect(recordExerciseIssueEventMock).toHaveBeenCalledWith(mockDb, {
+        issueId: 'issue-shoulder',
+        exerciseId: 'bench',
+        sessionId: 'session-1',
+        reactionType: 'aggravated',
+        severity: 3,
+        note: 'Tingling after set 2',
+      }),
+    );
+
+    fireEvent.press(getByTestId('log-set-btn'));
+    await waitFor(() => expect(store.logSet).toHaveBeenCalledTimes(1));
+  });
+
+  it('records a helped Issue reaction', async () => {
+    const store = activeStore();
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId } = render(<LiveWorkout />);
+
+    await waitFor(() => expect(getActiveIssuesMock).toHaveBeenCalledTimes(1));
+    fireEvent.press(getByTestId('issue-reaction-btn'));
+    await waitFor(() => expect(getByTestId('issue-reaction-sheet')).toBeTruthy());
+    fireEvent.press(getByTestId('issue-reaction-helped'));
+    fireEvent.press(getByTestId('issue-severity-1'));
+    fireEvent.press(getByTestId('save-issue-reaction-btn'));
+
+    await waitFor(() =>
+      expect(recordExerciseIssueEventMock).toHaveBeenCalledWith(mockDb, {
+        issueId: 'issue-shoulder',
+        exerciseId: 'bench',
+        sessionId: 'session-1',
+        reactionType: 'helped',
+        severity: 1,
+        note: '',
+      }),
+    );
   });
 
   it('uses the top-left control for navigation and keeps summary separate', () => {

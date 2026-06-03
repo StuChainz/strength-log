@@ -90,6 +90,7 @@ export type SetType = (typeof SET_TYPES)[number];
 export type ProgressionRule = (typeof PROGRESSION_RULES)[number];
 export type SessionStatus = 'in_progress' | 'completed' | 'discarded';
 export type ExercisePRRecordType = 'rep_max' | 'estimated_1rm' | 'session_volume';
+export type IssueReactionType = 'aggravated' | 'helped';
 export type EventType =
   | 'session_started'
   | 'set_added'
@@ -254,6 +255,26 @@ export interface ExercisePR {
   value: number;
   unit: Unit;
   achieved_at: number;
+  created_at: number;
+}
+
+export interface Issue {
+  id: string;
+  name: string;
+  note: string | null;
+  active: 0 | 1;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ExerciseIssueEvent {
+  id: string;
+  issue_id: string;
+  exercise_id: string;
+  session_id: string | null;
+  reaction_type: IssueReactionType;
+  severity: number | null;
+  note: string | null;
   created_at: number;
 }
 

@@ -156,6 +156,15 @@ export default function Settings() {
 
         <TouchableOpacity
           style={styles.actionRow}
+          onPress={() => navigation.navigate('Issues')}
+          testID="settings-issues-row"
+        >
+          <Ionicons name="alert-circle-outline" size={18} color={T.textDim} />
+          <Text style={styles.actionText}>Issues</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionRow}
           onPress={() => navigation.navigate('Onboarding', { mode: 'revisit' })}
         >
           <Ionicons name="map-outline" size={18} color={T.textDim} />
