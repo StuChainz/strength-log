@@ -9,7 +9,7 @@ export const T = {
   textDim: '#a3a3a8',
   muted: '#6b6b73',
   mutedDeep: '#4a4a52',
-  accent: '#e2b93b',
+  accent: '#ffc700',
   accentInk: '#0a0a0a',
   success: '#7ee08c',
   warning: '#f1c160',
@@ -17,5 +17,5 @@ export const T = {
 } as const;
 
 export function accentAlpha(alpha: number): string {
-  return `rgba(226,185,59,${alpha})`;
+  return `rgba(255,199,0,${alpha})`;
 }
