@@ -16,7 +16,7 @@ describe('MusclesWorkedSection', () => {
 
     expect(regions.length).toBeGreaterThan(0);
     expect(regions.some((region) => region.props.fill === T.accent)).toBe(true);
-    expect(regions.some((region) => region.props.fillOpacity > 0.18)).toBe(true);
+    expect(regions.some((region) => region.props.fillOpacity > 0.12)).toBe(true);
   }
 
   it('renders a front and back body map with session data', () => {
@@ -103,7 +103,7 @@ describe('MusclesWorkedSection', () => {
     }
   });
 
-  it('maps supported regions and scales highlight strength deterministically', () => {
+  it('maps supported regions and bands highlight strength deterministically', () => {
     expect(BODY_MAP_REGIONS.front).toEqual([
       'chest',
       'front_delts',
@@ -135,6 +135,18 @@ describe('MusclesWorkedSection', () => {
     expect(getMuscleHighlightOpacity(summary, 'chest')).toBeGreaterThan(
       getMuscleHighlightOpacity(summary, 'triceps'),
     );
-    expect(getMuscleHighlightOpacity(summary, 'abs')).toBe(0.18);
+    expect(getMuscleHighlightOpacity(summary, 'chest')).toBe(0.9);
+    expect(getMuscleHighlightOpacity(summary, 'triceps')).toBe(0.24);
+    expect(getMuscleHighlightOpacity({ chest: 8, triceps: 6 }, 'triceps')).toBe(0.56);
+    expect(getMuscleHighlightOpacity(summary, 'abs')).toBe(0.12);
+  });
+
+  it('keeps a leg-focused session visually stronger on legs than secondary muscles', () => {
+    const summary = { quads: 6, glutes: 6, hamstrings: 3, abs: 3 };
+
+    expect(getMuscleHighlightOpacity(summary, 'quads')).toBe(0.9);
+    expect(getMuscleHighlightOpacity(summary, 'glutes')).toBe(0.9);
+    expect(getMuscleHighlightOpacity(summary, 'hamstrings')).toBe(0.24);
+    expect(getMuscleHighlightOpacity(summary, 'abs')).toBe(0.24);
   });
 });

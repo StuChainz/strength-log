@@ -903,6 +903,14 @@ export default function LiveWorkout() {
     ]);
   }, [discardWorkout, endWorkout, navigation, session]);
 
+  const handleNavigateBack = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    navigation.popToTop();
+  }, [navigation]);
+
   const openEditSet = useCallback((set: WorkoutSet) => {
     setEditingSet(set);
     setEditWeight(set.weight ?? DEFAULT_WEIGHT);
@@ -1093,11 +1101,11 @@ export default function LiveWorkout() {
         <View style={styles.topBar}>
           <TouchableOpacity
             style={styles.sessionIconBtn}
-            onPress={() => setSummaryVisible(true)}
+            onPress={handleNavigateBack}
             hitSlop={8}
-            testID="summary-btn"
+            testID="workout-back-btn"
           >
-            <Ionicons name="chevron-back" size={22} color={T.textDim} />
+            <Ionicons name="arrow-back" size={22} color={T.textDim} />
           </TouchableOpacity>
           <View style={styles.elapsedPill}>
             <View style={styles.liveDot} />
@@ -1110,6 +1118,18 @@ export default function LiveWorkout() {
             testID="end-workout-btn"
           >
             <Text style={styles.finishBtnText}>Finish</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.summaryActionRow}>
+          <TouchableOpacity
+            style={styles.summaryActionBtn}
+            onPress={() => setSummaryVisible(true)}
+            hitSlop={8}
+            testID="summary-btn"
+          >
+            <Ionicons name="document-text-outline" size={16} color={T.text} />
+            <Text style={styles.summaryActionText}>Summary</Text>
           </TouchableOpacity>
         </View>
 
@@ -1939,6 +1959,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  summaryActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 20,
+    paddingBottom: 4,
+  },
+  summaryActionBtn: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 13,
+    borderRadius: 999,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+  },
+  summaryActionText: { color: T.text, fontSize: 13, fontWeight: '700' },
   finishBtn: {
     minWidth: 86,
     height: 48,

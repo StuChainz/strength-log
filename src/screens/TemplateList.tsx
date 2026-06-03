@@ -1,18 +1,81 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getAllTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
+import { ALL_PRESETS } from '@/programs/presets';
 import { T } from '@/theme/tokens';
 import type { TemplateListNavigationProp } from '@/navigation/types';
+
+export type TemplateProgramSection = {
+  id: string;
+  title: string;
+  templates: TemplateSummary[];
+};
+
+export type TemplateSections = {
+  programs: TemplateProgramSection[];
+  custom: TemplateSummary[];
+};
+
+function getMatchingPresetIds(templateName: string): string[] {
+  return ALL_PRESETS.filter((preset) =>
+    preset.workouts.some((workout) => workout.name === templateName),
+  ).map((preset) => preset.id);
+}
+
+function getPresetMatchCounts(templates: TemplateSummary[]): Map<string, number> {
+  const templateNames = new Set(templates.map((template) => template.name));
+  return new Map(
+    ALL_PRESETS.map((preset) => [
+      preset.id,
+      preset.workouts.filter((workout) => templateNames.has(workout.name)).length,
+    ]),
+  );
+}
+
+export function getTemplateSections(templates: TemplateSummary[]): TemplateSections {
+  const presetMatchCounts = getPresetMatchCounts(templates);
+  const grouped = new Map<string, TemplateSummary[]>();
+  const custom: TemplateSummary[] = [];
+
+  for (const template of templates) {
+    const matchingPresetIds = getMatchingPresetIds(template.name);
+    if (matchingPresetIds.length === 0) {
+      custom.push(template);
+      continue;
+    }
+
+    const presetId = [...matchingPresetIds].sort((a, b) => {
+      const countDiff = (presetMatchCounts.get(b) ?? 0) - (presetMatchCounts.get(a) ?? 0);
+      if (countDiff !== 0) return countDiff;
+      return (
+        ALL_PRESETS.findIndex((preset) => preset.id === a) -
+        ALL_PRESETS.findIndex((preset) => preset.id === b)
+      );
+    })[0]!;
+
+    grouped.set(presetId, [...(grouped.get(presetId) ?? []), template]);
+  }
+
+  return {
+    programs: ALL_PRESETS.map((preset) => ({
+      id: preset.id,
+      title: preset.name,
+      templates: grouped.get(preset.id) ?? [],
+    })).filter((section) => section.templates.length > 0),
+    custom,
+  };
+}
 
 export default function TemplateList() {
   const navigation = useNavigation<TemplateListNavigationProp>();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState<number>(Date.now);
+  const templateSections = useMemo(() => getTemplateSections(templates), [templates]);
 
   const loadTemplates = useCallback(async () => {
     try {
@@ -109,43 +172,105 @@ export default function TemplateList() {
             </View>
           ) : (
             <>
-              <Text style={styles.sectionLabel}>SAVED · {templates.length}</Text>
-              <View style={styles.templateList}>
-                {templates.map((t) => (
-                  <TouchableOpacity
-                    key={t.id}
-                    style={styles.templateRow}
-                    onPress={() => navigation.navigate('TemplateBuilder', { templateId: t.id })}
-                    testID={`template-row-${t.id}`}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.templateCount}>
-                      <Text style={styles.templateCountText}>{t.item_count}</Text>
-                    </View>
-                    <View style={styles.templateInfo}>
-                      <Text style={styles.templateName}>{t.name}</Text>
-                      <Text style={styles.templateMeta}>
-                        {t.item_count === 0
-                          ? 'No exercises'
-                          : `${t.item_count} exercise${t.item_count !== 1 ? 's' : ''}`}
+              {templateSections.programs.length > 0 && (
+                <View testID="template-program-sections">
+                  <Text style={styles.sectionLabel}>PROGRAMS</Text>
+                  {templateSections.programs.map((section) => (
+                    <View key={section.id} style={styles.templateGroup}>
+                      <Text
+                        style={styles.groupLabel}
+                        testID={`template-program-section-${section.id}`}
+                      >
+                        {section.title}
                       </Text>
-                      <Text style={styles.templateDate}>{formatLastUsed(t.updated_at)} · —</Text>
+                      <View style={styles.templateList}>
+                        {section.templates.map((template) => (
+                          <TemplateRow
+                            key={template.id}
+                            template={template}
+                            formatLastUsed={formatLastUsed}
+                            onEdit={() =>
+                              navigation.navigate('TemplateBuilder', { templateId: template.id })
+                            }
+                            onStart={() =>
+                              navigation.navigate('LiveWorkout', { templateId: template.id })
+                            }
+                          />
+                        ))}
+                      </View>
                     </View>
-                    <TouchableOpacity
-                      style={styles.playBtn}
-                      onPress={() => navigation.navigate('LiveWorkout', { templateId: t.id })}
-                      testID={`start-template-${t.id}`}
-                    >
-                      <Ionicons name="play" size={18} color={T.accentInk} />
-                    </TouchableOpacity>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                  ))}
+                </View>
+              )}
+
+              {templateSections.custom.length > 0 && (
+                <View style={templateSections.programs.length > 0 && styles.customGroup}>
+                  <Text style={styles.sectionLabel}>
+                    CUSTOM TEMPLATES · {templateSections.custom.length}
+                  </Text>
+                  <View style={styles.templateList}>
+                    {templateSections.custom.map((template) => (
+                      <TemplateRow
+                        key={template.id}
+                        template={template}
+                        formatLastUsed={formatLastUsed}
+                        onEdit={() =>
+                          navigation.navigate('TemplateBuilder', { templateId: template.id })
+                        }
+                        onStart={() =>
+                          navigation.navigate('LiveWorkout', { templateId: template.id })
+                        }
+                      />
+                    ))}
+                  </View>
+                </View>
+              )}
             </>
           )}
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function TemplateRow({
+  template,
+  formatLastUsed,
+  onEdit,
+  onStart,
+}: {
+  template: TemplateSummary;
+  formatLastUsed: (ts: number) => string;
+  onEdit: () => void;
+  onStart: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.templateRow}
+      onPress={onEdit}
+      testID={`template-row-${template.id}`}
+      activeOpacity={0.7}
+    >
+      <View style={styles.templateCount}>
+        <Text style={styles.templateCountText}>{template.item_count}</Text>
+      </View>
+      <View style={styles.templateInfo}>
+        <Text style={styles.templateName}>{template.name}</Text>
+        <Text style={styles.templateMeta}>
+          {template.item_count === 0
+            ? 'No exercises'
+            : `${template.item_count} exercise${template.item_count !== 1 ? 's' : ''}`}
+        </Text>
+        <Text style={styles.templateDate}>{formatLastUsed(template.updated_at)} · —</Text>
+      </View>
+      <TouchableOpacity
+        style={styles.playBtn}
+        onPress={onStart}
+        testID={`start-template-${template.id}`}
+      >
+        <Ionicons name="play" size={18} color={T.accentInk} />
+      </TouchableOpacity>
+    </TouchableOpacity>
   );
 }
 
@@ -230,6 +355,14 @@ const styles = StyleSheet.create({
   },
   startChipText: { fontSize: 13, fontWeight: '600', color: T.bg },
 
+  templateGroup: { marginBottom: 16 },
+  customGroup: { marginTop: 4 },
+  groupLabel: {
+    color: T.text,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
   templateList: { gap: 10 },
   templateRow: {
     backgroundColor: T.surface,

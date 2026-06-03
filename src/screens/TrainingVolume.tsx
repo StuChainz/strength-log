@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import {
@@ -24,6 +24,7 @@ import {
 } from '@/domain/sessionMuscles';
 import { MUSCLE_LABELS } from '@/domain/muscleLabels';
 import { T } from '@/theme/tokens';
+import type { TrainingVolumeNavigationProp } from '@/navigation/types';
 
 function SourceList({ title, sources }: { title: string; sources: ExerciseMuscleContribution[] }) {
   return (
@@ -95,6 +96,7 @@ function MuscleRow({
 }
 
 export default function TrainingVolume() {
+  const navigation = useNavigation<TrainingVolumeNavigationProp>();
   const [selectedWindow, setSelectedWindow] = useState<TrainingVolumeWindow>(
     TRAINING_VOLUME_WINDOWS.last7Days,
   );
@@ -115,6 +117,21 @@ export default function TrainingVolume() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+              return;
+            }
+            navigation.navigate('Main', { screen: 'Home' });
+          }}
+          activeOpacity={0.82}
+          testID="training-volume-back-btn"
+        >
+          <Ionicons name="arrow-back" size={17} color={T.text} />
+          <Text style={styles.backText}>Back</Text>
+        </TouchableOpacity>
         <Text style={styles.eyebrow}>Rolling Window</Text>
         <Text style={styles.title}>{report?.window.title ?? selectedWindow.title}</Text>
 
@@ -177,6 +194,20 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
   container: { flex: 1, backgroundColor: T.bg },
   content: { padding: 22, paddingTop: 16, paddingBottom: 24 },
+  backBtn: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    minHeight: 38,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 999,
+    backgroundColor: T.surface,
+    marginBottom: 18,
+  },
+  backText: { color: T.text, fontSize: 13, fontWeight: '600' },
   eyebrow: {
     fontFamily: 'Courier New',
     fontSize: 10.5,

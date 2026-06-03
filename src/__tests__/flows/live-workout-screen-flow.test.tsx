@@ -12,6 +12,8 @@ import { useSessionStore, type UseSessionStoreReturn } from '@/state/session.sto
 
 const mockReplace = jest.fn();
 const mockPopToTop = jest.fn();
+const mockGoBack = jest.fn();
+let mockCanGoBack = true;
 let mockRouteParams: { templateId?: string; sessionId?: string } = {};
 const mockDb = {
   getAllAsync: jest.fn().mockResolvedValue([]),
@@ -22,6 +24,8 @@ const mockDb = {
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
   useNavigation: () => ({
+    canGoBack: () => mockCanGoBack,
+    goBack: mockGoBack,
     replace: mockReplace,
     popToTop: mockPopToTop,
   }),
@@ -157,6 +161,7 @@ describe('LiveWorkout screen core flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
+    mockCanGoBack = true;
     mockRouteParams = {};
     mockDb.getAllAsync.mockResolvedValue([]);
     mockDb.getFirstAsync.mockResolvedValue(null);
@@ -394,6 +399,22 @@ describe('LiveWorkout screen core flow', () => {
     );
 
     alertSpy.mockRestore();
+  });
+
+  it('uses the top-left control for navigation and keeps summary separate', () => {
+    const store = activeStore();
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId, getByText, queryByTestId } = render(<LiveWorkout />);
+
+    expect(getByText('Summary')).toBeTruthy();
+    fireEvent.press(getByTestId('workout-back-btn'));
+
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+    expect(queryByTestId('workout-summary-modal')).toBeNull();
+
+    fireEvent.press(getByTestId('summary-btn'));
+    expect(getByTestId('workout-summary-modal')).toBeTruthy();
   });
 
   it('renders the live workout in a keyboard-aware layout for focused logger controls', async () => {

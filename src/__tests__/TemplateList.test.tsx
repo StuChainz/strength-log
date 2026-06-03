@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
-import TemplateList from '@/screens/TemplateList';
+import TemplateList, { getTemplateSections } from '@/screens/TemplateList';
 import { getAllTemplatesWithCount } from '@/db/repositories/templates.repo';
 
 const mockNavigate = jest.fn();
@@ -56,7 +56,9 @@ const mockTemplates = [
 describe('TemplateList', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseFocusEffect.mockImplementation((cb) => { cb(); });
+    mockUseFocusEffect.mockImplementation((cb) => {
+      cb();
+    });
     (getAllTemplatesWithCount as jest.Mock).mockResolvedValue(mockTemplates);
   });
 
@@ -122,6 +124,78 @@ describe('TemplateList', () => {
     expect(mockNavigate).toHaveBeenCalledWith('ProgramLibrary');
   });
 
+  it('groups preset templates by program and leaves unmatched templates custom', async () => {
+    (getAllTemplatesWithCount as jest.Mock).mockResolvedValue([
+      {
+        id: 'phul-upper',
+        name: 'Upper Power',
+        notes: null,
+        archived_at: null,
+        created_at: 1000,
+        updated_at: 1000,
+        item_count: 6,
+      },
+      {
+        id: 'gzclp-a',
+        name: 'Day A — Squat / Bench / Lat Pulldown',
+        notes: null,
+        archived_at: null,
+        created_at: 2000,
+        updated_at: 2000,
+        item_count: 3,
+      },
+      {
+        id: 'custom',
+        name: 'Hotel Upper',
+        notes: null,
+        archived_at: null,
+        created_at: 3000,
+        updated_at: 3000,
+        item_count: 4,
+      },
+    ]);
+
+    const { getByTestId, getByText } = render(<TemplateList />);
+
+    await waitFor(() => expect(getByTestId('template-program-sections')).toBeTruthy());
+    expect(getByTestId('template-program-section-gzclp').props.children).toBe('GZCLP');
+    expect(getByTestId('template-program-section-phul').props.children).toBe('PHUL');
+    expect(getByText('CUSTOM TEMPLATES · 1')).toBeTruthy();
+    expect(getByText('Hotel Upper')).toBeTruthy();
+  });
+
+  it('builds deterministic template groups from existing preset workout names', () => {
+    const sections = getTemplateSections([
+      {
+        id: 'a',
+        name: 'Workout A',
+        notes: null,
+        archived_at: null,
+        created_at: 1000,
+        updated_at: 1000,
+        item_count: 3,
+      },
+      {
+        id: 'custom',
+        name: 'My Friday Lift',
+        notes: null,
+        archived_at: null,
+        created_at: 2000,
+        updated_at: 2000,
+        item_count: 2,
+      },
+    ]);
+
+    expect(sections.programs).toEqual([
+      expect.objectContaining({
+        id: 'linear-5x5',
+        title: '5x5 Linear Strength',
+        templates: [expect.objectContaining({ id: 'a' })],
+      }),
+    ]);
+    expect(sections.custom).toEqual([expect.objectContaining({ id: 'custom' })]);
+  });
+
   it('reloads on focus', async () => {
     render(<TemplateList />);
     await waitFor(() => expect(getAllTemplatesWithCount).toHaveBeenCalled());
@@ -132,7 +206,9 @@ describe('TemplateList', () => {
     cb();
 
     await waitFor(() =>
-      expect((getAllTemplatesWithCount as jest.Mock).mock.calls.length).toBeGreaterThan(callsBefore),
+      expect((getAllTemplatesWithCount as jest.Mock).mock.calls.length).toBeGreaterThan(
+        callsBefore,
+      ),
     );
   });
 });

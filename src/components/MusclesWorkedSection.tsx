@@ -123,10 +123,13 @@ export function getMuscleHighlightOpacity(
   muscle: MuscleGroup,
 ): number {
   const score = muscleSummary[muscle] ?? 0;
-  if (score <= 0) return 0.18;
+  if (score <= 0) return 0.12;
 
   const maxScore = Math.max(...Object.values(muscleSummary).filter((value) => value > 0), score);
-  return 0.35 + (score / maxScore) * 0.55;
+  const ratio = score / maxScore;
+  if (ratio >= 0.85) return 0.9;
+  if (ratio >= 0.65) return 0.56;
+  return 0.24;
 }
 
 function formatScore(score: number): string {

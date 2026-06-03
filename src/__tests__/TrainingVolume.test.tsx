@@ -3,8 +3,17 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import TrainingVolume from '@/screens/TrainingVolume';
 import { getTrainingVolumeReport } from '@/db/repositories/trainingVolume.repo';
 
+const mockGoBack = jest.fn();
+const mockNavigate = jest.fn();
+let mockCanGoBack = true;
+
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
+  useNavigation: () => ({
+    canGoBack: () => mockCanGoBack,
+    goBack: mockGoBack,
+    navigate: mockNavigate,
+  }),
   useFocusEffect: (effect: () => void | (() => void)) => {
     const ReactActual = jest.requireActual('react') as typeof import('react');
     ReactActual.useEffect(() => effect(), [effect]);
@@ -27,6 +36,51 @@ const getTrainingVolumeReportMock = getTrainingVolumeReport as jest.MockedFuncti
 describe('TrainingVolume', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCanGoBack = true;
+  });
+
+  it('has a visible back action that returns to the previous screen', async () => {
+    getTrainingVolumeReportMock.mockResolvedValue({
+      window: {
+        id: '7d',
+        title: 'Training Volume (Last 7 Days)',
+        label: '7D',
+        days: 7,
+        startAt: 1,
+        endAt: 2,
+      },
+      muscles: [],
+    });
+
+    const { getByTestId, getByText } = render(<TrainingVolume />);
+
+    await waitFor(() => expect(getByText('Training Volume (Last 7 Days)')).toBeTruthy());
+    fireEvent.press(getByTestId('training-volume-back-btn'));
+
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the main app when opened without stack history', async () => {
+    mockCanGoBack = false;
+    getTrainingVolumeReportMock.mockResolvedValue({
+      window: {
+        id: '7d',
+        title: 'Training Volume (Last 7 Days)',
+        label: '7D',
+        days: 7,
+        startAt: 1,
+        endAt: 2,
+      },
+      muscles: [],
+    });
+
+    const { getByTestId, getByText } = render(<TrainingVolume />);
+
+    await waitFor(() => expect(getByText('Training Volume (Last 7 Days)')).toBeTruthy());
+    fireEvent.press(getByTestId('training-volume-back-btn'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('Main', { screen: 'Home' });
   });
 
   it('shows expandable direct and indirect exercise breakdowns', async () => {

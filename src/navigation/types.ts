@@ -1,10 +1,14 @@
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import type { CompositeNavigationProp, RouteProp } from '@react-navigation/native';
+import type {
+  CompositeNavigationProp,
+  NavigatorScreenParams,
+  RouteProp,
+} from '@react-navigation/native';
 
 export type RootStackParamList = {
   Onboarding: { mode?: 'firstLaunch' | 'revisit' } | undefined;
-  Main: undefined;
+  Main: NavigatorScreenParams<MainTabParamList> | undefined;
   LiveWorkout: { templateId?: string; sessionId?: string } | undefined;
   EndWorkoutSummary: { sessionId: string };
   PostSessionTags: { sessionId: string };
