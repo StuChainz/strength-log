@@ -160,7 +160,7 @@ export default function Settings() {
           testID="settings-issues-row"
         >
           <Ionicons name="alert-circle-outline" size={18} color={T.textDim} />
-          <Text style={styles.actionText}>Issues</Text>
+          <Text style={styles.actionText}>Injuries</Text>
         </TouchableOpacity>
 
         <TouchableOpacity

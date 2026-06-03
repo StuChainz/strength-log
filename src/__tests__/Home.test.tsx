@@ -111,6 +111,7 @@ describe('Home screen', () => {
         created_at: 1,
         updated_at: 1,
         item_count: 5,
+        working_set_count: 16,
       },
       {
         id: 'template-pull',
@@ -120,6 +121,7 @@ describe('Home screen', () => {
         created_at: 1,
         updated_at: 1,
         item_count: 6,
+        working_set_count: 18,
       },
     ]);
     getSessionRecoveryMock.mockResolvedValue({ status: 'none', sessions: [] });
@@ -170,6 +172,8 @@ describe('Home screen', () => {
     await waitFor(() => expect(screen.getByText('Set')).toBeTruthy());
     expect(screen.queryByTestId('active-workout-card')).toBeNull();
     expect(screen.getByTestId('start-workout-btn')).toBeTruthy();
+    expect(screen.getByTestId('home-injuries-btn')).toBeTruthy();
+    expect(screen.getByTestId('home-settings-btn')).toBeTruthy();
     expect(screen.queryByText('Resume Workout')).toBeNull();
   });
 
@@ -312,6 +316,18 @@ describe('Home screen', () => {
 
     fireEvent.press(screen.getByTestId('template-card-template-push'));
     expect(mockNavigate).toHaveBeenCalledWith('LiveWorkout', { templateId: 'template-push' });
+  });
+
+  it('opens Injuries and Settings from the home header actions', async () => {
+    render(<Home />);
+
+    await waitFor(() => expect(screen.getByTestId('home-injuries-btn')).toBeTruthy());
+
+    fireEvent.press(screen.getByTestId('home-injuries-btn'));
+    fireEvent.press(screen.getByTestId('home-settings-btn'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('Issues');
+    expect(mockNavigate).toHaveBeenCalledWith('Settings');
   });
 
   it('discards the active workout through the secondary action', async () => {

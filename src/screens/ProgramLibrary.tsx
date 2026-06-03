@@ -3,6 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { ALL_PRESETS } from '@/programs/presets';
+import { getProgramPresetWeeklySetCount } from '@/programs/volume';
 import { T } from '@/theme/tokens';
 import type { ProgramLibraryNavigationProp } from '@/navigation/types';
 
@@ -45,7 +46,8 @@ export default function ProgramLibrary() {
                 <View style={styles.presetInfo}>
                   <Text style={styles.presetName}>{preset.name}</Text>
                   <Text style={styles.presetMeta}>
-                    {preset.daysPerWeek}D/WK · {preset.experienceLevel.toUpperCase()}
+                    {preset.daysPerWeek}D/WK · {getProgramPresetWeeklySetCount(preset)} SETS/WK ·{' '}
+                    {preset.experienceLevel.toUpperCase()}
                   </Text>
                   <Text style={styles.presetDesc} numberOfLines={2}>
                     {preset.shortDescription}

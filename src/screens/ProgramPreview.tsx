@@ -15,6 +15,7 @@ import {
   importPreset,
   PresetExerciseResolutionError,
 } from '@/programs/importPreset';
+import { getProgramPresetWeeklySetCount } from '@/programs/volume';
 import type {
   ProgramExercise,
   ProgramPreset,
@@ -86,6 +87,7 @@ export default function ProgramPreview() {
   }
 
   const totalExercises = preset.workouts.reduce((n, w) => n + w.exercises.length, 0);
+  const weeklySetCount = getProgramPresetWeeklySetCount(preset);
 
   const runImport = async () => {
     setImporting(true);
@@ -163,8 +165,8 @@ export default function ProgramPreview() {
           <Text style={styles.eyebrow}>{preset.experienceLevel.toUpperCase()}</Text>
           <Text style={styles.title}>{preset.name}</Text>
           <Text style={styles.stats}>
-            {preset.daysPerWeek} days/wk · {preset.workouts.length} workouts · {totalExercises}{' '}
-            exercises
+            {preset.daysPerWeek} days/wk · {preset.workouts.length} workouts · {weeklySetCount}{' '}
+            sets/wk · {totalExercises} exercises
           </Text>
           <Text style={styles.description}>{preset.description}</Text>
           {preset.source?.label ? (

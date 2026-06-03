@@ -28,6 +28,7 @@ export interface TemplateSummary {
   created_at: number;
   updated_at: number;
   item_count: number;
+  working_set_count: number;
 }
 
 export interface DraftItemInput {
@@ -144,7 +145,9 @@ export async function getAllTemplates(db: SQLiteDatabase): Promise<Template[]> {
 
 export async function getAllTemplatesWithCount(db: SQLiteDatabase): Promise<TemplateSummary[]> {
   return db.getAllAsync<TemplateSummary>(
-    `SELECT t.*, COUNT(ti.id) AS item_count
+    `SELECT t.*,
+            COUNT(ti.id) AS item_count,
+            COALESCE(SUM(COALESCE(ti.target_sets, 0)), 0) AS working_set_count
      FROM templates t
      LEFT JOIN template_items ti ON ti.template_id = t.id
      WHERE t.archived_at IS NULL
@@ -155,7 +158,9 @@ export async function getAllTemplatesWithCount(db: SQLiteDatabase): Promise<Temp
 
 export async function getNormalTemplatesWithCount(db: SQLiteDatabase): Promise<TemplateSummary[]> {
   return db.getAllAsync<TemplateSummary>(
-    `SELECT t.*, COUNT(ti.id) AS item_count
+    `SELECT t.*,
+            COUNT(ti.id) AS item_count,
+            COALESCE(SUM(COALESCE(ti.target_sets, 0)), 0) AS working_set_count
      FROM templates t
      LEFT JOIN template_items ti ON ti.template_id = t.id
      LEFT JOIN issue_routines ir ON ir.template_id = t.id

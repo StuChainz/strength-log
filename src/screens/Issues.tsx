@@ -49,7 +49,7 @@ export default function Issues() {
         </TouchableOpacity>
         <View style={styles.headerText}>
           <Text style={styles.eyebrow}>Personal</Text>
-          <Text style={styles.title}>Issues</Text>
+          <Text style={styles.title}>Injuries</Text>
         </View>
         <TouchableOpacity
           style={styles.addBtn}
@@ -69,7 +69,7 @@ export default function Issues() {
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
           {issues.length === 0 ? (
             <View style={styles.empty}>
-              <Text style={styles.emptyText}>No Issues yet.</Text>
+              <Text style={styles.emptyText}>No injuries yet.</Text>
             </View>
           ) : (
             issues.map((issue) => (

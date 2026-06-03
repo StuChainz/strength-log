@@ -61,6 +61,7 @@ describe('ProgramPreview', () => {
   it('renders the preset name and all workouts', () => {
     const { getByText, getByTestId } = render(<ProgramPreview />);
     expect(getByText(LINEAR_5X5.name)).toBeTruthy();
+    expect(getByText('3 days/wk · 2 workouts · 26 sets/wk · 6 exercises')).toBeTruthy();
     for (const workout of LINEAR_5X5.workouts) {
       expect(getByTestId(`workout-card-${workout.key}`)).toBeTruthy();
       expect(getByText(workout.name)).toBeTruthy();
@@ -92,6 +93,7 @@ describe('ProgramPreview', () => {
         created_at: 1,
         updated_at: 1,
         item_count: 3,
+        working_set_count: 15,
       },
     ]);
 
@@ -117,6 +119,7 @@ describe('ProgramPreview', () => {
         created_at: 1,
         updated_at: 1,
         item_count: 3,
+        working_set_count: 15,
       },
     ]);
 

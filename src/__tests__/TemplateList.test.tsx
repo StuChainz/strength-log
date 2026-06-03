@@ -32,6 +32,7 @@ const mockTemplates = [
     created_at: 1000,
     updated_at: 1000,
     item_count: 3,
+    working_set_count: 9,
   },
   {
     id: 'tmpl-2',
@@ -41,6 +42,7 @@ const mockTemplates = [
     created_at: 2000,
     updated_at: 2000,
     item_count: 1,
+    working_set_count: 4,
   },
   {
     id: 'tmpl-3',
@@ -50,6 +52,7 @@ const mockTemplates = [
     created_at: 3000,
     updated_at: 3000,
     item_count: 0,
+    working_set_count: 0,
   },
 ];
 
@@ -75,8 +78,8 @@ describe('TemplateList', () => {
   it('shows correct exercise count labels', async () => {
     const { getByText } = render(<TemplateList />);
     await waitFor(() => expect(getByText('Push A')).toBeTruthy());
-    expect(getByText('3 exercises')).toBeTruthy();
-    expect(getByText('1 exercise')).toBeTruthy();
+    expect(getByText('3 exercises · 9 sets')).toBeTruthy();
+    expect(getByText('1 exercise · 4 sets')).toBeTruthy();
     expect(getByText('No exercises')).toBeTruthy();
   });
 
@@ -124,6 +127,15 @@ describe('TemplateList', () => {
     expect(mockNavigate).toHaveBeenCalledWith('ProgramLibrary');
   });
 
+  it('navigates to Injuries from the visible shortcut', async () => {
+    const { getByTestId } = render(<TemplateList />);
+    await waitFor(() => expect(getByTestId('browse-injuries-btn')).toBeTruthy());
+
+    fireEvent.press(getByTestId('browse-injuries-btn'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('Issues');
+  });
+
   it('groups preset templates by program and leaves unmatched templates custom', async () => {
     (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue([
       {
@@ -134,6 +146,7 @@ describe('TemplateList', () => {
         created_at: 1000,
         updated_at: 1000,
         item_count: 6,
+        working_set_count: 18,
       },
       {
         id: 'gzclp-a',
@@ -143,6 +156,7 @@ describe('TemplateList', () => {
         created_at: 2000,
         updated_at: 2000,
         item_count: 3,
+        working_set_count: 11,
       },
       {
         id: 'custom',
@@ -152,6 +166,7 @@ describe('TemplateList', () => {
         created_at: 3000,
         updated_at: 3000,
         item_count: 4,
+        working_set_count: 12,
       },
     ]);
 
@@ -160,6 +175,8 @@ describe('TemplateList', () => {
     await waitFor(() => expect(getByTestId('template-program-sections')).toBeTruthy());
     expect(getByTestId('template-program-section-gzclp').props.children).toBe('GZCLP');
     expect(getByTestId('template-program-section-phul').props.children).toBe('PHUL');
+    expect(getByText('11 sets/wk')).toBeTruthy();
+    expect(getByText('18 sets/wk')).toBeTruthy();
     expect(getByText('CUSTOM TEMPLATES · 1')).toBeTruthy();
     expect(getByText('Hotel Upper')).toBeTruthy();
   });
@@ -174,6 +191,7 @@ describe('TemplateList', () => {
         created_at: 1000,
         updated_at: 1000,
         item_count: 3,
+        working_set_count: 15,
       },
       {
         id: 'custom',
@@ -183,6 +201,7 @@ describe('TemplateList', () => {
         created_at: 2000,
         updated_at: 2000,
         item_count: 2,
+        working_set_count: 6,
       },
     ]);
 

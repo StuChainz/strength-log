@@ -308,13 +308,31 @@ export default function Home() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <View>
+          <View style={styles.headerMain}>
             <Text style={styles.eyebrow}>{formatDateHeader(today)}</Text>
             <Text style={styles.title}>Set</Text>
           </View>
-          <View style={styles.weekCount}>
-            <Text style={styles.weekCountValue}>{trainingTotals.session_count}</Text>
-            <Text style={styles.weekCountLabel}>this week</Text>
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              activeOpacity={0.82}
+              onPress={() => navigation.navigate('Issues')}
+              testID="home-injuries-btn"
+            >
+              <Ionicons name="medkit-outline" size={18} color={T.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              activeOpacity={0.82}
+              onPress={() => navigation.navigate('Settings')}
+              testID="home-settings-btn"
+            >
+              <Ionicons name="settings-outline" size={18} color={T.text} />
+            </TouchableOpacity>
+            <View style={styles.weekCount}>
+              <Text style={styles.weekCountValue}>{trainingTotals.session_count}</Text>
+              <Text style={styles.weekCountLabel}>this week</Text>
+            </View>
           </View>
         </View>
 
@@ -664,6 +682,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: T.text,
     marginTop: 4,
+  },
+  headerMain: { flex: 1, minWidth: 0 },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  headerIconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    marginBottom: 2,
   },
   weekCount: { alignItems: 'flex-end', paddingBottom: 2 },
   weekCountValue: { color: T.text, fontSize: 22, fontWeight: '700' },

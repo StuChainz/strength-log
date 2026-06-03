@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getNormalTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
 import { ALL_PRESETS } from '@/programs/presets';
+import { formatSetCount } from '@/programs/volume';
 import { T } from '@/theme/tokens';
 import type { TemplateListNavigationProp } from '@/navigation/types';
 
@@ -70,6 +71,10 @@ export function getTemplateSections(templates: TemplateSummary[]): TemplateSecti
   };
 }
 
+function getTotalWorkingSets(templates: TemplateSummary[]): number {
+  return templates.reduce((total, template) => total + template.working_set_count, 0);
+}
+
 export default function TemplateList() {
   const navigation = useNavigation<TemplateListNavigationProp>();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
@@ -116,14 +121,23 @@ export default function TemplateList() {
           <Text style={styles.eyebrow}>Programmes</Text>
           <View style={styles.headerRow}>
             <Text style={styles.title}>Templates</Text>
-            <TouchableOpacity
-              style={styles.newBtn}
-              onPress={() => navigation.navigate('TemplateBuilder', {})}
-              testID="add-template-btn"
-            >
-              <Ionicons name="add" size={15} color={T.text} />
-              <Text style={styles.newBtnText}>New</Text>
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={styles.iconBtn}
+                onPress={() => navigation.navigate('Issues')}
+                testID="open-injuries-btn"
+              >
+                <Ionicons name="medkit-outline" size={17} color={T.text} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.newBtn}
+                onPress={() => navigation.navigate('TemplateBuilder', {})}
+                testID="add-template-btn"
+              >
+                <Ionicons name="add" size={15} color={T.text} />
+                <Text style={styles.newBtnText}>New</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -138,6 +152,21 @@ export default function TemplateList() {
             <View style={{ flex: 1 }}>
               <Text style={styles.emptyCardTitle}>Browse programmes</Text>
               <Text style={styles.emptyCardSub}>Import a built-in preset</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={T.muted} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.browseCard}
+            onPress={() => navigation.navigate('Issues')}
+            activeOpacity={0.8}
+            testID="browse-injuries-btn"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.emptyCardTitle}>Injuries</Text>
+              <Text style={styles.emptyCardSub}>Track symptoms and check-ins</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={T.muted} />
           </TouchableOpacity>
@@ -177,12 +206,17 @@ export default function TemplateList() {
                   <Text style={styles.sectionLabel}>PROGRAMS</Text>
                   {templateSections.programs.map((section) => (
                     <View key={section.id} style={styles.templateGroup}>
-                      <Text
-                        style={styles.groupLabel}
-                        testID={`template-program-section-${section.id}`}
-                      >
-                        {section.title}
-                      </Text>
+                      <View style={styles.groupHeader}>
+                        <Text
+                          style={styles.groupLabel}
+                          testID={`template-program-section-${section.id}`}
+                        >
+                          {section.title}
+                        </Text>
+                        <Text style={styles.groupMeta}>
+                          {formatSetCount(getTotalWorkingSets(section.templates))}/wk
+                        </Text>
+                      </View>
                       <View style={styles.templateList}>
                         {section.templates.map((template) => (
                           <TemplateRow
@@ -259,7 +293,7 @@ function TemplateRow({
         <Text style={styles.templateMeta}>
           {template.item_count === 0
             ? 'No exercises'
-            : `${template.item_count} exercise${template.item_count !== 1 ? 's' : ''}`}
+            : `${template.item_count} exercise${template.item_count !== 1 ? 's' : ''} · ${formatSetCount(template.working_set_count)}`}
         </Text>
         <Text style={styles.templateDate}>{formatLastUsed(template.updated_at)} · —</Text>
       </View>
@@ -294,7 +328,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 4,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   title: { fontSize: 28, fontWeight: '600', letterSpacing: -0.5, color: T.text },
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+  },
   newBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -357,11 +406,22 @@ const styles = StyleSheet.create({
 
   templateGroup: { marginBottom: 16 },
   customGroup: { marginTop: 4 },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 10,
+  },
   groupLabel: {
     color: T.text,
     fontSize: 15,
     fontWeight: '700',
-    marginBottom: 10,
+  },
+  groupMeta: {
+    color: T.muted,
+    fontFamily: 'Courier New',
+    fontSize: 11,
   },
   templateList: { gap: 10 },
   templateRow: {

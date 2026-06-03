@@ -22,6 +22,7 @@ describe('ProgramLibrary', () => {
       expect(getByTestId(`preset-row-${preset.id}`)).toBeTruthy();
       expect(getByText(preset.name)).toBeTruthy();
     }
+    expect(getByText(/26 SETS\/WK/)).toBeTruthy();
   });
 
   it('navigates to ProgramPreview on row press', () => {
