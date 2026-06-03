@@ -20,17 +20,23 @@ import IssueReactionEditSheet from '@/components/IssueReactionEditSheet';
 import { openDb } from '@/db/client';
 import {
   archiveIssue,
+  createIssueCheckin,
   createIssue,
   createIssueExerciseLink,
   createIssueRoutine,
   deleteExerciseIssueEvent,
   deleteIssueExerciseLink,
+  getIssueCheckinTrend,
   getIssueById,
   getIssueExerciseLinks,
+  getIssueRecentCheckins,
   getIssueRoutine,
+  getIssueRoutineCompletionContext,
   getIssueRoutineItems,
   getIssueRecentEvents,
   removeIssueRoutine,
+  type IssueCheckinTrend,
+  type IssueRoutineCompletionContext,
   type IssueRoutineSummary,
   type IssueExerciseLinkWithExerciseName,
   type ExerciseIssueEventWithNames,
@@ -41,10 +47,24 @@ import {
 } from '@/db/repositories/issues.repo';
 import { T } from '@/theme/tokens';
 import type { IssueDetailNavigationProp, IssueDetailRouteProp } from '@/navigation/types';
-import type { Exercise, IssueExerciseLinkType } from '@/domain/types';
+import type { Exercise, IssueCheckin, IssueExerciseLinkType } from '@/domain/types';
 
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function formatRelativeDate(ts: number, now = Date.now()): string {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const diffDays = Math.max(0, Math.floor((now - ts) / dayMs));
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 14) return `${diffDays} days ago`;
+  const weeks = Math.floor(diffDays / 7);
+  return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
+}
+
+function formatAverage(value: number): string {
+  return value.toFixed(1);
 }
 
 function formatLastCompleted(ts: number | null): string | null {
@@ -70,10 +90,17 @@ export default function IssueDetail() {
   const [note, setNote] = useState('');
   const [active, setActive] = useState(true);
   const [events, setEvents] = useState<ExerciseIssueEventWithNames[]>([]);
+  const [checkins, setCheckins] = useState<IssueCheckin[]>([]);
+  const [trend, setTrend] = useState<IssueCheckinTrend | null>(null);
+  const [routineCompletionContext, setRoutineCompletionContext] =
+    useState<IssueRoutineCompletionContext | null>(null);
   const [links, setLinks] = useState<IssueExerciseLinkWithExerciseName[]>([]);
   const [routine, setRoutine] = useState<IssueRoutineSummary | null>(null);
   const [routineItems, setRoutineItems] = useState<IssueRoutineEditorItem[]>([]);
   const [linkNoteDrafts, setLinkNoteDrafts] = useState<Record<string, string>>({});
+  const [checkinSeverity, setCheckinSeverity] = useState<number | null>(null);
+  const [checkinNote, setCheckinNote] = useState('');
+  const [savingCheckin, setSavingCheckin] = useState(false);
   const [saving, setSaving] = useState(false);
   const [routineEditorVisible, setRoutineEditorVisible] = useState(false);
   const [savingRoutine, setSavingRoutine] = useState(false);
@@ -92,15 +119,22 @@ export default function IssueDetail() {
     setName(issue.name);
     setNote(issue.note ?? '');
     setActive(issue.active === 1);
-    const [linkRows, eventRows, routineRow] = await Promise.all([
-      getIssueExerciseLinks(db, issueId),
-      getIssueRecentEvents(db, issueId, 12),
-      getIssueRoutine(db, issueId),
-    ]);
+    const [linkRows, eventRows, routineRow, checkinRows, trendSummary, completionContext] =
+      await Promise.all([
+        getIssueExerciseLinks(db, issueId),
+        getIssueRecentEvents(db, issueId, 12),
+        getIssueRoutine(db, issueId),
+        getIssueRecentCheckins(db, issueId, 6),
+        getIssueCheckinTrend(db, issueId),
+        getIssueRoutineCompletionContext(db, issueId),
+      ]);
     const routineItemRows = routineRow ? await getIssueRoutineItems(db, issueId) : [];
     setLinks(linkRows);
     setLinkNoteDrafts(Object.fromEntries(linkRows.map((link) => [link.id, link.note ?? ''])));
     setEvents(eventRows);
+    setCheckins(checkinRows);
+    setTrend(trendSummary);
+    setRoutineCompletionContext(completionContext);
     setRoutine(routineRow);
     setRoutineItems(
       routineItemRows.map((item) => ({
@@ -202,6 +236,28 @@ export default function IssueDetail() {
     }
   };
 
+  const saveCheckin = async () => {
+    if (!issueId || checkinSeverity === null) {
+      Alert.alert('Severity required', 'Choose a severity from 1 to 5 before saving.');
+      return;
+    }
+
+    setSavingCheckin(true);
+    try {
+      const db = await openDb();
+      await createIssueCheckin(db, {
+        issueId,
+        severity: checkinSeverity,
+        note: checkinNote,
+      });
+      setCheckinSeverity(null);
+      setCheckinNote('');
+      await load();
+    } finally {
+      setSavingCheckin(false);
+    }
+  };
+
   const runRoutine = () => {
     if (!routine) return;
     navigation.navigate('LiveWorkout', { templateId: routine.template_id });
@@ -276,6 +332,127 @@ export default function IssueDetail() {
             </TouchableOpacity>
           </View>
         )}
+      </View>
+    );
+  };
+
+  const renderTrendSummary = () => {
+    if (!trend) return null;
+    if (trend.status === 'insufficient') {
+      return (
+        <Text style={styles.trendBody} testID="issue-checkin-trend-insufficient">
+          Not enough check-ins for a trend yet.
+        </Text>
+      );
+    }
+
+    const summary =
+      trend.status === 'improving'
+        ? 'Reported severity is lower recently.'
+        : trend.status === 'worsening'
+          ? 'Reported severity is higher recently.'
+          : 'Reported severity looks broadly unchanged.';
+
+    return (
+      <View style={styles.trendSummary} testID={`issue-checkin-trend-${trend.status}`}>
+        <Text style={styles.trendBody}>{summary}</Text>
+        {trend.status !== 'stable' ? (
+          <>
+            <Text style={styles.trendMeta}>
+              First 3-check-in average: {formatAverage(trend.firstThreeAverage)}
+            </Text>
+            <Text style={styles.trendMeta}>
+              Latest 3-check-in average: {formatAverage(trend.latestThreeAverage)}
+            </Text>
+          </>
+        ) : null}
+        <Text style={styles.trendMeta}>Small sample: {trend.count} check-ins</Text>
+      </View>
+    );
+  };
+
+  const renderCheckins = () => {
+    if (isNew) return null;
+    return (
+      <View style={styles.checkinBlock} testID="issue-checkin-area">
+        <Text style={styles.sectionLabel}>How is this issue today?</Text>
+        <View style={styles.severityRow}>
+          {[1, 2, 3, 4, 5].map((value) => (
+            <TouchableOpacity
+              key={value}
+              style={[styles.severityBtn, checkinSeverity === value && styles.severityBtnSelected]}
+              onPress={() => setCheckinSeverity(value)}
+              testID={`issue-checkin-severity-${value}`}
+            >
+              <Text
+                style={[
+                  styles.severityBtnText,
+                  checkinSeverity === value && styles.severityBtnTextSelected,
+                ]}
+              >
+                {value}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <TextInput
+          style={styles.checkinNoteInput}
+          value={checkinNote}
+          onChangeText={setCheckinNote}
+          placeholder="Optional note"
+          placeholderTextColor={T.muted}
+          multiline
+          textAlignVertical="top"
+          testID="issue-checkin-note-input"
+        />
+        <TouchableOpacity
+          style={[
+            styles.checkinSaveBtn,
+            (checkinSeverity === null || savingCheckin) && styles.saveBtnDisabled,
+          ]}
+          onPress={() => void saveCheckin()}
+          disabled={checkinSeverity === null || savingCheckin}
+          testID="save-issue-checkin-btn"
+        >
+          <Text style={styles.checkinSaveText}>
+            {savingCheckin ? 'Saving...' : 'Save Check-in'}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.trendBlock}>
+          <Text style={styles.sectionLabel}>Trend Summary</Text>
+          {renderTrendSummary()}
+        </View>
+
+        {routineCompletionContext ? (
+          <View style={styles.routineContext} testID="issue-routine-completion-context">
+            <Text style={styles.routineContextLabel}>Linked routine completed:</Text>
+            <Text style={styles.routineContextValue}>
+              {routineCompletionContext.completedLast30Days} time
+              {routineCompletionContext.completedLast30Days === 1 ? '' : 's'} in the last 30 days
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={styles.recentCheckinsBlock}>
+          <Text style={styles.sectionLabel}>Recent Check-ins</Text>
+          {checkins.length === 0 ? (
+            <Text style={styles.emptyText}>No check-ins recorded yet.</Text>
+          ) : (
+            checkins.map((checkin) => (
+              <View
+                key={checkin.id}
+                style={styles.checkinRow}
+                testID={`issue-checkin-${checkin.id}`}
+              >
+                <Text style={styles.checkinLine}>
+                  {checkin.severity}/5 · {formatRelativeDate(checkin.created_at)}
+                  {checkin.note ? ` · "${checkin.note}"` : ''}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
       </View>
     );
   };
@@ -471,6 +648,7 @@ export default function IssueDetail() {
         )}
 
         {renderRoutine()}
+        {renderCheckins()}
 
         {!isNew && (
           <>
@@ -683,6 +861,77 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   removeRoutineText: { color: T.danger, fontSize: 12, fontWeight: '800' },
+  checkinBlock: {
+    marginTop: 8,
+    gap: 10,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 12,
+  },
+  severityRow: { flexDirection: 'row', gap: 8 },
+  severityBtn: {
+    width: 42,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    backgroundColor: T.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  severityBtnSelected: { backgroundColor: T.accent, borderColor: T.accent },
+  severityBtnText: { color: T.textDim, fontSize: 14, fontWeight: '800' },
+  severityBtnTextSelected: { color: T.accentInk },
+  checkinNoteInput: {
+    minHeight: 58,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: T.border,
+    color: T.text,
+    fontSize: 13,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  checkinSaveBtn: {
+    minHeight: 40,
+    borderRadius: 12,
+    backgroundColor: T.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkinSaveText: { color: T.accentInk, fontSize: 13, fontWeight: '900' },
+  trendBlock: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 10,
+    gap: 6,
+  },
+  trendSummary: { gap: 4 },
+  trendBody: { color: T.text, fontSize: 13 },
+  trendMeta: { color: T.textDim, fontFamily: 'Courier New', fontSize: 11 },
+  routineContext: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 10,
+    gap: 3,
+  },
+  routineContextLabel: { color: T.textDim, fontSize: 12, fontWeight: '700' },
+  routineContextValue: { color: T.text, fontSize: 13 },
+  recentCheckinsBlock: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 10,
+    gap: 7,
+  },
+  checkinRow: {
+    backgroundColor: T.surface2,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  checkinLine: { color: T.text, fontSize: 13 },
   linkBlock: {
     marginTop: 8,
     gap: 8,

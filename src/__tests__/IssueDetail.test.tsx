@@ -3,13 +3,17 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import IssueDetail from '@/screens/IssueDetail';
 import { openDb } from '@/db/client';
 import {
+  createIssueCheckin,
   createIssueRoutine,
   createIssueExerciseLink,
   deleteExerciseIssueEvent,
   deleteIssueExerciseLink,
+  getIssueCheckinTrend,
   getIssueById,
   getIssueExerciseLinks,
+  getIssueRecentCheckins,
   getIssueRoutine,
+  getIssueRoutineCompletionContext,
   getIssueRoutineItems,
   getIssueRecentEvents,
   removeIssueRoutine,
@@ -35,14 +39,18 @@ jest.mock('@/db/client', () => ({
 
 jest.mock('@/db/repositories/issues.repo', () => ({
   archiveIssue: jest.fn(),
+  createIssueCheckin: jest.fn(),
   createIssue: jest.fn(),
   createIssueExerciseLink: jest.fn(),
   createIssueRoutine: jest.fn(),
   deleteExerciseIssueEvent: jest.fn(),
   deleteIssueExerciseLink: jest.fn(),
+  getIssueCheckinTrend: jest.fn(),
   getIssueById: jest.fn(),
   getIssueExerciseLinks: jest.fn(),
+  getIssueRecentCheckins: jest.fn(),
   getIssueRoutine: jest.fn(),
+  getIssueRoutineCompletionContext: jest.fn(),
   getIssueRoutineItems: jest.fn(),
   getIssueRecentEvents: jest.fn(),
   removeIssueRoutine: jest.fn(),
@@ -100,7 +108,16 @@ jest.mock('@/components/ExercisePicker', () => {
 });
 
 const openDbMock = openDb as jest.MockedFunction<typeof openDb>;
+const createIssueCheckinMock = createIssueCheckin as jest.MockedFunction<typeof createIssueCheckin>;
 const getIssueByIdMock = getIssueById as jest.MockedFunction<typeof getIssueById>;
+const getIssueCheckinTrendMock = getIssueCheckinTrend as jest.MockedFunction<
+  typeof getIssueCheckinTrend
+>;
+const getIssueRecentCheckinsMock = getIssueRecentCheckins as jest.MockedFunction<
+  typeof getIssueRecentCheckins
+>;
+const getIssueRoutineCompletionContextMock =
+  getIssueRoutineCompletionContext as jest.MockedFunction<typeof getIssueRoutineCompletionContext>;
 const getIssueRecentEventsMock = getIssueRecentEvents as jest.MockedFunction<
   typeof getIssueRecentEvents
 >;
@@ -152,7 +169,19 @@ const event = {
   exercise_name: 'Bench Press',
 };
 
+const checkin = {
+  id: 'checkin-1',
+  issue_id: 'issue-1',
+  severity: 3,
+  note: 'Less sharp pain on bench',
+  created_at: 1_900_000_000_000,
+  updated_at: 1_900_000_000_000,
+};
+
 let recentEvents = [event];
+let recentCheckins: Awaited<ReturnType<typeof getIssueRecentCheckins>> = [checkin];
+let trend: Awaited<ReturnType<typeof getIssueCheckinTrend>> = { status: 'insufficient', count: 1 };
+let routineCompletionContext: Awaited<ReturnType<typeof getIssueRoutineCompletionContext>> = null;
 let exerciseLinks = [
   {
     id: 'link-helpful',
@@ -175,19 +204,17 @@ let exerciseLinks = [
     updated_at: 1,
   },
 ];
-let routine:
-  | {
-      id: string;
-      issue_id: string;
-      template_id: string;
-      created_at: number;
-      updated_at: number;
-      routine_name: string;
-      routine_note: string | null;
-      exercise_count: number;
-      last_completed_at: number | null;
-    }
-  | null = null;
+let routine: {
+  id: string;
+  issue_id: string;
+  template_id: string;
+  created_at: number;
+  updated_at: number;
+  routine_name: string;
+  routine_note: string | null;
+  exercise_count: number;
+  last_completed_at: number | null;
+} | null = null;
 let routineItems: {
   id: string;
   template_id: string;
@@ -218,10 +245,14 @@ let routineItems: {
 describe('IssueDetail reaction correction', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(Date, 'now').mockReturnValue(1_900_000_000_000);
     mockRouteParams = { issueId: 'issue-1' };
     routine = null;
     routineItems = [];
     recentEvents = [event];
+    recentCheckins = [checkin];
+    trend = { status: 'insufficient', count: 1 };
+    routineCompletionContext = null;
     exerciseLinks = [
       {
         id: 'link-helpful',
@@ -245,7 +276,31 @@ describe('IssueDetail reaction correction', () => {
       },
     ];
     openDbMock.mockResolvedValue(mockDb as never);
+    createIssueCheckinMock.mockImplementation(async (_db, input) => {
+      const nextCheckin = {
+        id: `checkin-${recentCheckins.length + 1}`,
+        issue_id: input.issueId,
+        severity: input.severity,
+        note: input.note?.trim() ? input.note.trim() : null,
+        created_at: Date.now(),
+        updated_at: Date.now(),
+      };
+      recentCheckins = [nextCheckin, ...recentCheckins];
+      trend =
+        recentCheckins.length < 3
+          ? { status: 'insufficient', count: recentCheckins.length }
+          : {
+              status: 'improving',
+              count: recentCheckins.length,
+              firstThreeAverage: 4.3,
+              latestThreeAverage: 2.7,
+            };
+      return nextCheckin;
+    });
     getIssueByIdMock.mockResolvedValue(issue);
+    getIssueCheckinTrendMock.mockImplementation(async () => trend);
+    getIssueRecentCheckinsMock.mockImplementation(async () => recentCheckins);
+    getIssueRoutineCompletionContextMock.mockImplementation(async () => routineCompletionContext);
     getIssueRecentEventsMock.mockImplementation(async () => recentEvents);
     getIssueExerciseLinksMock.mockImplementation(async () => exerciseLinks);
     getIssueRoutineMock.mockImplementation(async () => routine);
@@ -264,6 +319,10 @@ describe('IssueDetail reaction correction', () => {
     deleteIssueExerciseLinkMock.mockResolvedValue(undefined);
     updateExerciseIssueEventMock.mockResolvedValue(undefined);
     deleteExerciseIssueEventMock.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('shows helpful and aggravating exercise links on Issue detail', async () => {
@@ -308,6 +367,65 @@ describe('IssueDetail reaction correction', () => {
       }),
     );
     await waitFor(() => expect(getByText('Face Pull')).toBeTruthy());
+  });
+
+  it('records an Issue check-in with an optional note', async () => {
+    recentCheckins = [];
+    const { getByTestId, getByText } = render(<IssueDetail />);
+
+    await waitFor(() => expect(getByTestId('issue-checkin-area')).toBeTruthy());
+    fireEvent.press(getByTestId('issue-checkin-severity-3'));
+    fireEvent.changeText(getByTestId('issue-checkin-note-input'), ' Less sharp pain on bench ');
+    fireEvent.press(getByTestId('save-issue-checkin-btn'));
+
+    await waitFor(() =>
+      expect(createIssueCheckinMock).toHaveBeenCalledWith(mockDb, {
+        issueId: 'issue-1',
+        severity: 3,
+        note: ' Less sharp pain on bench ',
+      }),
+    );
+    await waitFor(() => expect(getByText('3/5 · Today · "Less sharp pain on bench"')).toBeTruthy());
+  });
+
+  it('shows recent check-ins and insufficient trend copy', async () => {
+    const { getByTestId, getByText } = render(<IssueDetail />);
+
+    await waitFor(() => expect(getByTestId('issue-checkin-checkin-1')).toBeTruthy());
+    expect(getByText('3/5 · Today · "Less sharp pain on bench"')).toBeTruthy();
+    expect(getByText('Not enough check-ins for a trend yet.')).toBeTruthy();
+  });
+
+  it('shows a cautious improving trend summary without causal wording', async () => {
+    trend = {
+      status: 'improving',
+      count: 6,
+      firstThreeAverage: 4.3,
+      latestThreeAverage: 2.7,
+    };
+    const { getByTestId, getByText, toJSON } = render(<IssueDetail />);
+
+    await waitFor(() => expect(getByTestId('issue-checkin-trend-improving')).toBeTruthy());
+    expect(getByText('Reported severity is lower recently.')).toBeTruthy();
+    expect(getByText('First 3-check-in average: 4.3')).toBeTruthy();
+    expect(getByText('Latest 3-check-in average: 2.7')).toBeTruthy();
+    expect(getByText('Small sample: 6 check-ins')).toBeTruthy();
+    expect(JSON.stringify(toJSON())).not.toMatch(
+      /\b(caused|fixed|cured|solved|proved|you should|you must|definitely)\b/i,
+    );
+  });
+
+  it('shows linked routine completion context only when supported', async () => {
+    routineCompletionContext = {
+      routineId: 'routine-1',
+      templateId: 'template-routine',
+      completedLast30Days: 4,
+    };
+    const { getByTestId, getByText } = render(<IssueDetail />);
+
+    await waitFor(() => expect(getByTestId('issue-routine-completion-context')).toBeTruthy());
+    expect(getByText('Linked routine completed:')).toBeTruthy();
+    expect(getByText('4 times in the last 30 days')).toBeTruthy();
   });
 
   it('creates an Issue Routine from the shared exercise picker', async () => {

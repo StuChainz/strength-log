@@ -298,6 +298,15 @@ export interface IssueRoutine {
   updated_at: number;
 }
 
+export interface IssueCheckin {
+  id: string;
+  issue_id: string;
+  severity: number;
+  note: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface ExerciseHistoryCache {
   exercise_id: string;
   last_session_id: string | null;

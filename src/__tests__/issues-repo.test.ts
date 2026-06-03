@@ -2,6 +2,7 @@ import { MIGRATIONS } from '@/db/migrations';
 import {
   archiveIssue,
   createIssue,
+  createIssueCheckin,
   createIssueExerciseLink,
   createIssueRoutine,
   deleteExerciseIssueEvent,
@@ -9,8 +10,11 @@ import {
   getActiveIssueExerciseLinksForExercise,
   getExerciseIssueSummary,
   getIssueById,
+  getIssueCheckinTrend,
   getIssueExerciseLinks,
+  getIssueRecentCheckins,
   getIssueRoutine,
+  getIssueRoutineCompletionContext,
   getIssueRoutineItems,
   getIssues,
   getIssueRecentEvents,
@@ -21,7 +25,7 @@ import {
   updateIssue,
   updateIssueRoutine,
 } from '@/db/repositories/issues.repo';
-import { createSession } from '@/db/repositories/sessions.repo';
+import { createSession, endSession } from '@/db/repositories/sessions.repo';
 import {
   createTemplate,
   getAllTemplatesWithCount,
@@ -212,6 +216,148 @@ describe('issues repository', () => {
       }),
     ]);
     expect(await getIssues(db as never, false)).toEqual([]);
+  });
+
+  it('creates an Issue check-in with an optional note', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+
+    const checkin = await createIssueCheckin(db as never, {
+      issueId: issue.id,
+      severity: 3,
+      note: '  Less sharp pain on bench  ',
+    });
+
+    expect(await getIssueRecentCheckins(db as never, issue.id)).toEqual([
+      expect.objectContaining({
+        id: checkin.id,
+        issue_id: issue.id,
+        severity: 3,
+        note: 'Less sharp pain on bench',
+      }),
+    ]);
+  });
+
+  it('validates Issue check-in severity from 1 to 5', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Elbow discomfort' });
+
+    await expect(
+      createIssueCheckin(db as never, {
+        issueId: issue.id,
+        severity: 0,
+      }),
+    ).rejects.toThrow('Issue severity must be an integer from 1 to 5');
+  });
+
+  it('archives an Issue without deleting check-ins', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const checkin = await createIssueCheckin(db as never, {
+      issueId: issue.id,
+      severity: 4,
+      note: 'Still noticeable',
+    });
+
+    await archiveIssue(db as never, issue.id);
+
+    expect(await getIssueById(db as never, issue.id)).toEqual(
+      expect.objectContaining({ active: 0 }),
+    );
+    expect(await getIssueRecentCheckins(db as never, issue.id)).toEqual([
+      expect.objectContaining({ id: checkin.id, severity: 4, note: 'Still noticeable' }),
+    ]);
+  });
+
+  it('returns insufficient check-in trend with fewer than 3 check-ins', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    await createIssueCheckin(db as never, { issueId: issue.id, severity: 4 });
+    await createIssueCheckin(db as never, { issueId: issue.id, severity: 3 });
+
+    expect(await getIssueCheckinTrend(db as never, issue.id)).toEqual({
+      status: 'insufficient',
+      count: 2,
+    });
+  });
+
+  it('calculates improving Issue check-in trend', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    for (const [index, severity] of [5, 4, 4, 3, 2, 2].entries()) {
+      jest.spyOn(Date, 'now').mockReturnValue(1_900_000_000_000 + index);
+      await createIssueCheckin(db as never, { issueId: issue.id, severity });
+    }
+
+    expect(await getIssueCheckinTrend(db as never, issue.id)).toEqual({
+      status: 'improving',
+      count: 6,
+      firstThreeAverage: 13 / 3,
+      latestThreeAverage: 7 / 3,
+    });
+  });
+
+  it('calculates worsening Issue check-in trend', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Knee pain' });
+    for (const [index, severity] of [1, 2, 2, 3, 4, 5].entries()) {
+      jest.spyOn(Date, 'now').mockReturnValue(1_900_000_000_000 + index);
+      await createIssueCheckin(db as never, { issueId: issue.id, severity });
+    }
+
+    expect(await getIssueCheckinTrend(db as never, issue.id)).toEqual({
+      status: 'worsening',
+      count: 6,
+      firstThreeAverage: 5 / 3,
+      latestThreeAverage: 4,
+    });
+  });
+
+  it('calculates stable Issue check-in trend', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Lower back pain' });
+    for (const [index, severity] of [3, 3, 4, 3, 4].entries()) {
+      jest.spyOn(Date, 'now').mockReturnValue(1_900_000_000_000 + index);
+      await createIssueCheckin(db as never, { issueId: issue.id, severity });
+    }
+
+    expect(await getIssueCheckinTrend(db as never, issue.id)).toEqual({
+      status: 'stable',
+      count: 5,
+      firstThreeAverage: 10 / 3,
+      latestThreeAverage: 11 / 3,
+    });
+  });
+
+  it('counts linked routine completions from the last 30 days only when safely supported', async () => {
+    db = await setupDb();
+    const now = 1_900_000_000_000;
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const facePull = await createExercise(db, 'Face Pull');
+
+    expect(await getIssueRoutineCompletionContext(db as never, issue.id, now)).toBeNull();
+
+    const routine = await createIssueRoutine(db as never, {
+      issueId: issue.id,
+      name: 'Shoulder Pain Routine',
+      items: [{ exerciseId: facePull.id, targetSets: 2, targetReps: 15 }],
+    });
+
+    for (const endedAt of [now - 5_000, now - 10_000, now - 31 * 24 * 60 * 60 * 1000]) {
+      jest.spyOn(Date, 'now').mockReturnValue(endedAt - 1);
+      const session = await createSession(db as never, {
+        templateId: routine.template_id,
+        name: null,
+      });
+      jest.spyOn(Date, 'now').mockReturnValue(endedAt);
+      await endSession(db as never, session.id);
+    }
+
+    expect(await getIssueRoutineCompletionContext(db as never, issue.id, now)).toEqual({
+      routineId: routine.id,
+      templateId: routine.template_id,
+      completedLast30Days: 2,
+    });
   });
 
   it('creates a helpful exercise link', async () => {

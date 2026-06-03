@@ -10,6 +10,7 @@ import {
 import type {
   ExerciseIssueEvent,
   Issue,
+  IssueCheckin,
   IssueExerciseLink,
   IssueExerciseLinkType,
   IssueReactionType,
@@ -50,6 +51,21 @@ export interface ExerciseIssueSummary {
   latestEvent: ExerciseIssueEvent;
 }
 
+export type IssueCheckinTrend =
+  | { status: 'insufficient'; count: number }
+  | {
+      status: 'improving' | 'worsening' | 'stable';
+      count: number;
+      firstThreeAverage: number;
+      latestThreeAverage: number;
+    };
+
+export interface IssueRoutineCompletionContext {
+  routineId: string;
+  templateId: string;
+  completedLast30Days: number;
+}
+
 export interface CreateIssueInput {
   name: string;
   note?: string | null;
@@ -73,6 +89,12 @@ export interface RecordExerciseIssueEventInput {
 export interface UpdateExerciseIssueEventInput {
   reactionType?: IssueReactionType;
   severity?: number | null;
+  note?: string | null;
+}
+
+export interface CreateIssueCheckinInput {
+  issueId: string;
+  severity: number;
   note?: string | null;
 }
 
@@ -140,6 +162,17 @@ function validateSeverity(severity: number | null | undefined): number | null {
     throw new Error('Issue severity must be an integer from 1 to 5');
   }
   return severity;
+}
+
+function validateRequiredSeverity(severity: number): number {
+  if (!Number.isInteger(severity) || severity < 1 || severity > 5) {
+    throw new Error('Issue severity must be an integer from 1 to 5');
+  }
+  return severity;
+}
+
+function average(values: number[]): number {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function validateRoutineItems(items: IssueRoutineItemInput[]): IssueRoutineItemInput[] {
@@ -224,6 +257,107 @@ export async function updateIssue(
 
 export async function archiveIssue(db: SQLiteDatabase, id: string): Promise<void> {
   await updateIssue(db, id, { active: false });
+}
+
+export async function createIssueCheckin(
+  db: SQLiteDatabase,
+  input: CreateIssueCheckinInput,
+): Promise<IssueCheckin> {
+  const issue = await getIssueById(db, input.issueId);
+  if (!issue) throw new Error('Issue not found');
+
+  const now = Date.now();
+  const checkin: IssueCheckin = {
+    id: newId(),
+    issue_id: input.issueId,
+    severity: validateRequiredSeverity(input.severity),
+    note: cleanText(input.note),
+    created_at: now,
+    updated_at: now,
+  };
+
+  await db.runAsync(
+    `INSERT INTO issue_checkins
+       (id, issue_id, severity, note, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      checkin.id,
+      checkin.issue_id,
+      checkin.severity,
+      checkin.note,
+      checkin.created_at,
+      checkin.updated_at,
+    ],
+  );
+
+  return checkin;
+}
+
+export async function getIssueRecentCheckins(
+  db: SQLiteDatabase,
+  issueId: string,
+  limit = 10,
+): Promise<IssueCheckin[]> {
+  return db.getAllAsync<IssueCheckin>(
+    `SELECT *
+       FROM issue_checkins
+      WHERE issue_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?`,
+    [issueId, limit],
+  );
+}
+
+export async function getIssueCheckinTrend(
+  db: SQLiteDatabase,
+  issueId: string,
+): Promise<IssueCheckinTrend> {
+  const rows = await db.getAllAsync<Pick<IssueCheckin, 'severity'>>(
+    `SELECT severity
+       FROM issue_checkins
+      WHERE issue_id = ?
+      ORDER BY created_at ASC`,
+    [issueId],
+  );
+  if (rows.length < 3) return { status: 'insufficient', count: rows.length };
+
+  const firstThreeAverage = average(rows.slice(0, 3).map((row) => row.severity));
+  const latestThreeAverage = average(rows.slice(-3).map((row) => row.severity));
+  const diff = latestThreeAverage - firstThreeAverage;
+  const status = diff <= -0.5 ? 'improving' : diff >= 0.5 ? 'worsening' : 'stable';
+
+  return {
+    status,
+    count: rows.length,
+    firstThreeAverage,
+    latestThreeAverage,
+  };
+}
+
+export async function getIssueRoutineCompletionContext(
+  db: SQLiteDatabase,
+  issueId: string,
+  now = Date.now(),
+): Promise<IssueRoutineCompletionContext | null> {
+  const routine = await getIssueRoutine(db, issueId);
+  if (!routine) return null;
+
+  const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+  const row = await db.getFirstAsync<{ completed_count: number }>(
+    `SELECT COUNT(*) AS completed_count
+       FROM workout_sessions
+      WHERE template_id = ?
+        AND status = 'completed'
+        AND ended_at IS NOT NULL
+        AND ended_at >= ?`,
+    [routine.template_id, thirtyDaysAgo],
+  );
+
+  return {
+    routineId: routine.id,
+    templateId: routine.template_id,
+    completedLast30Days: row?.completed_count ?? 0,
+  };
 }
 
 export async function createIssueRoutine(
