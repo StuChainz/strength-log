@@ -15,7 +15,9 @@ import { openDb } from '@/db/client';
 import { getExerciseHistory, type ExerciseHistorySession } from '@/db/repositories/history.repo';
 import {
   deleteExerciseIssueEvent,
+  getActiveIssueExerciseLinksForExercise,
   getExerciseIssueSummary,
+  type IssueExerciseLinkWithIssueName,
   type ExerciseIssueSummary,
   updateExerciseIssueEvent,
 } from '@/db/repositories/issues.repo';
@@ -27,7 +29,13 @@ import {
 } from '@/domain/progression';
 import { formatWorkoutVolumeKg } from '@/domain/volume';
 import { T } from '@/theme/tokens';
-import type { ExerciseCategory, ExerciseIssueEvent, IssueReactionType, Unit } from '@/domain/types';
+import type {
+  ExerciseCategory,
+  ExerciseIssueEvent,
+  IssueExerciseLinkType,
+  IssueReactionType,
+  Unit,
+} from '@/domain/types';
 
 interface ExerciseHistorySheetProps {
   visible: boolean;
@@ -63,6 +71,10 @@ function formatReaction(value: IssueReactionType): string {
   return value === 'aggravated' ? 'Aggravated' : 'Helped';
 }
 
+function formatLinkType(value: IssueExerciseLinkType): string {
+  return value === 'helpful' ? 'Helpful' : 'Aggravating';
+}
+
 export default function ExerciseHistorySheet({
   visible,
   exerciseId,
@@ -78,6 +90,7 @@ export default function ExerciseHistorySheet({
   onApplySuggestion,
 }: ExerciseHistorySheetProps) {
   const [history, setHistory] = useState<ExerciseHistorySession[]>([]);
+  const [issueLinks, setIssueLinks] = useState<IssueExerciseLinkWithIssueName[]>([]);
   const [issueSummary, setIssueSummary] = useState<ExerciseIssueSummary[]>([]);
   const [loadedExerciseId, setLoadedExerciseId] = useState<string | null>(null);
   const [selectedIssueSummary, setSelectedIssueSummary] = useState<ExerciseIssueSummary | null>(
@@ -89,11 +102,13 @@ export default function ExerciseHistorySheet({
   const load = useCallback(async () => {
     if (!exerciseId) return;
     const db = await openDb();
-    const [historyRows, issueRows] = await Promise.all([
+    const [historyRows, issueLinkRows, issueRows] = await Promise.all([
       getExerciseHistory(db, exerciseId, 5),
+      getActiveIssueExerciseLinksForExercise(db, exerciseId),
       getExerciseIssueSummary(db, exerciseId),
     ]);
     setHistory(historyRows);
+    setIssueLinks(issueLinkRows);
     setIssueSummary(issueRows);
     setLoadedExerciseId(exerciseId);
   }, [exerciseId]);
@@ -238,6 +253,25 @@ export default function ExerciseHistorySheet({
             </View>
           ) : (
             <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+              {issueLinks.length > 0 && (
+                <View style={styles.issueLinksBlock}>
+                  <Text style={styles.issueHistoryTitle}>Issue links</Text>
+                  {issueLinks.map((link) => (
+                    <View key={link.id} style={styles.issueLinkRow}>
+                      <Text style={styles.issueHistoryName} numberOfLines={1}>
+                        {link.issue_name}
+                      </Text>
+                      <Text style={styles.issueHistoryLine}>{formatLinkType(link.link_type)}</Text>
+                      {link.note ? (
+                        <Text style={styles.issueHistoryNote} numberOfLines={2}>
+                          {link.note}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {issueSummary.length > 0 && (
                 <View style={styles.issueHistoryBlock}>
                   <Text style={styles.issueHistoryTitle}>Issue history</Text>
@@ -403,6 +437,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     gap: 8,
+  },
+  issueLinksBlock: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+  },
+  issueLinkRow: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 8,
+    gap: 4,
   },
   issueHistoryTitle: {
     color: T.text,

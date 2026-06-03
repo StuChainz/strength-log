@@ -20,8 +20,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { insertEvent, getLatestRestTimerEvent } from '@/db/repositories/events.repo';
 import {
+  getActiveIssueExerciseLinksForExercise,
   getActiveIssues,
   recordExerciseIssueEvent,
+  type IssueExerciseLinkWithIssueName,
 } from '@/db/repositories/issues.repo';
 import { getPreviousPRDataForExercises } from '@/db/repositories/prs.repo';
 import { useSessionStore } from '@/state/session.store';
@@ -52,7 +54,14 @@ import {
 } from '@/notifications/restTimerNotifications';
 import { T } from '@/theme/tokens';
 import type { LiveWorkoutNavigationProp, LiveWorkoutRouteProp } from '@/navigation/types';
-import type { EventType, Issue, IssueReactionType, SetType, WorkoutSet } from '@/domain/types';
+import type {
+  EventType,
+  Issue,
+  IssueExerciseLinkType,
+  IssueReactionType,
+  SetType,
+  WorkoutSet,
+} from '@/domain/types';
 import type {
   RestTimerCancelledPayload,
   RestTimerCompletedPayload,
@@ -107,6 +116,10 @@ function getSetTypeLabel(setType: SetType, uppercase = false): string {
 
 function getExerciseCategoryLabel(category: string | null | undefined): string {
   return category ? category.replace(/_/g, ' ').toUpperCase() : 'EXERCISE';
+}
+
+function formatIssueLinkType(linkType: IssueExerciseLinkType): string {
+  return linkType === 'helpful' ? 'Helpful' : 'Aggravating';
 }
 
 function getCompactTargetLine(exercise: {
@@ -233,6 +246,9 @@ export default function LiveWorkout() {
   const [summaryVisible, setSummaryVisible] = useState(false);
   const [issueSheetVisible, setIssueSheetVisible] = useState(false);
   const [activeIssues, setActiveIssues] = useState<Issue[]>([]);
+  const [activeExerciseIssueLinks, setActiveExerciseIssueLinks] = useState<
+    IssueExerciseLinkWithIssueName[]
+  >([]);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [issueReaction, setIssueReaction] = useState<IssueReactionType>('aggravated');
   const [issueSeverity, setIssueSeverity] = useState<number | null>(null);
@@ -424,6 +440,26 @@ export default function LiveWorkout() {
       cancelled = true;
     };
   }, [phase]);
+
+  useEffect(() => {
+    if (phase !== 'active' || !activeExerciseId) {
+      setActiveExerciseIssueLinks([]);
+      return;
+    }
+
+    let cancelled = false;
+    openDb()
+      .then((db) => getActiveIssueExerciseLinksForExercise(db, activeExerciseId))
+      .then((rows) => {
+        if (!cancelled) setActiveExerciseIssueLinks(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setActiveExerciseIssueLinks([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeExerciseId, phase]);
 
   // Elapsed timer
   useEffect(() => {
@@ -1246,6 +1282,20 @@ export default function LiveWorkout() {
               <Text style={styles.carouselName} numberOfLines={2}>
                 {activeExercise?.name ?? '—'}
               </Text>
+              {activeExerciseIssueLinks.length > 0 && (
+                <View style={styles.issueLinkContext} testID="live-issue-link-context">
+                  <Text style={styles.issueLinkContextLabel}>Linked issue</Text>
+                  <View style={styles.issueLinkChipRow}>
+                    {activeExerciseIssueLinks.map((link) => (
+                      <View key={link.id} style={styles.issueLinkChip}>
+                        <Text style={styles.issueLinkChipText} numberOfLines={1}>
+                          {link.issue_name} · {formatIssueLinkType(link.link_type)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
               <View style={styles.progressionStrip}>
                 <TouchableOpacity
                   style={styles.progressionStat}
@@ -2302,6 +2352,38 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: T.text,
     letterSpacing: 0,
+  },
+  issueLinkContext: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 7,
+  },
+  issueLinkContextLabel: {
+    color: T.muted,
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+  },
+  issueLinkChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  issueLinkChip: {
+    maxWidth: '100%',
+    borderRadius: 999,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  issueLinkChipText: {
+    color: T.textDim,
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    fontWeight: '700',
   },
   progressionStrip: {
     flexDirection: 'row',

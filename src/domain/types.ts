@@ -91,6 +91,7 @@ export type ProgressionRule = (typeof PROGRESSION_RULES)[number];
 export type SessionStatus = 'in_progress' | 'completed' | 'discarded';
 export type ExercisePRRecordType = 'rep_max' | 'estimated_1rm' | 'session_volume';
 export type IssueReactionType = 'aggravated' | 'helped';
+export type IssueExerciseLinkType = 'helpful' | 'aggravating';
 export type EventType =
   | 'session_started'
   | 'set_added'
@@ -276,6 +277,16 @@ export interface ExerciseIssueEvent {
   severity: number | null;
   note: string | null;
   created_at: number;
+}
+
+export interface IssueExerciseLink {
+  id: string;
+  issue_id: string;
+  exercise_id: string;
+  link_type: IssueExerciseLinkType;
+  note: string | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface ExerciseHistoryCache {

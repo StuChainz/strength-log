@@ -3,7 +3,11 @@ import { Alert, Vibration } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import LiveWorkout from '@/screens/LiveWorkout';
 import { openDb } from '@/db/client';
-import { getActiveIssues, recordExerciseIssueEvent } from '@/db/repositories/issues.repo';
+import {
+  getActiveIssueExerciseLinksForExercise,
+  getActiveIssues,
+  recordExerciseIssueEvent,
+} from '@/db/repositories/issues.repo';
 import { getPreviousPRDataForExercises } from '@/db/repositories/prs.repo';
 import { getLiveWorkoutSuggestion } from '@/domain/progression';
 import {
@@ -52,6 +56,7 @@ jest.mock('@/db/repositories/events.repo', () => ({
 }));
 
 jest.mock('@/db/repositories/issues.repo', () => ({
+  getActiveIssueExerciseLinksForExercise: jest.fn(),
   getActiveIssues: jest.fn(),
   recordExerciseIssueEvent: jest.fn(),
 }));
@@ -93,6 +98,10 @@ const getLiveWorkoutSuggestionMock = getLiveWorkoutSuggestion as jest.MockedFunc
   typeof getLiveWorkoutSuggestion
 >;
 const openDbMock = openDb as jest.MockedFunction<typeof openDb>;
+const getActiveIssueExerciseLinksForExerciseMock =
+  getActiveIssueExerciseLinksForExercise as jest.MockedFunction<
+    typeof getActiveIssueExerciseLinksForExercise
+  >;
 const getActiveIssuesMock = getActiveIssues as jest.MockedFunction<typeof getActiveIssues>;
 const recordExerciseIssueEventMock = recordExerciseIssueEvent as jest.MockedFunction<
   typeof recordExerciseIssueEvent
@@ -184,6 +193,7 @@ describe('LiveWorkout screen core flow', () => {
       estimated1RMs: [],
       sessionVolumes: [],
     });
+    getActiveIssueExerciseLinksForExerciseMock.mockResolvedValue([]);
     getActiveIssuesMock.mockResolvedValue([
       {
         id: 'issue-shoulder',
@@ -488,6 +498,41 @@ describe('LiveWorkout screen core flow', () => {
         note: '',
       }),
     );
+  });
+
+  it('shows manual issue link context for the active exercise', async () => {
+    getActiveIssueExerciseLinksForExerciseMock.mockResolvedValue([
+      {
+        id: 'link-1',
+        issue_id: 'issue-shoulder',
+        exercise_id: 'bench',
+        issue_name: 'Shoulder Pain',
+        link_type: 'aggravating',
+        note: null,
+        created_at: 1,
+        updated_at: 1,
+      },
+    ]);
+    useSessionStoreMock.mockReturnValue(activeStore());
+
+    const { getByTestId, getByText } = render(<LiveWorkout />);
+
+    await waitFor(() => expect(getByTestId('live-issue-link-context')).toBeTruthy());
+    expect(getByText('Linked issue')).toBeTruthy();
+    expect(getByText('Shoulder Pain · Aggravating')).toBeTruthy();
+  });
+
+  it('does not show Live Workout issue link context when no active Issue links are returned', async () => {
+    getActiveIssueExerciseLinksForExerciseMock.mockResolvedValue([]);
+    useSessionStoreMock.mockReturnValue(activeStore());
+
+    const { queryByTestId, queryByText } = render(<LiveWorkout />);
+
+    await waitFor(() =>
+      expect(getActiveIssueExerciseLinksForExerciseMock).toHaveBeenCalledWith(mockDb, 'bench'),
+    );
+    expect(queryByTestId('live-issue-link-context')).toBeNull();
+    expect(queryByText('Shoulder Pain · Aggravating')).toBeNull();
   });
 
   it('uses the top-left control for navigation and keeps summary separate', () => {

@@ -2,12 +2,17 @@ import { MIGRATIONS } from '@/db/migrations';
 import {
   archiveIssue,
   createIssue,
+  createIssueExerciseLink,
   deleteExerciseIssueEvent,
+  deleteIssueExerciseLink,
+  getActiveIssueExerciseLinksForExercise,
   getExerciseIssueSummary,
   getIssueById,
+  getIssueExerciseLinks,
   getIssues,
   getIssueRecentEvents,
   recordExerciseIssueEvent,
+  updateIssueExerciseLink,
   updateExerciseIssueEvent,
   updateIssue,
 } from '@/db/repositories/issues.repo';
@@ -197,6 +202,139 @@ describe('issues repository', () => {
     expect(await getIssues(db as never, false)).toEqual([]);
   });
 
+  it('creates a helpful exercise link', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const exercise = await createExercise(db, 'Face Pull');
+
+    const link = await createIssueExerciseLink(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      linkType: 'helpful',
+      note: '  Feels controlled  ',
+    });
+
+    expect(await getIssueExerciseLinks(db as never, issue.id)).toEqual([
+      expect.objectContaining({
+        id: link.id,
+        issue_id: issue.id,
+        exercise_id: exercise.id,
+        exercise_name: 'Face Pull',
+        link_type: 'helpful',
+        note: 'Feels controlled',
+      }),
+    ]);
+  });
+
+  it('creates an aggravating exercise link', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const exercise = await createExercise(db, 'Overhead Press');
+
+    await createIssueExerciseLink(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      linkType: 'aggravating',
+    });
+
+    expect(await getActiveIssueExerciseLinksForExercise(db as never, exercise.id)).toEqual([
+      expect.objectContaining({
+        issue_id: issue.id,
+        issue_name: 'Shoulder Pain',
+        exercise_id: exercise.id,
+        link_type: 'aggravating',
+      }),
+    ]);
+  });
+
+  it('prevents duplicate issue/exercise/link_type rows', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const exercise = await createExercise(db, 'Face Pull');
+
+    await createIssueExerciseLink(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      linkType: 'helpful',
+    });
+    await createIssueExerciseLink(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      linkType: 'helpful',
+    });
+    await createIssueExerciseLink(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      linkType: 'aggravating',
+    });
+
+    const rows = await db.getAllAsync(
+      `SELECT issue_id, exercise_id, link_type
+         FROM issue_exercise_links
+        ORDER BY link_type ASC`,
+    );
+    expect(rows).toEqual([
+      { issue_id: issue.id, exercise_id: exercise.id, link_type: 'aggravating' },
+      { issue_id: issue.id, exercise_id: exercise.id, link_type: 'helpful' },
+    ]);
+  });
+
+  it('removes an exercise link without deleting the Issue or Exercise', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const exercise = await createExercise(db, 'Face Pull');
+    const link = await createIssueExerciseLink(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      linkType: 'helpful',
+    });
+
+    await deleteIssueExerciseLink(db as never, link.id);
+
+    expect(await getIssueExerciseLinks(db as never, issue.id)).toEqual([]);
+    expect(await getIssueById(db as never, issue.id)).toEqual(
+      expect.objectContaining({ id: issue.id }),
+    );
+    expect(await db.getFirstAsync('SELECT id FROM exercises WHERE id = ?', [exercise.id])).toEqual({
+      id: exercise.id,
+    });
+  });
+
+  it('updates an exercise link note', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const exercise = await createExercise(db, 'Band Pull Apart');
+    const link = await createIssueExerciseLink(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      linkType: 'helpful',
+    });
+
+    await updateIssueExerciseLink(db as never, link.id, { note: '  Good warmup  ' });
+
+    expect(await getIssueExerciseLinks(db as never, issue.id)).toEqual([
+      expect.objectContaining({ id: link.id, note: 'Good warmup' }),
+    ]);
+  });
+
+  it('does not return archived Issue links for active exercise context', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const exercise = await createExercise(db, 'Overhead Press');
+    await createIssueExerciseLink(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      linkType: 'aggravating',
+    });
+
+    await archiveIssue(db as never, issue.id);
+
+    expect(await getActiveIssueExerciseLinksForExercise(db as never, exercise.id)).toEqual([]);
+    expect(await getIssueExerciseLinks(db as never, issue.id)).toEqual([
+      expect.objectContaining({ issue_id: issue.id, exercise_id: exercise.id }),
+    ]);
+  });
+
   it('records aggravated and helped reactions with optional notes', async () => {
     db = await setupDb();
     const issue = await createIssue(db as never, { name: 'Knee pain' });
@@ -275,9 +413,7 @@ describe('issues repository', () => {
     await updateExerciseIssueEvent(db as never, event.id, { severity: 5 });
 
     expect(
-      await db.getFirstAsync('SELECT severity FROM exercise_issue_events WHERE id = ?', [
-        event.id,
-      ]),
+      await db.getFirstAsync('SELECT severity FROM exercise_issue_events WHERE id = ?', [event.id]),
     ).toEqual({ severity: 5 });
   });
 

@@ -1,6 +1,12 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import { newId } from '@/domain/ids';
-import type { ExerciseIssueEvent, Issue, IssueReactionType } from '@/domain/types';
+import type {
+  ExerciseIssueEvent,
+  Issue,
+  IssueExerciseLink,
+  IssueExerciseLinkType,
+  IssueReactionType,
+} from '@/domain/types';
 
 export interface IssueWithReactionCount extends Issue {
   reaction_count: number;
@@ -9,6 +15,14 @@ export interface IssueWithReactionCount extends Issue {
 export interface ExerciseIssueEventWithNames extends ExerciseIssueEvent {
   issue_name: string;
   exercise_name: string;
+}
+
+export interface IssueExerciseLinkWithExerciseName extends IssueExerciseLink {
+  exercise_name: string;
+}
+
+export interface IssueExerciseLinkWithIssueName extends IssueExerciseLink {
+  issue_name: string;
 }
 
 export interface ExerciseIssueSummary {
@@ -47,6 +61,17 @@ export interface UpdateExerciseIssueEventInput {
   note?: string | null;
 }
 
+export interface CreateIssueExerciseLinkInput {
+  issueId: string;
+  exerciseId: string;
+  linkType: IssueExerciseLinkType;
+  note?: string | null;
+}
+
+export interface UpdateIssueExerciseLinkInput {
+  note?: string | null;
+}
+
 function cleanText(value: string | null | undefined): string | null {
   const trimmed = value?.trim() ?? '';
   return trimmed.length > 0 ? trimmed : null;
@@ -64,6 +89,12 @@ function validateReactionType(reactionType: string): asserts reactionType is Iss
   }
 }
 
+function validateLinkType(linkType: string): asserts linkType is IssueExerciseLinkType {
+  if (linkType !== 'helpful' && linkType !== 'aggravating') {
+    throw new Error('Issue exercise link must be helpful or aggravating');
+  }
+}
+
 function validateSeverity(severity: number | null | undefined): number | null {
   if (severity === undefined || severity === null) return null;
   if (!Number.isInteger(severity) || severity < 1 || severity > 5) {
@@ -72,10 +103,7 @@ function validateSeverity(severity: number | null | undefined): number | null {
   return severity;
 }
 
-export async function createIssue(
-  db: SQLiteDatabase,
-  input: CreateIssueInput,
-): Promise<Issue> {
+export async function createIssue(db: SQLiteDatabase, input: CreateIssueInput): Promise<Issue> {
   const id = newId();
   const now = Date.now();
   const issue: Issue = {
@@ -148,10 +176,7 @@ export async function getActiveIssues(db: SQLiteDatabase): Promise<Issue[]> {
   );
 }
 
-export async function getIssueById(
-  db: SQLiteDatabase,
-  id: string,
-): Promise<Issue | null> {
+export async function getIssueById(db: SQLiteDatabase, id: string): Promise<Issue | null> {
   return db.getFirstAsync<Issue>('SELECT * FROM issues WHERE id = ?', [id]);
 }
 
@@ -217,11 +242,101 @@ export async function updateExerciseIssueEvent(
   await db.runAsync(`UPDATE exercise_issue_events SET ${sets.join(', ')} WHERE id = ?`, values);
 }
 
-export async function deleteExerciseIssueEvent(
+export async function deleteExerciseIssueEvent(db: SQLiteDatabase, id: string): Promise<void> {
+  await db.runAsync('DELETE FROM exercise_issue_events WHERE id = ?', [id]);
+}
+
+export async function createIssueExerciseLink(
+  db: SQLiteDatabase,
+  input: CreateIssueExerciseLinkInput,
+): Promise<IssueExerciseLink> {
+  validateLinkType(input.linkType);
+  const existing = await db.getFirstAsync<IssueExerciseLink>(
+    `SELECT * FROM issue_exercise_links
+      WHERE issue_id = ? AND exercise_id = ? AND link_type = ?`,
+    [input.issueId, input.exerciseId, input.linkType],
+  );
+  if (existing) return existing;
+
+  const now = Date.now();
+  const link: IssueExerciseLink = {
+    id: newId(),
+    issue_id: input.issueId,
+    exercise_id: input.exerciseId,
+    link_type: input.linkType,
+    note: cleanText(input.note),
+    created_at: now,
+    updated_at: now,
+  };
+
+  await db.runAsync(
+    `INSERT INTO issue_exercise_links
+       (id, issue_id, exercise_id, link_type, note, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      link.id,
+      link.issue_id,
+      link.exercise_id,
+      link.link_type,
+      link.note,
+      link.created_at,
+      link.updated_at,
+    ],
+  );
+
+  return link;
+}
+
+export async function updateIssueExerciseLink(
   db: SQLiteDatabase,
   id: string,
+  input: UpdateIssueExerciseLinkInput,
 ): Promise<void> {
-  await db.runAsync('DELETE FROM exercise_issue_events WHERE id = ?', [id]);
+  const sets: string[] = [];
+  const values: (string | number | null)[] = [];
+
+  if (input.note !== undefined) {
+    sets.push('note = ?');
+    values.push(cleanText(input.note));
+  }
+  if (sets.length === 0) return;
+
+  sets.push('updated_at = ?');
+  values.push(Date.now(), id);
+  await db.runAsync(`UPDATE issue_exercise_links SET ${sets.join(', ')} WHERE id = ?`, values);
+}
+
+export async function deleteIssueExerciseLink(db: SQLiteDatabase, id: string): Promise<void> {
+  await db.runAsync('DELETE FROM issue_exercise_links WHERE id = ?', [id]);
+}
+
+export async function getIssueExerciseLinks(
+  db: SQLiteDatabase,
+  issueId: string,
+): Promise<IssueExerciseLinkWithExerciseName[]> {
+  return db.getAllAsync<IssueExerciseLinkWithExerciseName>(
+    `SELECT l.*, ex.name AS exercise_name
+       FROM issue_exercise_links l
+       JOIN exercises ex ON ex.id = l.exercise_id
+      WHERE l.issue_id = ?
+      ORDER BY l.link_type DESC, ex.name ASC`,
+    [issueId],
+  );
+}
+
+export async function getActiveIssueExerciseLinksForExercise(
+  db: SQLiteDatabase,
+  exerciseId: string,
+): Promise<IssueExerciseLinkWithIssueName[]> {
+  return db.getAllAsync<IssueExerciseLinkWithIssueName>(
+    `SELECT l.*, i.name AS issue_name
+       FROM issue_exercise_links l
+       JOIN issues i ON i.id = l.issue_id
+      WHERE l.exercise_id = ?
+        AND i.active = 1
+      ORDER BY i.name ASC, l.link_type ASC`,
+    [exerciseId],
+  );
 }
 
 export async function getIssueRecentEvents(

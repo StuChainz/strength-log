@@ -11,20 +11,27 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { ExercisePicker } from '@/components/ExercisePicker';
 import IssueReactionEditSheet from '@/components/IssueReactionEditSheet';
 import { openDb } from '@/db/client';
 import {
   archiveIssue,
   createIssue,
+  createIssueExerciseLink,
   deleteExerciseIssueEvent,
+  deleteIssueExerciseLink,
   getIssueById,
+  getIssueExerciseLinks,
   getIssueRecentEvents,
+  type IssueExerciseLinkWithExerciseName,
   type ExerciseIssueEventWithNames,
+  updateIssueExerciseLink,
   updateExerciseIssueEvent,
   updateIssue,
 } from '@/db/repositories/issues.repo';
 import { T } from '@/theme/tokens';
 import type { IssueDetailNavigationProp, IssueDetailRouteProp } from '@/navigation/types';
+import type { Exercise, IssueExerciseLinkType } from '@/domain/types';
 
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -32,6 +39,10 @@ function formatDate(ts: number): string {
 
 function formatReaction(value: string): string {
   return value === 'aggravated' ? 'Aggravated' : 'Helped';
+}
+
+function formatLinkType(value: IssueExerciseLinkType): string {
+  return value === 'helpful' ? 'Helpful' : 'Aggravating';
 }
 
 export default function IssueDetail() {
@@ -44,9 +55,12 @@ export default function IssueDetail() {
   const [note, setNote] = useState('');
   const [active, setActive] = useState(true);
   const [events, setEvents] = useState<ExerciseIssueEventWithNames[]>([]);
+  const [links, setLinks] = useState<IssueExerciseLinkWithExerciseName[]>([]);
+  const [linkNoteDrafts, setLinkNoteDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<ExerciseIssueEventWithNames | null>(null);
   const [savingReaction, setSavingReaction] = useState(false);
+  const [pickerLinkType, setPickerLinkType] = useState<IssueExerciseLinkType | null>(null);
 
   const load = useCallback(async () => {
     if (!issueId) return;
@@ -59,7 +73,13 @@ export default function IssueDetail() {
     setName(issue.name);
     setNote(issue.note ?? '');
     setActive(issue.active === 1);
-    setEvents(await getIssueRecentEvents(db, issueId, 12));
+    const [linkRows, eventRows] = await Promise.all([
+      getIssueExerciseLinks(db, issueId),
+      getIssueRecentEvents(db, issueId, 12),
+    ]);
+    setLinks(linkRows);
+    setLinkNoteDrafts(Object.fromEntries(linkRows.map((link) => [link.id, link.note ?? ''])));
+    setEvents(eventRows);
   }, [issueId, navigation]);
 
   useEffect(() => {
@@ -85,6 +105,96 @@ export default function IssueDetail() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const addExerciseLink = async (exercise: Exercise) => {
+    if (!issueId || !pickerLinkType) return;
+    const db = await openDb();
+    await createIssueExerciseLink(db, {
+      issueId,
+      exerciseId: exercise.id,
+      linkType: pickerLinkType,
+    });
+    setPickerLinkType(null);
+    await load();
+  };
+
+  const confirmRemoveLink = (link: IssueExerciseLinkWithExerciseName) => {
+    Alert.alert(
+      'Remove exercise link?',
+      `This removes ${link.exercise_name} from ${formatLinkType(link.link_type)} exercises.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            void openDb()
+              .then((db) => deleteIssueExerciseLink(db, link.id))
+              .then(load);
+          },
+        },
+      ],
+    );
+  };
+
+  const saveLinkNote = async (link: IssueExerciseLinkWithExerciseName) => {
+    const nextNote = linkNoteDrafts[link.id] ?? '';
+    if ((link.note ?? '') === nextNote.trim()) return;
+    const db = await openDb();
+    await updateIssueExerciseLink(db, link.id, { note: nextNote });
+    await load();
+  };
+
+  const renderExerciseLinks = (linkType: IssueExerciseLinkType) => {
+    const sectionLinks = links.filter((link) => link.link_type === linkType);
+    return (
+      <View style={styles.linkBlock}>
+        <View style={styles.linkHeader}>
+          <Text style={styles.sectionLabel}>{formatLinkType(linkType)} Exercises</Text>
+          <TouchableOpacity
+            style={styles.linkAddBtn}
+            onPress={() => setPickerLinkType(linkType)}
+            testID={`add-${linkType}-exercise-link-btn`}
+          >
+            <Ionicons name="add" size={14} color={T.accentInk} />
+            <Text style={styles.linkAddText}>Add</Text>
+          </TouchableOpacity>
+        </View>
+        {sectionLinks.length === 0 ? (
+          <Text style={styles.emptyText}>No exercises linked yet.</Text>
+        ) : (
+          sectionLinks.map((link) => (
+            <View key={link.id} style={styles.linkRow} testID={`issue-exercise-link-${link.id}`}>
+              <View style={styles.linkTop}>
+                <Text style={styles.linkExerciseName} numberOfLines={1}>
+                  {link.exercise_name}
+                </Text>
+                <TouchableOpacity
+                  style={styles.linkRemoveBtn}
+                  onPress={() => confirmRemoveLink(link)}
+                  hitSlop={8}
+                  testID={`remove-issue-exercise-link-${link.id}`}
+                >
+                  <Ionicons name="close" size={14} color={T.muted} />
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={styles.linkNoteInput}
+                value={linkNoteDrafts[link.id] ?? ''}
+                onChangeText={(value) =>
+                  setLinkNoteDrafts((prev) => ({ ...prev, [link.id]: value }))
+                }
+                onBlur={() => void saveLinkNote(link)}
+                placeholder="Optional note"
+                placeholderTextColor={T.muted}
+                testID={`issue-exercise-link-note-${link.id}`}
+              />
+            </View>
+          ))
+        )}
+      </View>
+    );
   };
 
   const archive = () => {
@@ -227,6 +337,13 @@ export default function IssueDetail() {
         )}
 
         {!isNew && (
+          <>
+            {renderExerciseLinks('helpful')}
+            {renderExerciseLinks('aggravating')}
+          </>
+        )}
+
+        {!isNew && (
           <View style={styles.historyBlock}>
             <Text style={styles.sectionLabel}>Recent Exercise Reactions</Text>
             {events.length === 0 ? (
@@ -266,6 +383,11 @@ export default function IssueDetail() {
         onClose={() => setSelectedEvent(null)}
         onSave={(input) => void saveReaction(input)}
         onDelete={confirmDeleteReaction}
+      />
+      <ExercisePicker
+        visible={pickerLinkType !== null}
+        onSelect={(exercise) => void addExerciseLink(exercise)}
+        onClose={() => setPickerLinkType(null)}
       />
     </SafeAreaView>
   );
@@ -362,6 +484,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   archiveText: { color: T.danger, fontSize: 14, fontWeight: '700' },
+  linkBlock: {
+    marginTop: 8,
+    gap: 8,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 12,
+  },
+  linkHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  linkAddBtn: {
+    minHeight: 30,
+    borderRadius: 999,
+    backgroundColor: T.accent,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  linkAddText: { color: T.accentInk, fontSize: 12, fontWeight: '800' },
+  linkRow: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 8,
+    gap: 7,
+  },
+  linkTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  linkExerciseName: { flex: 1, color: T.text, fontSize: 14, fontWeight: '700' },
+  linkRemoveBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    backgroundColor: T.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  linkNoteInput: {
+    minHeight: 36,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: T.border,
+    color: T.text,
+    fontSize: 13,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
   historyBlock: { marginTop: 8, gap: 8 },
   sectionLabel: {
     color: T.muted,
