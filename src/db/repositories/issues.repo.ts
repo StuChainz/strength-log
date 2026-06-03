@@ -1,6 +1,7 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import { newId } from '@/domain/ids';
 import {
+  archiveTemplate,
   createTemplate,
   getTemplateItemsWithExercise,
   updateTemplate,
@@ -277,6 +278,16 @@ export async function updateIssueRoutine(
     Date.now(),
     routine.id,
   ]);
+}
+
+export async function removeIssueRoutine(db: SQLiteDatabase, issueId: string): Promise<void> {
+  const routine = await getIssueRoutine(db, issueId);
+  if (!routine) return;
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM issue_routines WHERE id = ?', [routine.id]);
+    await archiveTemplate(db, routine.template_id);
+  });
 }
 
 export async function getIssueRoutine(

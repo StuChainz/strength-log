@@ -14,12 +14,20 @@ import {
   getIssueRoutineItems,
   getIssues,
   getIssueRecentEvents,
+  removeIssueRoutine,
   recordExerciseIssueEvent,
   updateIssueExerciseLink,
   updateExerciseIssueEvent,
   updateIssue,
   updateIssueRoutine,
 } from '@/db/repositories/issues.repo';
+import { createSession } from '@/db/repositories/sessions.repo';
+import {
+  createTemplate,
+  getAllTemplatesWithCount,
+  getNormalTemplatesWithCount,
+  getTemplateById,
+} from '@/db/repositories/templates.repo';
 import { newId } from '@/domain/ids';
 import type { Exercise } from '@/domain/types';
 
@@ -275,6 +283,41 @@ describe('issues repository', () => {
     ]);
   });
 
+  it('hides Issue Routine templates from normal template summaries', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const facePull = await createExercise(db, 'Face Pull');
+    const normalTemplate = await createTemplate(db as never, {
+      name: 'Normal Upper',
+      notes: null,
+      items: [
+        {
+          exercise_id: facePull.id,
+          target_sets: 3,
+          target_reps: 12,
+          target_weight: null,
+          target_rpe: null,
+          rest_seconds: null,
+        },
+      ],
+    });
+    const routine = await createIssueRoutine(db as never, {
+      issueId: issue.id,
+      name: 'Shoulder Pain Routine',
+      items: [{ exerciseId: facePull.id, targetSets: 2, targetReps: 15 }],
+    });
+
+    await expect(getAllTemplatesWithCount(db as never)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: normalTemplate.id, name: 'Normal Upper' }),
+        expect.objectContaining({ id: routine.template_id, name: 'Shoulder Pain Routine' }),
+      ]),
+    );
+    await expect(getNormalTemplatesWithCount(db as never)).resolves.toEqual([
+      expect.objectContaining({ id: normalTemplate.id, name: 'Normal Upper' }),
+    ]);
+  });
+
   it('edits an Issue Routine and removes routine exercises through template items', async () => {
     db = await setupDb();
     const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
@@ -319,6 +362,63 @@ describe('issues repository', () => {
         [routine.template_id],
       ),
     ).toEqual({ count: 1 });
+  });
+
+  it('removes an Issue Routine without deleting Issue or workout history', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const facePull = await createExercise(db, 'Face Pull');
+    const routine = await createIssueRoutine(db as never, {
+      issueId: issue.id,
+      name: 'Shoulder Pain Routine',
+      items: [{ exerciseId: facePull.id, targetSets: 2, targetReps: 15 }],
+    });
+    const session = await createSession(db as never, {
+      templateId: routine.template_id,
+      name: null,
+    });
+    await createIssueExerciseLink(db as never, {
+      issueId: issue.id,
+      exerciseId: facePull.id,
+      linkType: 'helpful',
+      note: 'Controlled',
+    });
+    const reaction = await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: facePull.id,
+      sessionId: session.id,
+      reactionType: 'helped',
+      severity: 2,
+      note: 'No pinch',
+    });
+
+    await removeIssueRoutine(db as never, issue.id);
+
+    await expect(getIssueRoutine(db as never, issue.id)).resolves.toBeNull();
+    await expect(getIssueById(db as never, issue.id)).resolves.toEqual(
+      expect.objectContaining({ id: issue.id, name: 'Shoulder Pain' }),
+    );
+    await expect(getTemplateById(db as never, routine.template_id)).resolves.toEqual(
+      expect.objectContaining({ id: routine.template_id, archived_at: expect.any(Number) }),
+    );
+    await expect(
+      db.getFirstAsync<{ id: string; template_id: string | null }>(
+        'SELECT id, template_id FROM workout_sessions WHERE id = ?',
+        [session.id],
+      ),
+    ).resolves.toEqual({ id: session.id, template_id: routine.template_id });
+    await expect(
+      db.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM workout_events WHERE session_id = ?',
+        [session.id],
+      ),
+    ).resolves.toEqual({ count: 1 });
+    await expect(getIssueExerciseLinks(db as never, issue.id)).resolves.toEqual([
+      expect.objectContaining({ issue_id: issue.id, exercise_id: facePull.id }),
+    ]);
+    await expect(getIssueRecentEvents(db as never, issue.id)).resolves.toEqual([
+      expect.objectContaining({ id: reaction.id, issue_id: issue.id, session_id: session.id }),
+    ]);
   });
 
   it('archives an Issue without deleting linked routine data', async () => {

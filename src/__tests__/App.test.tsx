@@ -38,7 +38,7 @@ jest.mock('@/notifications/restTimerNotifications', () => ({
 }));
 
 jest.mock('@/db/repositories/templates.repo', () => ({
-  getAllTemplatesWithCount: jest.fn().mockResolvedValue([]),
+  getNormalTemplatesWithCount: jest.fn().mockResolvedValue([]),
 }));
 
 jest.mock('@/db/repositories/sessions.repo', () => ({

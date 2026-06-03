@@ -12,6 +12,7 @@ import {
   getIssueRoutine,
   getIssueRoutineItems,
   getIssueRecentEvents,
+  removeIssueRoutine,
   updateIssueExerciseLink,
   updateExerciseIssueEvent,
   updateIssueRoutine,
@@ -44,6 +45,7 @@ jest.mock('@/db/repositories/issues.repo', () => ({
   getIssueRoutine: jest.fn(),
   getIssueRoutineItems: jest.fn(),
   getIssueRecentEvents: jest.fn(),
+  removeIssueRoutine: jest.fn(),
   updateIssueExerciseLink: jest.fn(),
   updateExerciseIssueEvent: jest.fn(),
   updateIssueRoutine: jest.fn(),
@@ -114,6 +116,7 @@ const getIssueRoutineItemsMock = getIssueRoutineItems as jest.MockedFunction<
   typeof getIssueRoutineItems
 >;
 const updateIssueRoutineMock = updateIssueRoutine as jest.MockedFunction<typeof updateIssueRoutine>;
+const removeIssueRoutineMock = removeIssueRoutine as jest.MockedFunction<typeof removeIssueRoutine>;
 const updateIssueExerciseLinkMock = updateIssueExerciseLink as jest.MockedFunction<
   typeof updateIssueExerciseLink
 >;
@@ -256,6 +259,7 @@ describe('IssueDetail reaction correction', () => {
       updated_at: 1,
     });
     updateIssueRoutineMock.mockResolvedValue(undefined);
+    removeIssueRoutineMock.mockResolvedValue(undefined);
     updateIssueExerciseLinkMock.mockResolvedValue(undefined);
     deleteIssueExerciseLinkMock.mockResolvedValue(undefined);
     updateExerciseIssueEventMock.mockResolvedValue(undefined);
@@ -398,6 +402,43 @@ describe('IssueDetail reaction correction', () => {
     fireEvent.press(getByTestId('run-issue-routine-btn'));
 
     expect(mockNavigate).toHaveBeenCalledWith('LiveWorkout', { templateId: 'template-routine' });
+  });
+
+  it('removes an Issue Routine from Issue detail without deleting the Issue', async () => {
+    routine = {
+      id: 'routine-1',
+      issue_id: 'issue-1',
+      template_id: 'template-routine',
+      routine_name: 'Shoulder Pain Routine',
+      routine_note: null,
+      exercise_count: 1,
+      last_completed_at: null,
+      created_at: 1,
+      updated_at: 1,
+    };
+    removeIssueRoutineMock.mockImplementationOnce(async () => {
+      routine = null;
+      routineItems = [];
+    });
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      buttons?.find((button) => button.text === 'Remove')?.onPress?.();
+    });
+
+    const { getByTestId, queryByText } = render(<IssueDetail />);
+
+    await waitFor(() => expect(getByTestId('remove-issue-routine-btn')).toBeTruthy());
+    fireEvent.press(getByTestId('remove-issue-routine-btn'));
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Remove this routine?',
+      'This removes the routine from this Issue.\nIt does not delete your logged workouts or exercise history.',
+      expect.any(Array),
+    );
+    await waitFor(() => expect(removeIssueRoutineMock).toHaveBeenCalledWith(mockDb, 'issue-1'));
+    await waitFor(() => expect(queryByText('Shoulder Pain Routine')).toBeNull());
+    expect(getIssueByIdMock).toHaveBeenCalledWith(mockDb, 'issue-1');
+
+    alertSpy.mockRestore();
   });
 
   it('removes an exercise link from Issue detail', async () => {

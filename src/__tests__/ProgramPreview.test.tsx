@@ -4,7 +4,7 @@ import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import ProgramPreview from '@/screens/ProgramPreview';
 import { LINEAR_5X5 } from '@/programs/presets';
 import { importPreset } from '@/programs/importPreset';
-import { getAllTemplatesWithCount } from '@/db/repositories/templates.repo';
+import { getNormalTemplatesWithCount } from '@/db/repositories/templates.repo';
 
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
@@ -19,7 +19,7 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('@/db/client', () => ({ openDb: jest.fn(async () => ({})) }));
 jest.mock('@/db/repositories/templates.repo', () => ({
-  getAllTemplatesWithCount: jest.fn(),
+  getNormalTemplatesWithCount: jest.fn(),
 }));
 jest.mock('@/programs/importPreset', () => {
   const actual = jest.requireActual('@/programs/importPreset');
@@ -44,7 +44,7 @@ describe('ProgramPreview', () => {
     jest.clearAllMocks();
     mockRouteParams = { presetId: LINEAR_5X5.id };
     jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    (getAllTemplatesWithCount as jest.Mock).mockResolvedValue([]);
+    (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue([]);
     (importPreset as jest.Mock).mockResolvedValue({
       presetId: LINEAR_5X5.id,
       templates: LINEAR_5X5.workouts.map((w, i) => ({
@@ -83,7 +83,7 @@ describe('ProgramPreview', () => {
   });
 
   it('shows duplicate-warning alert when a workout name already exists, and only imports on confirm', async () => {
-    (getAllTemplatesWithCount as jest.Mock).mockResolvedValue([
+    (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue([
       {
         id: 'pre-existing',
         name: LINEAR_5X5.workouts[0]!.name,
@@ -108,7 +108,7 @@ describe('ProgramPreview', () => {
   });
 
   it('does not call importPreset when user cancels duplicate alert', async () => {
-    (getAllTemplatesWithCount as jest.Mock).mockResolvedValue([
+    (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue([
       {
         id: 'pre-existing',
         name: LINEAR_5X5.workouts[0]!.name,

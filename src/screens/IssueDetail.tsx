@@ -30,6 +30,7 @@ import {
   getIssueRoutine,
   getIssueRoutineItems,
   getIssueRecentEvents,
+  removeIssueRoutine,
   type IssueRoutineSummary,
   type IssueExerciseLinkWithExerciseName,
   type ExerciseIssueEventWithNames,
@@ -206,6 +207,26 @@ export default function IssueDetail() {
     navigation.navigate('LiveWorkout', { templateId: routine.template_id });
   };
 
+  const confirmRemoveRoutine = () => {
+    if (!issueId || !routine) return;
+    Alert.alert(
+      'Remove this routine?',
+      'This removes the routine from this Issue.\nIt does not delete your logged workouts or exercise history.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            void openDb()
+              .then((db) => removeIssueRoutine(db, issueId))
+              .then(load);
+          },
+        },
+      ],
+    );
+  };
+
   const renderRoutine = () => {
     if (isNew) return null;
     const lastCompleted = formatLastCompleted(routine?.last_completed_at ?? null);
@@ -245,6 +266,13 @@ export default function IssueDetail() {
             >
               <Ionicons name="play" size={14} color={T.accentInk} />
               <Text style={styles.runRoutineText}>Run Routine</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.removeRoutineBtn}
+              onPress={confirmRemoveRoutine}
+              testID="remove-issue-routine-btn"
+            >
+              <Text style={styles.removeRoutineText}>Remove</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -644,6 +672,17 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   runRoutineText: { color: T.accentInk, fontSize: 12, fontWeight: '900' },
+  removeRoutineBtn: {
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,122,106,0.35)',
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  removeRoutineText: { color: T.danger, fontSize: 12, fontWeight: '800' },
   linkBlock: {
     marginTop: 8,
     gap: 8,

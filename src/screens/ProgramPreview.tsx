@@ -21,7 +21,7 @@ import type {
   ProgressionRuleConfig,
 } from '@/programs/types';
 import { openDb } from '@/db/client';
-import { getAllTemplatesWithCount } from '@/db/repositories/templates.repo';
+import { getNormalTemplatesWithCount } from '@/db/repositories/templates.repo';
 import { T } from '@/theme/tokens';
 import type {
   ProgramPreviewNavigationProp,
@@ -117,7 +117,7 @@ export default function ProgramPreview() {
     if (importing) return;
     try {
       const db = await openDb();
-      const existing = await getAllTemplatesWithCount(db);
+      const existing = await getNormalTemplatesWithCount(db);
       const existingNames = new Set(existing.map((t) => t.name.trim().toLowerCase()));
       const collisions = preset.workouts
         .map((w) => w.name)

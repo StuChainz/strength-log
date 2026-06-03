@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
-import { getAllTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
+import { getNormalTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
 import { ALL_PRESETS } from '@/programs/presets';
 import { T } from '@/theme/tokens';
 import type { TemplateListNavigationProp } from '@/navigation/types';
@@ -80,7 +80,7 @@ export default function TemplateList() {
   const loadTemplates = useCallback(async () => {
     try {
       const db = await openDb();
-      const data = await getAllTemplatesWithCount(db);
+      const data = await getNormalTemplatesWithCount(db);
       setTemplates(data);
       setNow(Date.now());
     } finally {

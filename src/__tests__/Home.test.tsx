@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import Home from '@/screens/Home';
 import { openDb } from '@/db/client';
-import { getAllTemplatesWithCount } from '@/db/repositories/templates.repo';
+import { getNormalTemplatesWithCount } from '@/db/repositories/templates.repo';
 import { discardSession, getSessionRecovery } from '@/db/repositories/sessions.repo';
 import { getTrainingVolumeReport } from '@/db/repositories/trainingVolume.repo';
 
@@ -34,7 +34,7 @@ jest.mock('@/db/client', () => ({
 }));
 
 jest.mock('@/db/repositories/templates.repo', () => ({
-  getAllTemplatesWithCount: jest.fn(),
+  getNormalTemplatesWithCount: jest.fn(),
 }));
 
 jest.mock('@/db/repositories/sessions.repo', () => ({
@@ -52,8 +52,8 @@ jest.mock('@/db/repositories/trainingVolume.repo', () => ({
 }));
 
 const openDbMock = openDb as jest.MockedFunction<typeof openDb>;
-const getAllTemplatesWithCountMock = getAllTemplatesWithCount as jest.MockedFunction<
-  typeof getAllTemplatesWithCount
+const getNormalTemplatesWithCountMock = getNormalTemplatesWithCount as jest.MockedFunction<
+  typeof getNormalTemplatesWithCount
 >;
 const getSessionRecoveryMock = getSessionRecovery as jest.MockedFunction<typeof getSessionRecovery>;
 const discardSessionMock = discardSession as jest.MockedFunction<typeof discardSession>;
@@ -102,7 +102,7 @@ describe('Home screen', () => {
     jest.clearAllMocks();
     jest.spyOn(Date, 'now').mockReturnValue(NOW);
     openDbMock.mockResolvedValue(mockDb as never);
-    getAllTemplatesWithCountMock.mockResolvedValue([
+    getNormalTemplatesWithCountMock.mockResolvedValue([
       {
         id: 'template-push',
         name: 'Push A',

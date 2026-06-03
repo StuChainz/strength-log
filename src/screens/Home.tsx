@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
-import { getAllTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
+import { getNormalTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
 import {
   discardSession,
   getSessionRecovery,
@@ -202,7 +202,7 @@ export default function Home() {
       const sevenDaysAgo = loadedAt - TRAINING_VOLUME_WINDOWS.last7Days.days * DAY_MS;
       const [tpls, sessions, active, unfinishedTags, volumeReport, lastUsedRows, totalsRows] =
         await Promise.all([
-          getAllTemplatesWithCount(db),
+          getNormalTemplatesWithCount(db),
           db.getAllAsync<RecentSession>(
             `SELECT sess.id,
                     sess.name,

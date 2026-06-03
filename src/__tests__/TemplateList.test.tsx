@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import TemplateList, { getTemplateSections } from '@/screens/TemplateList';
-import { getAllTemplatesWithCount } from '@/db/repositories/templates.repo';
+import { getNormalTemplatesWithCount } from '@/db/repositories/templates.repo';
 
 const mockNavigate = jest.fn();
 const mockSetOptions = jest.fn();
@@ -20,7 +20,7 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('@/db/client', () => ({ openDb: jest.fn() }));
 jest.mock('@/db/repositories/templates.repo', () => ({
-  getAllTemplatesWithCount: jest.fn(),
+  getNormalTemplatesWithCount: jest.fn(),
 }));
 
 const mockTemplates = [
@@ -59,7 +59,7 @@ describe('TemplateList', () => {
     mockUseFocusEffect.mockImplementation((cb) => {
       cb();
     });
-    (getAllTemplatesWithCount as jest.Mock).mockResolvedValue(mockTemplates);
+    (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue(mockTemplates);
   });
 
   it('renders templates after load', async () => {
@@ -81,7 +81,7 @@ describe('TemplateList', () => {
   });
 
   it('shows empty state when no templates', async () => {
-    (getAllTemplatesWithCount as jest.Mock).mockResolvedValue([]);
+    (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue([]);
     const { getByText } = render(<TemplateList />);
     await waitFor(() => {
       expect(getByText('No templates yet')).toBeTruthy();
@@ -125,7 +125,7 @@ describe('TemplateList', () => {
   });
 
   it('groups preset templates by program and leaves unmatched templates custom', async () => {
-    (getAllTemplatesWithCount as jest.Mock).mockResolvedValue([
+    (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue([
       {
         id: 'phul-upper',
         name: 'Upper Power',
@@ -198,15 +198,15 @@ describe('TemplateList', () => {
 
   it('reloads on focus', async () => {
     render(<TemplateList />);
-    await waitFor(() => expect(getAllTemplatesWithCount).toHaveBeenCalled());
+    await waitFor(() => expect(getNormalTemplatesWithCount).toHaveBeenCalled());
 
-    const callsBefore = (getAllTemplatesWithCount as jest.Mock).mock.calls.length;
+    const callsBefore = (getNormalTemplatesWithCount as jest.Mock).mock.calls.length;
 
     const cb = mockUseFocusEffect.mock.calls[0][0];
     cb();
 
     await waitFor(() =>
-      expect((getAllTemplatesWithCount as jest.Mock).mock.calls.length).toBeGreaterThan(
+      expect((getNormalTemplatesWithCount as jest.Mock).mock.calls.length).toBeGreaterThan(
         callsBefore,
       ),
     );

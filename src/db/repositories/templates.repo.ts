@@ -153,6 +153,19 @@ export async function getAllTemplatesWithCount(db: SQLiteDatabase): Promise<Temp
   );
 }
 
+export async function getNormalTemplatesWithCount(db: SQLiteDatabase): Promise<TemplateSummary[]> {
+  return db.getAllAsync<TemplateSummary>(
+    `SELECT t.*, COUNT(ti.id) AS item_count
+     FROM templates t
+     LEFT JOIN template_items ti ON ti.template_id = t.id
+     LEFT JOIN issue_routines ir ON ir.template_id = t.id
+     WHERE t.archived_at IS NULL
+       AND ir.id IS NULL
+     GROUP BY t.id
+     ORDER BY t.name ASC`,
+  );
+}
+
 export async function getTemplateById(
   db: SQLiteDatabase,
   id: string,
