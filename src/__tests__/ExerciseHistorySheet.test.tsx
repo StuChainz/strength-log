@@ -6,9 +6,12 @@ import { getExerciseHistory } from '@/db/repositories/history.repo';
 import {
   deleteExerciseIssueEvent,
   getActiveIssueExerciseLinksForExercise,
+  getExerciseIssueEventsForExercise,
   getExerciseIssueSummary,
   updateExerciseIssueEvent,
 } from '@/db/repositories/issues.repo';
+import { getFinalPRsByExercise } from '@/db/repositories/prs.repo';
+import { toLocalDateKey } from '@/domain/exerciseHistory';
 
 const mockDb = {};
 
@@ -23,8 +26,13 @@ jest.mock('@/db/repositories/history.repo', () => ({
 jest.mock('@/db/repositories/issues.repo', () => ({
   deleteExerciseIssueEvent: jest.fn(),
   getActiveIssueExerciseLinksForExercise: jest.fn(),
+  getExerciseIssueEventsForExercise: jest.fn(),
   getExerciseIssueSummary: jest.fn(),
   updateExerciseIssueEvent: jest.fn(),
+}));
+
+jest.mock('@/db/repositories/prs.repo', () => ({
+  getFinalPRsByExercise: jest.fn(),
 }));
 
 const openDbMock = openDb as jest.MockedFunction<typeof openDb>;
@@ -36,12 +44,56 @@ const getActiveIssueExerciseLinksForExerciseMock =
 const getExerciseIssueSummaryMock = getExerciseIssueSummary as jest.MockedFunction<
   typeof getExerciseIssueSummary
 >;
+const getExerciseIssueEventsForExerciseMock =
+  getExerciseIssueEventsForExercise as jest.MockedFunction<typeof getExerciseIssueEventsForExercise>;
+const getFinalPRsByExerciseMock = getFinalPRsByExercise as jest.MockedFunction<
+  typeof getFinalPRsByExercise
+>;
 const updateExerciseIssueEventMock = updateExerciseIssueEvent as jest.MockedFunction<
   typeof updateExerciseIssueEvent
 >;
 const deleteExerciseIssueEventMock = deleteExerciseIssueEvent as jest.MockedFunction<
   typeof deleteExerciseIssueEvent
 >;
+
+const baseProps = {
+  visible: true,
+  exerciseId: 'bench',
+  exerciseName: 'Bench Press',
+  primaryMuscle: 'chest',
+  category: 'barbell' as const,
+  defaultUnit: 'kg' as const,
+  targetSets: null,
+  targetReps: null,
+  targetWeight: null,
+  progressionRule: { rule: 'none' as const },
+  progressionExercise: { category: 'barbell' as const },
+  onClose: jest.fn(),
+};
+
+function historySession(id: string, startedAt: number, weight = 100, reps = 5) {
+  return {
+    sessionId: id,
+    startedAt,
+    endedAt: startedAt + 60_000,
+    sets: [
+      {
+        id: `${id}-set-1`,
+        weight,
+        reps,
+        rpe: null,
+        unit: 'kg' as const,
+        set_type: 'working' as const,
+        logged_at: startedAt,
+        position: 0,
+      },
+    ],
+    volume: weight * reps,
+    topSetWeight: weight,
+    topSetReps: reps,
+    est1rm: weight * (1 + reps / 30),
+  };
+}
 
 describe('ExerciseHistorySheet Issue history', () => {
   beforeEach(() => {
@@ -90,6 +142,8 @@ describe('ExerciseHistorySheet Issue history', () => {
         },
       },
     ]);
+    getExerciseIssueEventsForExerciseMock.mockResolvedValue([]);
+    getFinalPRsByExerciseMock.mockResolvedValue([]);
     updateExerciseIssueEventMock.mockResolvedValue(undefined);
     deleteExerciseIssueEventMock.mockResolvedValue(undefined);
   });
@@ -118,6 +172,81 @@ describe('ExerciseHistorySheet Issue history', () => {
     expect(getByText('Helped 1 time')).toBeTruthy();
     expect(getByText('Last note: Tingling after set 2')).toBeTruthy();
     expect(getByText('Latest Aggravated · 3/5')).toBeTruthy();
+  });
+
+  it('shows only the last 5 recent sessions', async () => {
+    getExerciseHistoryMock.mockResolvedValue([
+      historySession('s1', 1_900_000_005_000),
+      historySession('s2', 1_900_000_004_000),
+      historySession('s3', 1_900_000_003_000),
+      historySession('s4', 1_900_000_002_000),
+      historySession('s5', 1_900_000_001_000),
+      historySession('s6', 1_900_000_000_000),
+    ]);
+
+    const { getByTestId, queryByTestId } = render(<ExerciseHistorySheet {...baseProps} />);
+
+    await waitFor(() => expect(getByTestId('exercise-history-session-s1')).toBeTruthy());
+    expect(getByTestId('exercise-history-session-s5')).toBeTruthy();
+    expect(queryByTestId('exercise-history-session-s6')).toBeNull();
+  });
+
+  it('hides graph sections with insufficient data', async () => {
+    getExerciseHistoryMock.mockResolvedValue([historySession('s1', 1_900_000_000_000)]);
+
+    const { getByTestId, queryByTestId } = render(<ExerciseHistorySheet {...baseProps} />);
+
+    await waitFor(() => expect(getByTestId('exercise-history-session-s1')).toBeTruthy());
+    expect(queryByTestId('exercise-history-estimated-1rm-graph')).toBeNull();
+    expect(queryByTestId('exercise-history-volume-graph')).toBeNull();
+  });
+
+  it('marks calendar days only for performed sessions in range', async () => {
+    const today = Date.now();
+    const trainedToday = today - 60_000;
+    const trainedYesterday = today - 24 * 60 * 60 * 1000;
+    const oldSession = today - 90 * 24 * 60 * 60 * 1000;
+    getExerciseHistoryMock.mockResolvedValue([
+      historySession('today', trainedToday),
+      historySession('yesterday', trainedYesterday),
+      historySession('old', oldSession),
+    ]);
+
+    const { getByTestId, queryByTestId } = render(<ExerciseHistorySheet {...baseProps} />);
+
+    await waitFor(() =>
+      expect(
+        getByTestId(`exercise-history-calendar-mark-${toLocalDateKey(trainedToday)}`),
+      ).toBeTruthy(),
+    );
+    expect(
+      getByTestId(`exercise-history-calendar-mark-${toLocalDateKey(trainedYesterday)}`),
+    ).toBeTruthy();
+    expect(
+      queryByTestId(`exercise-history-calendar-mark-${toLocalDateKey(oldSession)}`),
+    ).toBeNull();
+  });
+
+  it('shows issue reactions and notes on matching recent sessions', async () => {
+    getExerciseHistoryMock.mockResolvedValue([historySession('session-1', 1_900_000_000_000)]);
+    getExerciseIssueEventsForExerciseMock.mockResolvedValue([
+      {
+        id: 'event-session-1',
+        issue_id: 'issue-1',
+        issue_name: 'Shoulder Pain',
+        exercise_id: 'bench',
+        session_id: 'session-1',
+        reaction_type: 'aggravated',
+        severity: 4,
+        note: 'Pinch after top set',
+        created_at: 1_900_000_000_000,
+      },
+    ]);
+
+    const { getByText } = render(<ExerciseHistorySheet {...baseProps} />);
+
+    await waitFor(() => expect(getByText('Shoulder Pain: Aggravated · 4/5')).toBeTruthy());
+    expect(getByText('Pinch after top set')).toBeTruthy();
   });
 
   it('shows manual Issue links separately from reaction history', async () => {

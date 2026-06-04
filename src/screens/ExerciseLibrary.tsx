@@ -219,6 +219,9 @@ export default function ExerciseLibrary() {
         visible={historyExercise !== null}
         exerciseId={historyExercise?.id ?? null}
         exerciseName={historyExercise?.name ?? ''}
+        primaryMuscle={
+          historyExercise?.metadata?.primary_muscles[0] ?? historyExercise?.primary_muscle ?? null
+        }
         category={historyExercise?.category ?? 'barbell'}
         defaultUnit={historyExercise?.default_unit ?? 'kg'}
         targetSets={null}

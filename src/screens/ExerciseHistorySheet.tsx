@@ -10,27 +10,41 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path, Rect } from 'react-native-svg';
 import IssueReactionEditSheet from '@/components/IssueReactionEditSheet';
 import { openDb } from '@/db/client';
 import { getExerciseHistory, type ExerciseHistorySession } from '@/db/repositories/history.repo';
 import {
   deleteExerciseIssueEvent,
   getActiveIssueExerciseLinksForExercise,
+  getExerciseIssueEventsForExercise,
   getExerciseIssueSummary,
   type IssueExerciseLinkWithIssueName,
+  type ExerciseIssueEventWithIssueName,
   type ExerciseIssueSummary,
   updateExerciseIssueEvent,
 } from '@/db/repositories/issues.repo';
+import { getFinalPRsByExercise } from '@/db/repositories/prs.repo';
 import {
   getProgressionSuggestion,
   type ProgressionExercise,
   type ProgressionRuleConfig,
   type ProgressionSuggestion,
 } from '@/domain/progression';
+import {
+  buildEstimated1RMGraphPoints,
+  buildExerciseCalendarDays,
+  buildVolumeGraphPoints,
+  calculateExerciseSessionVolume,
+  getBestEstimated1RMForSession,
+  getRecentExerciseSessions,
+  type ExerciseHistoryPoint,
+} from '@/domain/exerciseHistory';
 import { formatWorkoutVolumeKg } from '@/domain/volume';
-import { T } from '@/theme/tokens';
+import { accentAlpha, T } from '@/theme/tokens';
 import type {
   ExerciseCategory,
+  ExercisePR,
   ExerciseIssueEvent,
   IssueExerciseLinkType,
   IssueReactionType,
@@ -41,6 +55,7 @@ interface ExerciseHistorySheetProps {
   visible: boolean;
   exerciseId: string | null;
   exerciseName: string;
+  primaryMuscle?: string | null;
   category: ExerciseCategory;
   defaultUnit: Unit;
   targetSets: number | null;
@@ -54,6 +69,15 @@ interface ExerciseHistorySheetProps {
 
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function formatFullDate(ts: number): string {
+  return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatCompactValue(value: number): string {
+  if (value >= 1000) return `${Math.round(value / 100) / 10}k`;
+  return value % 1 === 0 ? String(value) : value.toFixed(1);
 }
 
 function formatSets(session: ExerciseHistorySession): string {
@@ -75,10 +99,109 @@ function formatLinkType(value: IssueExerciseLinkType): string {
   return value === 'helpful' ? 'Helpful' : 'Aggravating';
 }
 
+function formatIssueEvent(event: ExerciseIssueEventWithIssueName): string {
+  const severity = event.severity !== null ? ` · ${event.severity}/5` : '';
+  return `${event.issue_name}: ${formatReaction(event.reaction_type)}${severity}`;
+}
+
+function formatPR(record: ExercisePR): string {
+  if (record.record_type === 'estimated_1rm') {
+    return `Best estimated 1RM ${record.value.toFixed(1)} ${record.unit}`;
+  }
+  if (record.record_type === 'session_volume') {
+    return `Best volume session ${formatWorkoutVolumeKg(record.value)}`;
+  }
+  return `Best ${record.reps ?? 'rep'} rep${record.reps === 1 ? '' : 's'} at ${
+    record.weight ?? record.value
+  } ${record.unit}`;
+}
+
+function buildPath(points: ExerciseHistoryPoint[], width: number, height: number): string {
+  const values = points.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  return points
+    .map((point, index) => {
+      const x = points.length === 1 ? width / 2 : (index / (points.length - 1)) * width;
+      const y = height - ((point.value - min) / range) * height;
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(' ');
+}
+
+function MiniLineGraph({
+  points,
+  testID,
+}: {
+  points: ExerciseHistoryPoint[];
+  testID: string;
+}) {
+  const width = 260;
+  const height = 64;
+  return (
+    <View style={styles.graphFrame} testID={testID}>
+      <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+        <Path
+          d={buildPath(points, width, height - 8)}
+          stroke={T.accent}
+          strokeWidth={3}
+          fill="none"
+        />
+      </Svg>
+      <View style={styles.graphLabels}>
+        <Text style={styles.graphLabel}>{formatDate(points[0].startedAt)}</Text>
+        <Text style={styles.graphLabel}>{formatDate(points[points.length - 1].startedAt)}</Text>
+      </View>
+    </View>
+  );
+}
+
+function MiniBarGraph({
+  points,
+  testID,
+}: {
+  points: ExerciseHistoryPoint[];
+  testID: string;
+}) {
+  const width = 260;
+  const height = 64;
+  const max = Math.max(...points.map((point) => point.value), 1);
+  const gap = 4;
+  const barWidth = Math.max(5, (width - gap * (points.length - 1)) / points.length);
+  return (
+    <View style={styles.graphFrame} testID={testID}>
+      <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+        {points.map((point, index) => {
+          const barHeight = Math.max(4, (point.value / max) * (height - 4));
+          const x = index * (barWidth + gap);
+          const y = height - barHeight;
+          return (
+            <Rect
+              key={point.sessionId}
+              x={x}
+              y={y}
+              width={barWidth}
+              height={barHeight}
+              rx={3}
+              fill={T.accent}
+            />
+          );
+        })}
+      </Svg>
+      <View style={styles.graphLabels}>
+        <Text style={styles.graphLabel}>{formatDate(points[0].startedAt)}</Text>
+        <Text style={styles.graphLabel}>{formatDate(points[points.length - 1].startedAt)}</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function ExerciseHistorySheet({
   visible,
   exerciseId,
   exerciseName,
+  primaryMuscle,
   category,
   defaultUnit,
   targetSets,
@@ -92,6 +215,8 @@ export default function ExerciseHistorySheet({
   const [history, setHistory] = useState<ExerciseHistorySession[]>([]);
   const [issueLinks, setIssueLinks] = useState<IssueExerciseLinkWithIssueName[]>([]);
   const [issueSummary, setIssueSummary] = useState<ExerciseIssueSummary[]>([]);
+  const [issueEvents, setIssueEvents] = useState<ExerciseIssueEventWithIssueName[]>([]);
+  const [prs, setPrs] = useState<ExercisePR[]>([]);
   const [loadedExerciseId, setLoadedExerciseId] = useState<string | null>(null);
   const [selectedIssueSummary, setSelectedIssueSummary] = useState<ExerciseIssueSummary | null>(
     null,
@@ -102,14 +227,18 @@ export default function ExerciseHistorySheet({
   const load = useCallback(async () => {
     if (!exerciseId) return;
     const db = await openDb();
-    const [historyRows, issueLinkRows, issueRows] = await Promise.all([
-      getExerciseHistory(db, exerciseId, 5),
+    const [historyRows, issueLinkRows, issueRows, issueEventRows, prRows] = await Promise.all([
+      getExerciseHistory(db, exerciseId, 40),
       getActiveIssueExerciseLinksForExercise(db, exerciseId),
       getExerciseIssueSummary(db, exerciseId),
+      getExerciseIssueEventsForExercise(db, exerciseId),
+      getFinalPRsByExercise(db, exerciseId),
     ]);
     setHistory(historyRows);
     setIssueLinks(issueLinkRows);
     setIssueSummary(issueRows);
+    setIssueEvents(issueEventRows);
+    setPrs(prRows);
     setLoadedExerciseId(exerciseId);
   }, [exerciseId]);
 
@@ -119,6 +248,10 @@ export default function ExerciseHistorySheet({
   }, [exerciseId, load, visible]);
 
   const selectedEvent: ExerciseIssueEvent | null = selectedIssueSummary?.latestEvent ?? null;
+  const displayHistory = useMemo(
+    () => (loadedExerciseId === exerciseId ? history : []),
+    [exerciseId, history, loadedExerciseId],
+  );
 
   const saveReaction = async (input: {
     reactionType: IssueReactionType;
@@ -175,13 +308,13 @@ export default function ExerciseHistorySheet({
         unit: defaultUnit,
       },
       progressionRule,
-      recentSets: history[0]?.sets ?? [],
-      previousSessionSets: history[1]?.sets ?? [],
+      recentSets: displayHistory[0]?.sets ?? [],
+      previousSessionSets: displayHistory[1]?.sets ?? [],
     });
   }, [
     category,
     defaultUnit,
-    history,
+    displayHistory,
     progressionExercise,
     progressionRule,
     targetReps,
@@ -190,6 +323,38 @@ export default function ExerciseHistorySheet({
   ]);
 
   const canApply = suggestion.weight !== null || suggestion.reps !== null;
+  const recentSessions = useMemo(
+    () => getRecentExerciseSessions(displayHistory, 5),
+    [displayHistory],
+  );
+  const estimated1RMPoints = useMemo(
+    () => buildEstimated1RMGraphPoints(displayHistory),
+    [displayHistory],
+  );
+  const volumePoints = useMemo(() => buildVolumeGraphPoints(displayHistory), [displayHistory]);
+  const calendarDays = useMemo(() => buildExerciseCalendarDays(displayHistory), [displayHistory]);
+  const issueEventsBySession = useMemo(() => {
+    const bySession = new Map<string, ExerciseIssueEventWithIssueName[]>();
+    for (const event of issueEvents) {
+      if (!event.session_id) continue;
+      const events = bySession.get(event.session_id) ?? [];
+      events.push(event);
+      bySession.set(event.session_id, events);
+    }
+    return bySession;
+  }, [issueEvents]);
+  const lastSession = displayHistory[0] ?? null;
+  const bestEstimated1RM = useMemo(() => {
+    const values = displayHistory
+      .map((session) => getBestEstimated1RMForSession(session.sets))
+      .filter((value): value is number => value !== null);
+    return values.length > 0 ? Math.max(...values) : null;
+  }, [displayHistory]);
+  const bestVolume = useMemo(() => {
+    const values = displayHistory.map((session) => calculateExerciseSessionVolume(session.sets));
+    return values.length > 0 ? Math.max(...values) : null;
+  }, [displayHistory]);
+  const recentPrs = prs.slice(0, 4);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -201,10 +366,34 @@ export default function ExerciseHistorySheet({
               <Text style={styles.title} numberOfLines={1}>
                 {exerciseName}
               </Text>
+              <Text style={styles.headerMeta} numberOfLines={1}>
+                {primaryMuscle ? primaryMuscle.replace(/_/g, ' ') : 'Exercise'}
+                {' · '}
+                {lastSession ? `Last ${formatFullDate(lastSession.startedAt)}` : 'Not logged yet'}
+              </Text>
             </View>
             <TouchableOpacity style={styles.iconBtn} onPress={onClose} hitSlop={8}>
               <Ionicons name="close" size={16} color={T.textDim} />
             </TouchableOpacity>
+          </View>
+
+          <View style={styles.summaryGrid}>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Sessions</Text>
+              <Text style={styles.summaryValue}>{displayHistory.length}</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Best 1RM</Text>
+              <Text style={styles.summaryValue}>
+                {bestEstimated1RM !== null ? bestEstimated1RM.toFixed(1) : '—'}
+              </Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Best volume</Text>
+              <Text style={styles.summaryValue}>
+                {bestVolume !== null ? formatCompactValue(bestVolume) : '—'}
+              </Text>
+            </View>
           </View>
 
           <TouchableOpacity
@@ -253,6 +442,83 @@ export default function ExerciseHistorySheet({
             </View>
           ) : (
             <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+              {displayHistory.length === 0 ? (
+                <View style={styles.empty}>
+                  <Text style={styles.emptyText}>No completed sessions yet.</Text>
+                </View>
+              ) : (
+                <>
+                  {(estimated1RMPoints.length > 0 || volumePoints.length > 0) && (
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Progress graphs</Text>
+                      {estimated1RMPoints.length > 0 && (
+                        <View style={styles.graphBlock}>
+                          <View style={styles.sectionHeaderRow}>
+                            <Text style={styles.graphTitle}>Est. 1RM Trend</Text>
+                            <Text style={styles.graphValue}>
+                              {estimated1RMPoints[estimated1RMPoints.length - 1].value.toFixed(1)}
+                            </Text>
+                          </View>
+                          <MiniLineGraph
+                            points={estimated1RMPoints}
+                            testID="exercise-history-estimated-1rm-graph"
+                          />
+                        </View>
+                      )}
+                      {volumePoints.length > 0 && (
+                        <View style={styles.graphBlock}>
+                          <View style={styles.sectionHeaderRow}>
+                            <Text style={styles.graphTitle}>Volume Trend</Text>
+                            <Text style={styles.graphValue}>
+                              {formatWorkoutVolumeKg(volumePoints[volumePoints.length - 1].value)}
+                            </Text>
+                          </View>
+                          <MiniBarGraph
+                            points={volumePoints}
+                            testID="exercise-history-volume-graph"
+                          />
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  <View style={styles.section}>
+                    <View style={styles.sectionHeaderRow}>
+                      <Text style={styles.sectionTitle}>Consistency</Text>
+                      <Text style={styles.sectionMeta}>10 weeks</Text>
+                    </View>
+                    <View style={styles.calendarGrid} testID="exercise-history-calendar">
+                      {calendarDays.map((day) => (
+                        <View
+                          key={day.dateKey}
+                          style={[styles.calendarDay, day.marked && styles.calendarDayMarked]}
+                          testID={`exercise-history-calendar-day-${day.dateKey}`}
+                        >
+                          {day.marked ? (
+                            <View
+                              style={styles.calendarMark}
+                              testID={`exercise-history-calendar-mark-${day.dateKey}`}
+                            />
+                          ) : null}
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+
+                  {recentPrs.length > 0 && (
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>PR timeline</Text>
+                      {recentPrs.map((record) => (
+                        <View key={record.id} style={styles.prRow}>
+                          <Text style={styles.prLabel}>{formatPR(record)}</Text>
+                          <Text style={styles.prDate}>{formatDate(record.achieved_at)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
+
               {issueLinks.length > 0 && (
                 <View style={styles.issueLinksBlock}>
                   <Text style={styles.issueHistoryTitle}>Issue links</Text>
@@ -314,32 +580,58 @@ export default function ExerciseHistorySheet({
                 </View>
               )}
 
-              {history.length === 0 ? (
-                <View style={styles.empty}>
-                  <Text style={styles.emptyText}>No completed sessions yet.</Text>
+              {recentSessions.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Recent Sessions</Text>
+                  {recentSessions.map((session) => {
+                    const sessionIssueEvents = issueEventsBySession.get(session.sessionId) ?? [];
+                    return (
+                      <View
+                        key={session.sessionId}
+                        style={styles.historyRow}
+                        testID={`exercise-history-session-${session.sessionId}`}
+                      >
+                        <View style={styles.historyTop}>
+                          <Text style={styles.historyDate}>{formatDate(session.startedAt)}</Text>
+                          <Text style={styles.historyVolume}>
+                            {formatWorkoutVolumeKg(calculateExerciseSessionVolume(session.sets))}
+                          </Text>
+                        </View>
+                        <Text style={styles.historySets} numberOfLines={2}>
+                          {formatSets(session)}
+                        </Text>
+                        <View style={styles.metricsRow}>
+                          <Text style={styles.metric}>
+                            Top {session.topSetWeight ?? '—'} × {session.topSetReps ?? '—'}
+                          </Text>
+                          <Text style={styles.metric}>{session.sets.length} sets</Text>
+                          <Text style={styles.metric}>
+                            1RM{' '}
+                            {getBestEstimated1RMForSession(session.sets) !== null
+                              ? getBestEstimated1RMForSession(session.sets)?.toFixed(1)
+                              : '—'}
+                          </Text>
+                        </View>
+                        {sessionIssueEvents.length > 0 && (
+                          <View style={styles.sessionIssueBlock}>
+                            {sessionIssueEvents.slice(0, 2).map((event) => (
+                              <View key={event.id} style={styles.sessionIssueRow}>
+                                <Text style={styles.sessionIssueText}>
+                                  {formatIssueEvent(event)}
+                                </Text>
+                                {event.note ? (
+                                  <Text style={styles.sessionIssueNote} numberOfLines={2}>
+                                    {event.note}
+                                  </Text>
+                                ) : null}
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
                 </View>
-              ) : (
-                history.map((session) => (
-                  <View key={session.sessionId} style={styles.historyRow}>
-                    <View style={styles.historyTop}>
-                      <Text style={styles.historyDate}>{formatDate(session.startedAt)}</Text>
-                      <Text style={styles.historyVolume}>
-                        {formatWorkoutVolumeKg(session.volume)}
-                      </Text>
-                    </View>
-                    <Text style={styles.historySets} numberOfLines={2}>
-                      {formatSets(session)}
-                    </Text>
-                    <View style={styles.metricsRow}>
-                      <Text style={styles.metric}>
-                        Top {session.topSetWeight ?? '—'} × {session.topSetReps ?? '—'}
-                      </Text>
-                      <Text style={styles.metric}>
-                        1RM {session.est1rm !== null ? session.est1rm.toFixed(1) : '—'}
-                      </Text>
-                    </View>
-                  </View>
-                ))
               )}
             </ScrollView>
           )}
@@ -389,6 +681,12 @@ const styles = StyleSheet.create({
     color: T.muted,
   },
   title: { color: T.text, fontSize: 20, fontWeight: '700', marginTop: 2 },
+  headerMeta: {
+    color: T.textDim,
+    fontSize: 12,
+    marginTop: 4,
+    textTransform: 'capitalize',
+  },
   iconBtn: {
     width: 32,
     height: 32,
@@ -398,6 +696,34 @@ const styles = StyleSheet.create({
     borderColor: T.border,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  summaryGrid: {
+    marginTop: 12,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  summaryItem: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  summaryLabel: {
+    color: T.muted,
+    fontFamily: 'Courier New',
+    fontSize: 10,
+    textTransform: 'uppercase',
+  },
+  summaryValue: {
+    color: T.text,
+    fontFamily: 'Courier New',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 4,
   },
   suggestionCard: {
     marginTop: 14,
@@ -430,6 +756,86 @@ const styles = StyleSheet.create({
   loading: { paddingVertical: 32 },
   list: { marginTop: 12 },
   listContent: { gap: 8 },
+  section: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  sectionTitle: {
+    color: T.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sectionMeta: {
+    color: T.muted,
+    fontFamily: 'Courier New',
+    fontSize: 11,
+  },
+  graphBlock: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 10,
+    gap: 7,
+  },
+  graphTitle: { color: T.textDim, fontSize: 12, fontWeight: '700' },
+  graphValue: { color: T.text, fontFamily: 'Courier New', fontSize: 12 },
+  graphFrame: {
+    backgroundColor: T.surface2,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  graphLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  graphLabel: { color: T.muted, fontFamily: 'Courier New', fontSize: 10 },
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  calendarDay: {
+    width: 11,
+    height: 11,
+    borderRadius: 3,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDayMarked: {
+    backgroundColor: accentAlpha(0.2),
+    borderColor: T.accent,
+  },
+  calendarMark: {
+    width: 5,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: T.accent,
+  },
+  prRow: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  prLabel: { flex: 1, color: T.textDim, fontSize: 12 },
+  prDate: { color: T.muted, fontFamily: 'Courier New', fontSize: 11 },
   issueHistoryBlock: {
     backgroundColor: T.surface,
     borderWidth: 1,
@@ -498,7 +904,7 @@ const styles = StyleSheet.create({
   historyDate: { color: T.text, fontSize: 14, fontWeight: '700' },
   historyVolume: { color: T.textDim, fontFamily: 'Courier New', fontSize: 12 },
   historySets: { color: T.textDim, fontFamily: 'Courier New', fontSize: 12, marginTop: 8 },
-  metricsRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   metric: {
     color: T.muted,
     fontFamily: 'Courier New',
@@ -508,4 +914,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
   },
+  sessionIssueBlock: {
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 8,
+    gap: 6,
+  },
+  sessionIssueRow: { gap: 3 },
+  sessionIssueText: { color: T.warning, fontFamily: 'Courier New', fontSize: 11 },
+  sessionIssueNote: { color: T.muted, fontSize: 12 },
 });

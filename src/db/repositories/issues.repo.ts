@@ -26,6 +26,10 @@ export interface ExerciseIssueEventWithNames extends ExerciseIssueEvent {
   exercise_name: string;
 }
 
+export interface ExerciseIssueEventWithIssueName extends ExerciseIssueEvent {
+  issue_name: string;
+}
+
 export interface IssueExerciseLinkWithExerciseName extends IssueExerciseLink {
   exercise_name: string;
 }
@@ -649,6 +653,22 @@ export async function getIssueRecentEvents(
       ORDER BY e.created_at DESC
       LIMIT ?`,
     [issueId, limit],
+  );
+}
+
+export async function getExerciseIssueEventsForExercise(
+  db: SQLiteDatabase,
+  exerciseId: string,
+  limit = 50,
+): Promise<ExerciseIssueEventWithIssueName[]> {
+  return db.getAllAsync<ExerciseIssueEventWithIssueName>(
+    `SELECT e.*, i.name AS issue_name
+       FROM exercise_issue_events e
+       JOIN issues i ON i.id = e.issue_id
+      WHERE e.exercise_id = ?
+      ORDER BY e.created_at DESC
+      LIMIT ?`,
+    [exerciseId, limit],
   );
 }
 
