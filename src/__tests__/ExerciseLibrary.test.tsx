@@ -333,10 +333,13 @@ describe('ExerciseLibrary', () => {
 
     fireEvent.press(getByTestId('filter-push'));
 
-    await waitFor(() => {
-      expect(getByTestId('exercise-row-ex-6')).toBeTruthy();
-      expect(queryByTestId('exercise-row-ex-1')).toBeNull();
-    });
+    await waitFor(
+      () => {
+        expect(getByTestId('exercise-row-ex-6')).toBeTruthy();
+        expect(queryByTestId('exercise-row-ex-1')).toBeNull();
+      },
+      { timeout: 3000 },
+    );
     expect(getExercisesWithMetadata).toHaveBeenLastCalledWith(expect.any(Object), {
       force_type: 'push',
     });

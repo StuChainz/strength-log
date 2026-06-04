@@ -1412,6 +1412,18 @@ describe('core app flow repository acceptance', () => {
         'SELECT COUNT(*) AS count FROM weekly_insight_cards',
       ),
     ).toEqual({ count: 1 });
+
+    const nextSundayEvening = sundayEvening + 7 * 24 * 60 * 60 * 1000;
+    const nextWeekCard = await maybeGenerateWeeklyInsight(db as never, nextSundayEvening);
+
+    expect(nextWeekCard?.id).not.toBe(card?.id);
+    expect(nextWeekCard?.generated_for_week_start).not.toBe(card?.generated_for_week_start);
+    expect(nextWeekCard?.dismissed_at).toBeNull();
+    expect(
+      await db.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM weekly_insight_cards',
+      ),
+    ).toEqual({ count: 2 });
   });
 
   it('exports representative local tables and does not crash on custom exercises missing metadata', async () => {
