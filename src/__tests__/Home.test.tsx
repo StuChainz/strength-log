@@ -344,6 +344,31 @@ describe('Home screen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('LiveWorkout', { templateId: 'template-push' });
   });
 
+  it('shows a Training Calendar entry without moving active resume or Start Workout priority', async () => {
+    getSessionRecoveryMock.mockResolvedValue({
+      status: 'active',
+      session: activeSession,
+      sessions: [activeSession],
+    });
+
+    const { toJSON } = render(<Home />);
+
+    await waitFor(() => expect(screen.getByTestId('home-training-calendar-card')).toBeTruthy());
+    expect(screen.getByText('Training Calendar')).toBeTruthy();
+    expect(screen.getByText('Consistency and completed workouts')).toBeTruthy();
+
+    const testIds = collectTestIds(toJSON());
+    expect(testIds.indexOf('active-workout-card')).toBeLessThan(
+      testIds.indexOf('start-workout-btn'),
+    );
+    expect(testIds.indexOf('start-workout-btn')).toBeLessThan(
+      testIds.indexOf('home-training-calendar-card'),
+    );
+
+    fireEvent.press(screen.getByTestId('home-training-calendar-card'));
+    expect(mockNavigate).toHaveBeenCalledWith('TrainingDashboard');
+  });
+
   it('renders Training Volume with sessions, sets, tonnes, and coloured muscle rows', async () => {
     render(<Home />);
 

@@ -17,6 +17,7 @@ import Issues from '@/screens/Issues';
 import IssueDetail from '@/screens/IssueDetail';
 import Insights from '@/screens/Insights';
 import TrainingVolume from '@/screens/TrainingVolume';
+import TrainingDashboard from '@/screens/TrainingDashboard';
 import Onboarding from '@/screens/Onboarding';
 import { T } from '@/theme/tokens';
 import type { RootStackParamList, MainTabParamList } from './types';
@@ -125,6 +126,7 @@ export function RootNavigator({ showOnboarding }: { showOnboarding: boolean }) {
       <Stack.Screen name="ProgramLibrary" component={ProgramLibrary} />
       <Stack.Screen name="ProgramPreview" component={ProgramPreview} />
       <Stack.Screen name="TrainingVolume" component={TrainingVolume} />
+      <Stack.Screen name="TrainingDashboard" component={TrainingDashboard} />
       <Stack.Screen
         name="ExerciseEdit"
         component={ExerciseEdit}

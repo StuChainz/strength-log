@@ -526,6 +526,24 @@ export default function Home() {
         </View>
 
         <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.dashboardLink}
+            activeOpacity={0.86}
+            onPress={() => navigation.navigate('TrainingDashboard')}
+            testID="home-training-calendar-card"
+          >
+            <View style={styles.dashboardLinkIcon}>
+              <Ionicons name="calendar-outline" size={18} color={T.accent} />
+            </View>
+            <View style={styles.dashboardLinkText}>
+              <Text style={styles.dashboardLinkTitle}>Training Calendar</Text>
+              <Text style={styles.dashboardLinkMeta}>Consistency and completed workouts</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={17} color={T.muted} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionLabel}>TRAINING VOLUME · PAST 7 DAYS</Text>
           <TouchableOpacity
             style={styles.volumeCard}
@@ -984,6 +1002,29 @@ const styles = StyleSheet.create({
   templateName: { color: T.text, fontSize: 16, fontWeight: '800' },
   templateMeta: { color: T.textDim, fontSize: 14, fontWeight: '600', marginTop: 7 },
   templateUsed: { color: T.muted, fontSize: 13, fontWeight: '600', marginTop: 9 },
+
+  dashboardLink: {
+    minHeight: 58,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surface,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  dashboardLinkIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: T.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dashboardLinkText: { flex: 1, minWidth: 0 },
+  dashboardLinkTitle: { color: T.text, fontSize: 15, fontWeight: '800' },
+  dashboardLinkMeta: { color: T.muted, fontSize: 12, marginTop: 3 },
 
   volumeCard: {
     borderRadius: 14,

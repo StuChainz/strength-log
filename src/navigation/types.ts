@@ -21,6 +21,7 @@ export type RootStackParamList = {
   ProgramLibrary: undefined;
   ProgramPreview: { presetId: string };
   TrainingVolume: undefined;
+  TrainingDashboard: undefined;
 };
 
 export type MainTabParamList = {
@@ -110,4 +111,9 @@ export type ProgramPreviewRouteProp = RouteProp<RootStackParamList, 'ProgramPrev
 export type TrainingVolumeNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   'TrainingVolume'
+>;
+
+export type TrainingDashboardNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'TrainingDashboard'
 >;
