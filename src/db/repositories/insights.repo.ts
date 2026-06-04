@@ -17,9 +17,7 @@ interface InsightRow {
   tags: string | null;
 }
 
-export async function getLatestInsightCard(
-  db: SQLiteDatabase,
-): Promise<WeeklyInsightCard | null> {
+export async function getLatestInsightCard(db: SQLiteDatabase): Promise<WeeklyInsightCard | null> {
   return db.getFirstAsync<WeeklyInsightCard>(
     `SELECT * FROM weekly_insight_cards
       WHERE dismissed_at IS NULL
@@ -33,6 +31,17 @@ export async function getAllInsightCards(db: SQLiteDatabase): Promise<WeeklyInsi
     `SELECT * FROM weekly_insight_cards
       ORDER BY generated_for_week_start DESC`,
   );
+}
+
+export async function dismissInsightCard(
+  db: SQLiteDatabase,
+  cardId: string,
+  dismissedAt = Date.now(),
+): Promise<void> {
+  await db.runAsync('UPDATE weekly_insight_cards SET dismissed_at = ? WHERE id = ?', [
+    dismissedAt,
+    cardId,
+  ]);
 }
 
 async function loadInsightSessions(db: SQLiteDatabase, since: number): Promise<InsightSession[]> {
@@ -71,12 +80,12 @@ export async function maybeGenerateWeeklyInsight(
     'SELECT * FROM weekly_insight_cards WHERE generated_for_week_start = ?',
     [weekStart],
   );
-  if (existing) return existing;
+  if (existing) return existing.dismissed_at ? null : existing;
 
   const since = weekStart - TRAILING_WINDOW_WEEKS * 7 * 24 * 60 * 60 * 1000;
   const sessions = await loadInsightSessions(db, since);
   const generated = generateWeeklyInsight(sessions, weekStart);
-  if (!generated) return getLatestInsightCard(db);
+  if (!generated) return null;
 
   const id = newId();
   const createdAt = Date.now();

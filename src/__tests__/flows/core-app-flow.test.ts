@@ -39,7 +39,7 @@ import {
   getFinalPRsBySession,
 } from '@/db/repositories/prs.repo';
 import { getSavedTags, savePostSessionDetails, SESSION_TAGS } from '@/db/repositories/tags.repo';
-import { maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
+import { dismissInsightCard, maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
 import { exportDatabase } from '@/db/repositories/export.repo';
 import { getAppSettings, setAppSetting } from '@/db/repositories/settings.repo';
 import {
@@ -1398,6 +1398,15 @@ describe('core app flow repository acceptance', () => {
     expect(card?.body).toContain('Sample:');
     expect(card?.body).toContain('Confidence:');
     expect(card?.body).not.toMatch(/\b(caused|causes|proves|should|must|definitely)\b/i);
+    expect(
+      await db.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM weekly_insight_cards',
+      ),
+    ).toEqual({ count: 1 });
+
+    await dismissInsightCard(db as never, card?.id ?? '', sundayEvening + 1);
+
+    expect(await maybeGenerateWeeklyInsight(db as never, sundayEvening)).toBeNull();
     expect(
       await db.getFirstAsync<{ count: number }>(
         'SELECT COUNT(*) AS count FROM weekly_insight_cards',

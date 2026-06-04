@@ -179,6 +179,17 @@ describe('EndWorkoutSummary', () => {
     await waitFor(() => expect(getByText('No new PRs today.')).toBeTruthy());
   });
 
+  it('opens feedback from the workout summary header', async () => {
+    getWorkoutSummaryMock.mockResolvedValue(baseSummary);
+
+    const { getByTestId, getByText } = render(<EndWorkoutSummary />);
+
+    await waitFor(() => expect(getByText('Workout Complete')).toBeTruthy());
+    fireEvent.press(getByTestId('summary-feedback-btn'));
+
+    expect(getByTestId('feedback-modal')).toBeTruthy();
+  });
+
   it('renders collapsible Next Time recommendations', async () => {
     getWorkoutSummaryMock.mockResolvedValue({
       ...baseSummary,

@@ -95,8 +95,60 @@ describe('App startup', () => {
 
     const { getByText } = render(<App />);
 
-    await waitFor(() => expect(getByText('Fast strength training logging.')).toBeTruthy());
+    await waitFor(() =>
+      expect(getByText('Fast, local-first strength training logging.')).toBeTruthy(),
+    );
     expect(getByText('Get Started')).toBeTruthy();
+  });
+
+  it('introduces the main app features during onboarding', async () => {
+    getAppSettingsMock.mockResolvedValueOnce({
+      unit: 'kg',
+      weekStartDay: 'monday',
+      voiceMode: false,
+      onboardingCompleted: false,
+    });
+
+    const { getByText } = render(<App />);
+
+    await waitFor(() => expect(getByText('Get Started')).toBeTruthy());
+    fireEvent.press(getByText('Get Started'));
+
+    expect(getByText('Build Your Training')).toBeTruthy();
+    expect(getByText('Create custom exercises')).toBeTruthy();
+    expect(getByText('Build and edit templates')).toBeTruthy();
+    fireEvent.press(getByText('Next'));
+
+    expect(getByText('Log A Live Workout')).toBeTruthy();
+    expect(getByText('Edit, delete, or undo sets')).toBeTruthy();
+    expect(getByText('Use the rest timer between sets')).toBeTruthy();
+    fireEvent.press(getByText('Next'));
+
+    expect(getByText('Use Your History')).toBeTruthy();
+    expect(getByText('Use conservative next-set suggestions')).toBeTruthy();
+    fireEvent.press(getByText('Next'));
+
+    expect(getByText('Never Lose A Workout')).toBeTruthy();
+    expect(getByText('Keep an append-only event log')).toBeTruthy();
+    fireEvent.press(getByText('Next'));
+
+    expect(getByText('Finish With A Clear Summary')).toBeTruthy();
+    expect(getByText('Best Lift')).toBeTruthy();
+    expect(getByText('Grouped PRs')).toBeTruthy();
+    fireEvent.press(getByText('Next'));
+
+    expect(getByText('Add Context')).toBeTruthy();
+    expect(getByText('Post-session tags')).toBeTruthy();
+    expect(getByText('Energy rating')).toBeTruthy();
+    fireEvent.press(getByText('Next'));
+
+    expect(getByText('Review Progress')).toBeTruthy();
+    expect(getByText('Weekly insight card')).toBeTruthy();
+    expect(getByText('JSON export')).toBeTruthy();
+    fireEvent.press(getByText('Next'));
+
+    expect(getByText('Typed voice commands are optional')).toBeTruthy();
+    expect(getByText('Start Logging')).toBeTruthy();
   });
 
   it('persists onboarding completion and navigates to Home', async () => {
@@ -111,10 +163,9 @@ describe('App startup', () => {
 
     await waitFor(() => expect(getByText('Get Started')).toBeTruthy());
     fireEvent.press(getByText('Get Started'));
-    fireEvent.press(getByText('Next'));
-    fireEvent.press(getByText('Next'));
-    fireEvent.press(getByText('Next'));
-    fireEvent.press(getByText('Next'));
+    for (let step = 0; step < 7; step += 1) {
+      fireEvent.press(getByText('Next'));
+    }
     fireEvent.press(getByText('Start Logging'));
 
     await waitFor(() =>
@@ -127,7 +178,7 @@ describe('App startup', () => {
     const { getByText, queryByText } = render(<App />);
 
     await waitFor(() => expect(getByText('Start Workout')).toBeTruthy());
-    expect(queryByText('Fast strength training logging.')).toBeNull();
+    expect(queryByText('Fast, local-first strength training logging.')).toBeNull();
   });
 
   it('does not render navigation until database startup completes', async () => {

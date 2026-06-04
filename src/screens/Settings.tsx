@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  Linking,
   ScrollView,
   Share,
   StyleSheet,
@@ -12,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import FeedbackModal from '@/components/FeedbackModal';
 import { openDb, resetLocalData } from '@/db/client';
 import { exportDatabase } from '@/db/repositories/export.repo';
 import {
@@ -24,9 +24,6 @@ import { T } from '@/theme/tokens';
 import type { Unit } from '@/domain/types';
 import type { SettingsNavigationProp } from '@/navigation/types';
 
-const BETA_FEEDBACK_URL =
-  'https://github.com/StuChainz/strength-log/issues/new?title=Beta%20feedback&body=1.%20Was%20logging%20fast%20enough%3F%0A%0A2.%20What%20felt%20confusing%3F%0A%0A3.%20Did%20suggestions%20help%3F%0A%0A4.%20What%20broke%3F%0A%0A5.%20What%20would%20you%20need%20next%3F%0A';
-
 export default function Settings() {
   const navigation = useNavigation<SettingsNavigationProp>();
   const [settings, setSettings] = useState<AppSettings>({
@@ -36,6 +33,7 @@ export default function Settings() {
     onboardingCompleted: false,
   });
   const [busy, setBusy] = useState(false);
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
 
   const load = useCallback(async () => {
     const db = await openDb();
@@ -82,15 +80,6 @@ export default function Settings() {
         },
       ],
     );
-  };
-
-  const feedback = async () => {
-    const supported = await Linking.canOpenURL(BETA_FEEDBACK_URL);
-    if (!supported) {
-      Alert.alert('Beta feedback', 'Unable to open the feedback form right now.');
-      return;
-    }
-    await Linking.openURL(BETA_FEEDBACK_URL);
   };
 
   return (
@@ -160,9 +149,13 @@ export default function Settings() {
           <Text style={styles.actionText}>{busy ? 'Exporting…' : 'Export data'}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionRow} onPress={() => void feedback()}>
+        <TouchableOpacity
+          style={styles.actionRow}
+          onPress={() => setFeedbackVisible(true)}
+          testID="settings-feedback-row"
+        >
           <Ionicons name="chatbox-ellipses-outline" size={18} color={T.textDim} />
-          <Text style={styles.actionText}>Beta feedback</Text>
+          <Text style={styles.actionText}>Send Feedback</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -187,6 +180,12 @@ export default function Settings() {
           <Text style={styles.dangerText}>Wipe local data</Text>
         </TouchableOpacity>
       </ScrollView>
+      <FeedbackModal
+        visible={feedbackVisible}
+        currentRoute="Settings"
+        source="settings"
+        onClose={() => setFeedbackVisible(false)}
+      />
     </SafeAreaView>
   );
 }

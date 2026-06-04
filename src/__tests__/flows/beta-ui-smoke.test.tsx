@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
-import { Linking } from 'react-native';
+import { Share } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import PostSessionTags from '@/screens/PostSessionTags';
 import Settings from '@/screens/Settings';
 import { openDb } from '@/db/client';
@@ -11,7 +12,10 @@ import { getSavedTags, savePostSessionDetails } from '@/db/repositories/tags.rep
 const mockPopToTop = jest.fn();
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
-const mockDb = {};
+const mockDb = {
+  getAllAsync: jest.fn(),
+  getFirstAsync: jest.fn(),
+};
 
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
@@ -67,6 +71,14 @@ const savePostSessionDetailsMock = savePostSessionDetails as jest.MockedFunction
 describe('beta UI smoke tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockDb.getAllAsync.mockResolvedValue([]);
+    mockDb.getFirstAsync.mockImplementation((sql: string) => {
+      const normalized = sql.replace(/\s+/g, ' ');
+      if (normalized.includes("WHERE status = 'completed' ORDER BY ended_at DESC")) {
+        return Promise.resolve({ id: 'session-1' });
+      }
+      return Promise.resolve({ value: 0 });
+    });
     openDbMock.mockResolvedValue(mockDb as never);
     getAppSettingsMock.mockResolvedValue({
       unit: 'kg',
@@ -127,23 +139,38 @@ describe('beta UI smoke tests', () => {
     expect(mockPopToTop).toHaveBeenCalledTimes(1);
   });
 
-  it('Settings opens the beta feedback issue form', async () => {
-    const canOpenURLSpy = jest.spyOn(Linking, 'canOpenURL').mockResolvedValue(true);
-    const openURLSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+  it('Settings shares a local feedback payload', async () => {
+    const shareSpy = jest
+      .spyOn(Share, 'share')
+      .mockResolvedValue({ action: Share.sharedAction });
+    const setStringAsyncMock = Clipboard.setStringAsync as jest.MockedFunction<
+      typeof Clipboard.setStringAsync
+    >;
+    setStringAsyncMock.mockClear();
 
-    const { getByText } = render(<Settings />);
+    const { getByTestId, getByText } = render(<Settings />);
 
-    await waitFor(() => expect(getByText('Beta feedback')).toBeTruthy());
-    fireEvent.press(getByText('Beta feedback'));
+    await waitFor(() => expect(getByText('Send Feedback')).toBeTruthy());
+    fireEvent.press(getByText('Send Feedback'));
+    await waitFor(() => expect(getByTestId('feedback-modal')).toBeTruthy());
+    fireEvent.press(getByTestId('feedback-type-suggestion'));
+    fireEvent.changeText(getByTestId('feedback-message-input'), '  Make timers louder  ');
+    fireEvent.press(getByTestId('feedback-submit-btn'));
 
-    await waitFor(() =>
-      expect(openURLSpy).toHaveBeenCalledWith(
-        expect.stringContaining('https://github.com/StuChainz/strength-log/issues/new'),
-      ),
-    );
+    await waitFor(() => expect(setStringAsyncMock).toHaveBeenCalledTimes(1));
+    const json = setStringAsyncMock.mock.calls[0][0];
+    expect(JSON.parse(json)).toMatchObject({
+      feedbackType: 'Suggestion',
+      message: 'Make timers louder',
+      context: { currentRoute: 'Settings', source: 'settings' },
+      workout: { lastCompletedWorkoutId: 'session-1' },
+    });
+    expect(shareSpy).toHaveBeenCalledWith({
+      title: 'Set feedback',
+      message: json,
+    });
 
-    canOpenURLSpy.mockRestore();
-    openURLSpy.mockRestore();
+    shareSpy.mockRestore();
   });
 
   it('Settings can reopen onboarding', async () => {

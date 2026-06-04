@@ -13,49 +13,94 @@ interface OnboardingStep {
   body?: string;
   bullets: string[];
   cta: string;
-  illustration?: 'logging';
+  icon: keyof typeof Ionicons.glyphMap;
+  illustration?: 'logging' | 'summary';
 }
 
 const STEPS: OnboardingStep[] = [
   {
     title: 'Set',
-    body: 'Fast strength training logging.',
+    body: 'Fast, local-first strength training logging.',
     bullets: ['Log workouts in seconds', 'Works offline', 'Never lose a workout'],
     cta: 'Get Started',
+    icon: 'barbell-outline',
   },
   {
-    title: 'Log Sets Quickly',
+    title: 'Build Your Training',
+    body: 'Set up the workouts you actually repeat.',
     bullets: [
-      'Choose an exercise',
-      'Enter weight and reps',
-      'Tap Log Set',
-      'Rest timer starts automatically',
+      'Browse seeded exercises',
+      'Create custom exercises',
+      'Build and edit templates',
+      'Save targets, notes, and rest times',
     ],
     cta: 'Next',
+    icon: 'list-outline',
+  },
+  {
+    title: 'Log A Live Workout',
+    bullets: [
+      'Tap in weight, reps, and optional RPE',
+      'Track working, warm-up, and drop sets',
+      'Edit, delete, or undo sets',
+      'Use the rest timer between sets',
+    ],
+    cta: 'Next',
+    icon: 'timer-outline',
     illustration: 'logging',
   },
   {
+    title: 'Use Your History',
+    body: 'See what happened last time before you log the next set.',
+    bullets: [
+      'Open recent exercise sessions',
+      'Review top sets, volume, and estimated 1RM',
+      'Use conservative next-set suggestions',
+      'Keep PR tracking local',
+    ],
+    cta: 'Next',
+    icon: 'time-outline',
+  },
+  {
     title: 'Never Lose A Workout',
-    body: 'Your workout is saved as you train.\n\nIf the app closes, crashes, or your phone dies:',
-    bullets: ['Reopen Set', 'Resume where you left off'],
+    body: 'Your workout is saved as you train.',
+    bullets: [
+      'Recover in-progress sessions',
+      'Avoid duplicate sets from double taps',
+      'Keep an append-only event log',
+      'Store everything on this device',
+    ],
     cta: 'Next',
+    icon: 'shield-checkmark-outline',
   },
   {
-    title: 'See What You Did Last Time',
-    body: 'Every exercise can show:',
-    bullets: ['Previous sessions', 'Recent performance', 'Conservative next-set suggestions'],
+    title: 'Finish With A Clear Summary',
+    body: 'After each workout, review the useful parts first.',
+    bullets: ['Summary stats', 'Best Lift', 'Grouped PRs', 'Muscles trained'],
     cta: 'Next',
+    icon: 'trophy-outline',
+    illustration: 'summary',
   },
   {
-    title: 'Review Your Training',
-    body: 'After every workout:',
-    bullets: ['Session summary', 'Muscle map', 'PR tracking', 'Training volume'],
+    title: 'Add Context',
+    body: 'The check-in after the summary keeps progress useful without slowing down logging.',
+    bullets: ['Post-session tags', 'Energy rating', 'Session note', 'Finish later if needed'],
     cta: 'Next',
+    icon: 'pricetags-outline',
+  },
+  {
+    title: 'Review Progress',
+    body: 'Use local training data to understand your work over time.',
+    bullets: ['Weekly insight card', 'Training volume trends', 'Exercise history', 'JSON export'],
+    cta: 'Next',
+    icon: 'analytics-outline',
   },
   {
     title: 'Help Improve Set',
-    body: "You're using a beta version.\n\nPlease report:",
+    body: "You're using a beta version.",
     bullets: [
+      'Toggle kg/lb and voice mode in Settings',
+      'Typed voice commands are optional',
       'Crashes',
       'Incorrect calculations',
       'Missing exercises',
@@ -63,6 +108,7 @@ const STEPS: OnboardingStep[] = [
       'Feedback is more valuable than feature requests.',
     ],
     cta: 'Start Logging',
+    icon: 'chatbox-ellipses-outline',
   },
 ];
 
@@ -111,11 +157,12 @@ export default function Onboarding() {
 
         <View style={styles.content}>
           <View style={styles.iconWrap}>
-            <Ionicons name="barbell-outline" size={26} color={T.accent} />
+            <Ionicons name={step.icon} size={26} color={T.accent} />
           </View>
           <Text style={styles.title}>{step.title}</Text>
           {step.body ? <Text style={styles.body}>{step.body}</Text> : null}
           {step.illustration === 'logging' ? <LoggingMockup /> : null}
+          {step.illustration === 'summary' ? <SummaryMockup /> : null}
           <View style={styles.bullets}>
             {step.bullets.map((bullet) => (
               <View key={bullet} style={styles.bulletRow}>
@@ -165,6 +212,32 @@ function LoggingMockup() {
       </View>
       <View style={styles.mockupButton}>
         <Text style={styles.mockupButtonText}>Log Set</Text>
+      </View>
+    </View>
+  );
+}
+
+function SummaryMockup() {
+  return (
+    <View style={styles.mockup} testID="onboarding-summary-mockup">
+      <View style={styles.summaryGrid}>
+        <View style={styles.summaryMetric}>
+          <Text style={styles.summaryValue}>47</Text>
+          <Text style={styles.mockupLabel}>min</Text>
+        </View>
+        <View style={styles.summaryMetric}>
+          <Text style={styles.summaryValue}>2.4k</Text>
+          <Text style={styles.mockupLabel}>kg</Text>
+        </View>
+        <View style={styles.summaryMetric}>
+          <Text style={styles.summaryValue}>9</Text>
+          <Text style={styles.mockupLabel}>PRs</Text>
+        </View>
+      </View>
+      <View style={styles.bestLiftPreview}>
+        <Text style={styles.mockupLabel}>Best lift</Text>
+        <Text style={styles.mockupTitle}>Back Squat</Text>
+        <Text style={styles.summaryLift}>120kg x 5</Text>
       </View>
     </View>
   );
@@ -224,7 +297,7 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     marginTop: 14,
   },
-  bullets: { gap: 12, marginTop: 24 },
+  bullets: { gap: 10, marginTop: 22 },
   bulletRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -282,4 +355,22 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   mockupButtonText: { color: T.accentInk, fontSize: 13, fontWeight: '800' },
+  summaryGrid: { flexDirection: 'row', gap: 8 },
+  summaryMetric: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: T.surface2,
+    borderRadius: 8,
+    padding: 10,
+    alignItems: 'center',
+  },
+  summaryValue: { color: T.text, fontSize: 20, fontWeight: '800' },
+  bestLiftPreview: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: T.accent,
+    borderRadius: 8,
+    padding: 12,
+  },
+  summaryLift: { color: T.accent, fontSize: 22, fontWeight: '900', marginTop: 8 },
 });

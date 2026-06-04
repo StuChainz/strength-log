@@ -4,6 +4,7 @@ import { openDb } from '@/db/client';
 import { getNormalTemplatesWithCount } from '@/db/repositories/templates.repo';
 import { discardSession, getSessionRecovery } from '@/db/repositories/sessions.repo';
 import { getTrainingVolumeReport } from '@/db/repositories/trainingVolume.repo';
+import { dismissInsightCard, maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
 
 const NOW = new Date('2026-06-02T12:00:00Z').getTime();
 const mockNavigate = jest.fn();
@@ -51,6 +52,11 @@ jest.mock('@/db/repositories/trainingVolume.repo', () => ({
   getTrainingVolumeReport: jest.fn(),
 }));
 
+jest.mock('@/db/repositories/insights.repo', () => ({
+  dismissInsightCard: jest.fn().mockResolvedValue(undefined),
+  maybeGenerateWeeklyInsight: jest.fn().mockResolvedValue(null),
+}));
+
 const openDbMock = openDb as jest.MockedFunction<typeof openDb>;
 const getNormalTemplatesWithCountMock = getNormalTemplatesWithCount as jest.MockedFunction<
   typeof getNormalTemplatesWithCount
@@ -59,6 +65,10 @@ const getSessionRecoveryMock = getSessionRecovery as jest.MockedFunction<typeof 
 const discardSessionMock = discardSession as jest.MockedFunction<typeof discardSession>;
 const getTrainingVolumeReportMock = getTrainingVolumeReport as jest.MockedFunction<
   typeof getTrainingVolumeReport
+>;
+const dismissInsightCardMock = dismissInsightCard as jest.MockedFunction<typeof dismissInsightCard>;
+const maybeGenerateWeeklyInsightMock = maybeGenerateWeeklyInsight as jest.MockedFunction<
+  typeof maybeGenerateWeeklyInsight
 >;
 
 const activeSession = {
@@ -72,6 +82,30 @@ const activeSession = {
   created_at: NOW - 90 * 60_000,
   updated_at: NOW - 24 * 60_000,
 };
+
+const weeklyInsightCard = {
+  id: 'insight-week-1',
+  generated_for_week_start: NOW - 24 * 60 * 60_000,
+  title: 'Sleep changed your sessions',
+  body: 'Workouts tagged after poor sleep had lower volume than your other recent workouts.',
+  sample_size: 12,
+  confidence_label: 'medium' as const,
+  payload_json: null,
+  dismissed_at: null,
+  created_at: NOW,
+};
+
+function collectTestIds(node: unknown): string[] {
+  if (!node || typeof node !== 'object') return [];
+  const record = node as {
+    props?: { testID?: string };
+    children?: unknown[];
+  };
+  return [
+    ...(record.props?.testID ? [record.props.testID] : []),
+    ...(record.children?.flatMap(collectTestIds) ?? []),
+  ];
+}
 
 function configureDbMock() {
   mockDb.getAllAsync.mockImplementation((sql: string) => {
@@ -153,6 +187,7 @@ describe('Home screen', () => {
         },
       ],
     });
+    maybeGenerateWeeklyInsightMock.mockResolvedValue(null);
     recentRows = [];
     templateLastUsedRows = [{ template_id: 'template-push', last_used_at: NOW - 24 * 60 * 60_000 }];
     trainingTotalsRows = [{ session_count: 3, set_count: 56, total_volume: 23_500 }];
@@ -175,6 +210,75 @@ describe('Home screen', () => {
     expect(screen.getByTestId('home-injuries-btn')).toBeTruthy();
     expect(screen.getByTestId('home-settings-btn')).toBeTruthy();
     expect(screen.queryByText('Resume Workout')).toBeNull();
+  });
+
+  it('places the weekly What Changed card below Start Workout and above secondary cards', async () => {
+    maybeGenerateWeeklyInsightMock.mockResolvedValue(weeklyInsightCard);
+
+    const { toJSON } = render(<Home />);
+
+    await waitFor(() => expect(screen.getByTestId('weekly-what-changed-card')).toBeTruthy());
+    expect(screen.getByText('What Changed?')).toBeTruthy();
+    expect(screen.getByText('Sleep changed your sessions')).toBeTruthy();
+
+    const testIds = collectTestIds(toJSON());
+    expect(testIds.indexOf('start-workout-btn')).toBeLessThan(
+      testIds.indexOf('weekly-what-changed-card'),
+    );
+    expect(testIds.indexOf('weekly-what-changed-card')).toBeLessThan(
+      testIds.indexOf('template-card-template-push'),
+    );
+    expect(screen.getAllByTestId('weekly-what-changed-card')).toHaveLength(1);
+  });
+
+  it('keeps the active workout card first when the weekly What Changed card is visible', async () => {
+    maybeGenerateWeeklyInsightMock.mockResolvedValue(weeklyInsightCard);
+    getSessionRecoveryMock.mockResolvedValue({
+      status: 'active',
+      session: activeSession,
+      sessions: [activeSession],
+    });
+
+    const { toJSON } = render(<Home />);
+
+    await waitFor(() => expect(screen.getByTestId('active-workout-card')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('weekly-what-changed-card')).toBeTruthy());
+
+    const testIds = collectTestIds(toJSON());
+    expect(testIds.indexOf('active-workout-card')).toBeLessThan(
+      testIds.indexOf('start-workout-btn'),
+    );
+    expect(testIds.indexOf('start-workout-btn')).toBeLessThan(
+      testIds.indexOf('weekly-what-changed-card'),
+    );
+  });
+
+  it('hides the weekly What Changed card when there is insufficient insight data', async () => {
+    maybeGenerateWeeklyInsightMock.mockResolvedValue(null);
+
+    render(<Home />);
+
+    await waitFor(() => expect(screen.getByTestId('start-workout-btn')).toBeTruthy());
+    expect(screen.queryByTestId('weekly-what-changed-card')).toBeNull();
+    expect(screen.queryByText('What Changed?')).toBeNull();
+  });
+
+  it('dismisses the weekly What Changed card without deleting source data', async () => {
+    maybeGenerateWeeklyInsightMock.mockResolvedValue(weeklyInsightCard);
+
+    render(<Home />);
+
+    await waitFor(() => expect(screen.getByTestId('weekly-what-changed-card')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('dismiss-weekly-what-changed'));
+
+    await waitFor(() =>
+      expect(dismissInsightCardMock).toHaveBeenCalledWith(
+        mockDb,
+        'insight-week-1',
+        expect.any(Number),
+      ),
+    );
+    expect(screen.queryByTestId('weekly-what-changed-card')).toBeNull();
   });
 
   it('renders active workout details in a compact card', async () => {
@@ -328,6 +432,16 @@ describe('Home screen', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith('Issues');
     expect(mockNavigate).toHaveBeenCalledWith('Settings');
+  });
+
+  it('opens feedback from the home overflow menu', async () => {
+    render(<Home />);
+
+    await waitFor(() => expect(screen.getByTestId('home-overflow-btn')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('home-overflow-btn'));
+    fireEvent.press(screen.getByTestId('home-overflow-feedback'));
+
+    expect(screen.getByTestId('feedback-modal')).toBeTruthy();
   });
 
   it('discards the active workout through the secondary action', async () => {

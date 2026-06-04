@@ -3,8 +3,13 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import FeedbackModal from '@/components/FeedbackModal';
 import { openDb } from '@/db/client';
-import { getNormalTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
+import { dismissInsightCard, maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
+import {
+  getNormalTemplatesWithCount,
+  type TemplateSummary,
+} from '@/db/repositories/templates.repo';
 import {
   discardSession,
   getSessionRecovery,
@@ -23,7 +28,7 @@ import {
 } from '@/domain/sessionMuscles';
 import { formatWorkoutVolumeKg } from '@/domain/volume';
 import { T } from '@/theme/tokens';
-import type { MuscleGroup, SetType, WorkoutSession } from '@/domain/types';
+import type { MuscleGroup, SetType, WeeklyInsightCard, WorkoutSession } from '@/domain/types';
 import type { HomeNavigationProp } from '@/navigation/types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -188,23 +193,34 @@ export default function Home() {
   const [sessionRecovery, setSessionRecovery] = useState<SessionRecovery | null>(null);
   const [unfinishedTagsSessionId, setUnfinishedTagsSessionId] = useState<string | null>(null);
   const [trainingReport, setTrainingReport] = useState<TrainingVolumeReport | null>(null);
+  const [weeklyInsight, setWeeklyInsight] = useState<WeeklyInsightCard | null>(null);
   const [trainingTotals, setTrainingTotals] = useState<TrainingTotalsRow>({
     session_count: 0,
     set_count: 0,
     total_volume: 0,
   });
   const [now, setNow] = useState<number>(Date.now);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const db = await openDb();
       const loadedAt = Date.now();
       const sevenDaysAgo = loadedAt - TRAINING_VOLUME_WINDOWS.last7Days.days * DAY_MS;
-      const [tpls, sessions, active, unfinishedTags, volumeReport, lastUsedRows, totalsRows] =
-        await Promise.all([
-          getNormalTemplatesWithCount(db),
-          db.getAllAsync<RecentSession>(
-            `SELECT sess.id,
+      const [
+        tpls,
+        sessions,
+        active,
+        unfinishedTags,
+        volumeReport,
+        weeklyInsightCard,
+        lastUsedRows,
+        totalsRows,
+      ] = await Promise.all([
+        getNormalTemplatesWithCount(db),
+        db.getAllAsync<RecentSession>(
+          `SELECT sess.id,
                     sess.name,
                     sess.started_at,
                     sess.ended_at,
@@ -222,20 +238,21 @@ export default function Home() {
               GROUP BY sess.id
               ORDER BY sess.ended_at DESC
               LIMIT 5`,
-          ),
-          getSessionRecovery(db),
-          getUntaggedCompletedSession(db),
-          getTrainingVolumeReport(db, { window: TRAINING_VOLUME_WINDOWS.last7Days, now: loadedAt }),
-          db.getAllAsync<TemplateLastUsedRow>(
-            `SELECT template_id, MAX(ended_at) AS last_used_at
+        ),
+        getSessionRecovery(db),
+        getUntaggedCompletedSession(db),
+        getTrainingVolumeReport(db, { window: TRAINING_VOLUME_WINDOWS.last7Days, now: loadedAt }),
+        maybeGenerateWeeklyInsight(db, loadedAt),
+        db.getAllAsync<TemplateLastUsedRow>(
+          `SELECT template_id, MAX(ended_at) AS last_used_at
                FROM workout_sessions
               WHERE status = 'completed'
                 AND template_id IS NOT NULL
                 AND ended_at IS NOT NULL
               GROUP BY template_id`,
-          ),
-          db.getAllAsync<TrainingTotalsRow>(
-            `SELECT COUNT(DISTINCT sess.id) AS session_count,
+        ),
+        db.getAllAsync<TrainingTotalsRow>(
+          `SELECT COUNT(DISTINCT sess.id) AS session_count,
                     COUNT(ws.id) AS set_count,
                     COALESCE(SUM(COALESCE(ws.weight, 0) * COALESCE(ws.reps, 0)), 0) AS total_volume
                FROM workout_sessions sess
@@ -246,14 +263,17 @@ export default function Home() {
                 AND COALESCE(ws.set_type, 'working') != 'warmup'
               WHERE sess.status = 'completed'
                 AND sess.started_at >= ?`,
-            [sevenDaysAgo],
-          ),
-        ]);
+          [sevenDaysAgo],
+        ),
+      ]);
 
       const activeSession = active.status === 'none' ? null : active.session;
       const [activeStatus, muscleRows] = await Promise.all([
         activeSession ? getActiveWorkoutSummary(db, activeSession, loadedAt) : null,
-        getRecentMuscleRows(db, sessions.map((session) => session.id)),
+        getRecentMuscleRows(
+          db,
+          sessions.map((session) => session.id),
+        ),
       ]);
 
       setTemplates(tpls);
@@ -267,6 +287,7 @@ export default function Home() {
       setActiveSummary(activeStatus);
       setUnfinishedTagsSessionId(unfinishedTags?.id ?? null);
       setTrainingReport(volumeReport);
+      setWeeklyInsight(weeklyInsightCard);
       setTrainingTotals(totalsRows[0] ?? { session_count: 0, set_count: 0, total_volume: 0 });
       setNow(loadedAt);
     } catch {
@@ -300,6 +321,19 @@ export default function Home() {
     await load();
   };
 
+  const handleDismissWeeklyInsight = async () => {
+    if (!weeklyInsight) return;
+    const dismissedCard = weeklyInsight;
+    setWeeklyInsight(null);
+    const db = await openDb();
+    await dismissInsightCard(db, dismissedCard.id, Date.now());
+  };
+
+  const openFeedback = () => {
+    setOverflowOpen(false);
+    setFeedbackVisible(true);
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
@@ -313,6 +347,14 @@ export default function Home() {
             <Text style={styles.title}>Set</Text>
           </View>
           <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              activeOpacity={0.82}
+              onPress={() => setOverflowOpen((open) => !open)}
+              testID="home-overflow-btn"
+            >
+              <Ionicons name="ellipsis-horizontal" size={18} color={T.text} />
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerIconButton}
               activeOpacity={0.82}
@@ -333,6 +375,19 @@ export default function Home() {
               <Text style={styles.weekCountValue}>{trainingTotals.session_count}</Text>
               <Text style={styles.weekCountLabel}>this week</Text>
             </View>
+            {overflowOpen && (
+              <View style={styles.overflowMenu} testID="home-overflow-menu">
+                <TouchableOpacity
+                  style={styles.overflowItem}
+                  activeOpacity={0.84}
+                  onPress={openFeedback}
+                  testID="home-overflow-feedback"
+                >
+                  <Ionicons name="chatbox-ellipses-outline" size={16} color={T.textDim} />
+                  <Text style={styles.overflowItemText}>Send Feedback</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
 
@@ -406,6 +461,37 @@ export default function Home() {
           </TouchableOpacity>
         </View>
 
+        {weeklyInsight && (
+          <View style={styles.section}>
+            <View style={styles.weeklyInsightCard} testID="weekly-what-changed-card">
+              <View style={styles.weeklyInsightTop}>
+                <View style={styles.weeklyInsightTitleWrap}>
+                  <Text style={styles.weeklyInsightEyebrow}>What Changed?</Text>
+                  <Text style={styles.weeklyInsightTitle} numberOfLines={1}>
+                    {weeklyInsight.title}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.weeklyInsightDismiss}
+                  activeOpacity={0.76}
+                  onPress={handleDismissWeeklyInsight}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss What Changed for this week"
+                  testID="dismiss-weekly-what-changed"
+                >
+                  <Ionicons name="close" size={16} color={T.muted} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.weeklyInsightBody} numberOfLines={2}>
+                {weeklyInsight.body}
+              </Text>
+              <Text style={styles.weeklyInsightMeta}>
+                {weeklyInsight.sample_size} workouts · {weeklyInsight.confidence_label} confidence
+              </Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>TEMPLATES</Text>
           <View style={styles.templateGrid}>
@@ -418,7 +504,9 @@ export default function Home() {
                 testID={`template-card-${template.id}`}
               >
                 <Text style={styles.templateName}>{template.name}</Text>
-                <Text style={styles.templateMeta}>{pluralize(template.item_count, 'exercise')}</Text>
+                <Text style={styles.templateMeta}>
+                  {pluralize(template.item_count, 'exercise')}
+                </Text>
                 <Text style={styles.templateUsed}>
                   {templateLastUsed[template.id]
                     ? `Used ${formatWhen(templateLastUsed[template.id], now).toLowerCase()}`
@@ -456,7 +544,9 @@ export default function Home() {
               </View>
               <View style={styles.volumeStat}>
                 <Text style={styles.volumeValue}>
-                  {trainingTotals.total_volume ? formatWorkoutVolumeKg(trainingTotals.total_volume) : '0 kg'}
+                  {trainingTotals.total_volume
+                    ? formatWorkoutVolumeKg(trainingTotals.total_volume)
+                    : '0 kg'}
                 </Text>
                 <Text style={styles.volumeLabel}>Volume</Text>
               </View>
@@ -477,14 +567,18 @@ export default function Home() {
                           },
                         ]}
                       >
-                        <Text style={styles.muscleBarValue}>{formatChipValue(row.totalExposure)}</Text>
+                        <Text style={styles.muscleBarValue}>
+                          {formatChipValue(row.totalExposure)}
+                        </Text>
                       </View>
                     </View>
                   </View>
                 ))}
               </View>
             ) : (
-              <Text style={styles.emptyVolumeText}>No completed working sets in the last 7 days.</Text>
+              <Text style={styles.emptyVolumeText}>
+                No completed working sets in the last 7 days.
+              </Text>
             )}
           </TouchableOpacity>
         </View>
@@ -514,14 +608,19 @@ export default function Home() {
                         )}
                       </View>
                       <Text style={styles.recentMeta}>
-                        {[formatWhen(session.started_at, now), formatDuration(session.started_at, session.ended_at)]
+                        {[
+                          formatWhen(session.started_at, now),
+                          formatDuration(session.started_at, session.ended_at),
+                        ]
                           .filter(Boolean)
                           .join(' · ')}
                       </Text>
                     </View>
                     <View style={styles.recentNumbers}>
                       <Text style={styles.recentVolume}>
-                        {session.total_volume_cached ? formatWorkoutVolumeKg(session.total_volume_cached) : '0 kg'}
+                        {session.total_volume_cached
+                          ? formatWorkoutVolumeKg(session.total_volume_cached)
+                          : '0 kg'}
                       </Text>
                       <Text style={styles.recentSets}>{pluralize(session.set_count, 'set')}</Text>
                     </View>
@@ -536,7 +635,9 @@ export default function Home() {
                             { backgroundColor: `${muscleColor(chip.muscle)}33` },
                           ]}
                         >
-                          <Text style={[styles.muscleChipText, { color: muscleColor(chip.muscle) }]}>
+                          <Text
+                            style={[styles.muscleChipText, { color: muscleColor(chip.muscle) }]}
+                          >
                             {chip.label} {formatChipValue(chip.value)}
                           </Text>
                         </View>
@@ -549,6 +650,12 @@ export default function Home() {
           </View>
         )}
       </ScrollView>
+      <FeedbackModal
+        visible={feedbackVisible}
+        currentRoute="Home"
+        source="home_overflow"
+        onClose={() => setFeedbackVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -688,6 +795,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
+    position: 'relative',
+    zIndex: 10,
   },
   headerIconButton: {
     width: 38,
@@ -703,6 +812,28 @@ const styles = StyleSheet.create({
   weekCount: { alignItems: 'flex-end', paddingBottom: 2 },
   weekCountValue: { color: T.text, fontSize: 22, fontWeight: '700' },
   weekCountLabel: { color: T.muted, fontSize: 12, marginTop: 2 },
+  overflowMenu: {
+    position: 'absolute',
+    top: 46,
+    right: 0,
+    minWidth: 178,
+    borderRadius: 12,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    padding: 6,
+    zIndex: 20,
+    elevation: 8,
+  },
+  overflowItem: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 10,
+    borderRadius: 9,
+  },
+  overflowItemText: { color: T.text, fontSize: 14, fontWeight: '800' },
 
   section: { paddingHorizontal: 18, paddingTop: 16 },
   sectionTight: { paddingTop: 14 },
@@ -792,6 +923,45 @@ const styles = StyleSheet.create({
   },
   startCardText: { color: T.accentInk, fontSize: 17, fontWeight: '800' },
   startCardTextSecondary: { color: T.text, fontSize: 15 },
+
+  weeklyInsightCard: {
+    borderRadius: 13,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  weeklyInsightTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  weeklyInsightTitleWrap: { flex: 1, minWidth: 0 },
+  weeklyInsightEyebrow: {
+    color: T.accent,
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  weeklyInsightTitle: { color: T.text, fontSize: 14, fontWeight: '800', marginTop: 4 },
+  weeklyInsightDismiss: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.surface2,
+  },
+  weeklyInsightBody: { color: T.textDim, fontSize: 13, lineHeight: 18, marginTop: 8 },
+  weeklyInsightMeta: {
+    color: T.muted,
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    marginTop: 8,
+  },
 
   templateGrid: {
     flexDirection: 'row',

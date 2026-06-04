@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import FeedbackModal from '@/components/FeedbackModal';
 import MusclesWorkedSection from '@/components/MusclesWorkedSection';
 import { openDb } from '@/db/client';
 import {
@@ -201,6 +202,7 @@ export default function EndWorkoutSummary() {
   const [summary, setSummary] = useState<WorkoutSummary | null>(null);
   const [nextTimeExpanded, setNextTimeExpanded] = useState(true);
   const [isFinishing, setFinishing] = useState(false);
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
   const finishRequestedRef = useRef(false);
   const finishWorkout = useCallback(() => {
     if (finishRequestedRef.current) return;
@@ -241,21 +243,34 @@ export default function EndWorkoutSummary() {
             <Text style={styles.eyebrow}>COMPLETE</Text>
             <Text style={styles.title}>Workout Complete</Text>
           </View>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Finish workout"
-            disabled={isFinishing}
-            hitSlop={8}
-            style={[styles.topFinishBtn, isFinishing && styles.disabledBtn]}
-            testID="summary-done-btn"
-            onPress={finishWorkout}
-          >
-            {isFinishing ? (
-              <ActivityIndicator color={T.accentInk} size="small" />
-            ) : (
-              <Text style={styles.topFinishText}>Finish</Text>
-            )}
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Send feedback"
+              disabled={isFinishing}
+              hitSlop={8}
+              style={styles.feedbackBtn}
+              testID="summary-feedback-btn"
+              onPress={() => setFeedbackVisible(true)}
+            >
+              <Ionicons name="chatbox-ellipses-outline" size={18} color={T.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Finish workout"
+              disabled={isFinishing}
+              hitSlop={8}
+              style={[styles.topFinishBtn, isFinishing && styles.disabledBtn]}
+              testID="summary-done-btn"
+              onPress={finishWorkout}
+            >
+              {isFinishing ? (
+                <ActivityIndicator color={T.accentInk} size="small" />
+              ) : (
+                <Text style={styles.topFinishText}>Finish</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
@@ -373,6 +388,12 @@ export default function EndWorkoutSummary() {
           )}
         </TouchableOpacity>
       </View>
+      <FeedbackModal
+        visible={feedbackVisible}
+        currentRoute="EndWorkoutSummary"
+        source="workout_summary"
+        onClose={() => setFeedbackVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -386,6 +407,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 16,
+  },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  feedbackBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   eyebrow: {
     fontFamily: 'Courier New',

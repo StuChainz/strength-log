@@ -1,30 +1,12 @@
-import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { openDb } from '@/db/client';
-import { getAllInsightCards, maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
-import { InsightCard } from '@/components/InsightCard';
 import { T } from '@/theme/tokens';
-import type { WeeklyInsightCard } from '@/domain/types';
 import type { InsightsNavigationProp } from '@/navigation/types';
 
 export default function Insights() {
   const navigation = useNavigation<InsightsNavigationProp>();
-  const [cards, setCards] = useState<WeeklyInsightCard[]>([]);
-
-  const load = useCallback(async () => {
-    const db = await openDb();
-    await maybeGenerateWeeklyInsight(db);
-    setCards(await getAllInsightCards(db));
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      void load();
-    }, [load]),
-  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -43,17 +25,6 @@ export default function Insights() {
           </View>
           <Ionicons name="chevron-forward" size={16} color={T.mutedDeep} />
         </TouchableOpacity>
-        {cards.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>Add tags after workouts to unlock weekly patterns.</Text>
-          </View>
-        ) : (
-          <View style={styles.list}>
-            {cards.map((card) => (
-              <InsightCard key={card.id} card={card} />
-            ))}
-          </View>
-        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -97,14 +68,4 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   reportTitle: { color: T.text, fontSize: 14, fontWeight: '600', marginTop: 3 },
-  list: { gap: 10, marginTop: 18 },
-  empty: {
-    marginTop: 18,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: T.border,
-    borderRadius: 14,
-    padding: 16,
-  },
-  emptyText: { fontSize: 14, color: T.textDim, lineHeight: 20 },
 });
