@@ -2,6 +2,7 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { ExercisePicker } from '@/components/ExercisePicker';
 import {
+  createExerciseIfMissing,
   getExercisesWithMetadata,
   type ExerciseMetadataFilters,
 } from '@/db/repositories/exercises.repo';
@@ -116,6 +117,7 @@ const mockExercises: ExerciseWithMetadata[] = [
     metadata: null,
   },
 ];
+let exerciseRows: ExerciseWithMetadata[] = [];
 
 function filterExercises(
   exercises: ExerciseWithMetadata[],
@@ -178,9 +180,13 @@ function buildExpandedSeedRows(): ExerciseWithMetadata[] {
 
 jest.mock('@/db/client', () => ({ openDb: jest.fn().mockResolvedValue({}) }));
 jest.mock('@/db/repositories/exercises.repo', () => ({
+  createExerciseIfMissing: jest.fn(),
   getExercisesWithMetadata: jest.fn(),
 }));
 
+const createExerciseIfMissingMock = createExerciseIfMissing as jest.MockedFunction<
+  typeof createExerciseIfMissing
+>;
 const getExercisesWithMetadataMock = getExercisesWithMetadata as jest.MockedFunction<
   typeof getExercisesWithMetadata
 >;
@@ -196,9 +202,33 @@ const defaultProps = {
 describe('ExercisePicker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    exerciseRows = mockExercises.map((exercise) => ({ ...exercise }));
     getExercisesWithMetadataMock.mockImplementation((_db, filters) =>
-      Promise.resolve(filterExercises(mockExercises, filters)),
+      Promise.resolve(filterExercises(exerciseRows, filters)),
     );
+    createExerciseIfMissingMock.mockImplementation(async (_db, input) => {
+      const existing = exerciseRows.find(
+        (exercise) => exercise.normalized_name === normalizeName(input.name),
+      );
+      if (existing) return { exercise: existing, created: false };
+
+      const created: ExerciseWithMetadata = {
+        id: 'custom-created',
+        name: input.name.trim(),
+        normalized_name: normalizeName(input.name),
+        aliases: [],
+        category: input.category,
+        primary_muscle: input.primary_muscle ?? null,
+        is_custom: 1,
+        default_unit: input.default_unit ?? null,
+        archived_at: null,
+        created_at: 2,
+        updated_at: 2,
+        metadata: null,
+      };
+      exerciseRows = [...exerciseRows, created];
+      return { exercise: created, created: true };
+    });
   });
 
   it('renders all exercises when visible', async () => {
@@ -365,5 +395,61 @@ describe('ExercisePicker', () => {
       expect((getByTestId('picker-search-input') as any).props.value).toBe('');
       expect(getByTestId('picker-exercise-ex-2')).toBeTruthy();
     });
+  });
+
+  it('creates a custom exercise and returns it to the picker results', async () => {
+    const { getByTestId, getByText } = render(<ExercisePicker {...defaultProps} />);
+    await waitFor(() => expect(getByTestId('picker-custom-exercise-btn')).toBeTruthy());
+
+    fireEvent.press(getByTestId('picker-custom-exercise-btn'));
+    fireEvent.changeText(getByTestId('custom-exercise-name-input'), ' Cable Y Raise ');
+    fireEvent.press(getByTestId('custom-category-cable'));
+    fireEvent.changeText(getByTestId('custom-exercise-muscle-input'), 'rear delts');
+    fireEvent.press(getByTestId('save-custom-exercise-btn'));
+
+    await waitFor(() =>
+      expect(createExerciseIfMissingMock).toHaveBeenCalledWith(expect.any(Object), {
+        name: 'Cable Y Raise',
+        category: 'cable',
+        primary_muscle: 'rear delts',
+        default_unit: null,
+      }),
+    );
+    await waitFor(() => expect(getByTestId('picker-exercise-custom-created')).toBeTruthy());
+    expect(getByText('Cable Y Raise')).toBeTruthy();
+  });
+
+  it('rejects a blank custom exercise name', async () => {
+    const { getByTestId, getByText } = render(<ExercisePicker {...defaultProps} />);
+    await waitFor(() => expect(getByTestId('picker-custom-exercise-btn')).toBeTruthy());
+
+    fireEvent.press(getByTestId('picker-custom-exercise-btn'));
+    fireEvent.changeText(getByTestId('custom-exercise-name-input'), '   ');
+    fireEvent.press(getByTestId('save-custom-exercise-btn'));
+
+    expect(createExerciseIfMissingMock).not.toHaveBeenCalled();
+    expect(getByText('Exercise name is required.')).toBeTruthy();
+  });
+
+  it('rejects a duplicate custom exercise name without creating another exercise', async () => {
+    const { getByTestId, getByText } = render(<ExercisePicker {...defaultProps} />);
+    await waitFor(() => expect(getByTestId('picker-custom-exercise-btn')).toBeTruthy());
+
+    fireEvent.press(getByTestId('picker-custom-exercise-btn'));
+    fireEvent.changeText(getByTestId('custom-exercise-name-input'), 'barbell squat');
+    fireEvent.press(getByTestId('save-custom-exercise-btn'));
+
+    await waitFor(() =>
+      expect(createExerciseIfMissingMock).toHaveBeenCalledWith(expect.any(Object), {
+        name: 'barbell squat',
+        category: 'other',
+        primary_muscle: null,
+        default_unit: null,
+      }),
+    );
+    expect(getByText('"Barbell Squat" already exists.')).toBeTruthy();
+    expect(exerciseRows.filter((exercise) => exercise.normalized_name === 'barbell squat')).toHaveLength(
+      1,
+    );
   });
 });

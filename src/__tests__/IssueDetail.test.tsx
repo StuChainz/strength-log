@@ -3,6 +3,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import IssueDetail from '@/screens/IssueDetail';
 import { openDb } from '@/db/client';
 import {
+  createIssue,
   createIssueCheckin,
   createIssueRoutine,
   createIssueExerciseLink,
@@ -108,6 +109,7 @@ jest.mock('@/components/ExercisePicker', () => {
 });
 
 const openDbMock = openDb as jest.MockedFunction<typeof openDb>;
+const createIssueMock = createIssue as jest.MockedFunction<typeof createIssue>;
 const createIssueCheckinMock = createIssueCheckin as jest.MockedFunction<typeof createIssueCheckin>;
 const getIssueByIdMock = getIssueById as jest.MockedFunction<typeof getIssueById>;
 const getIssueCheckinTrendMock = getIssueCheckinTrend as jest.MockedFunction<
@@ -276,6 +278,14 @@ describe('IssueDetail reaction correction', () => {
       },
     ];
     openDbMock.mockResolvedValue(mockDb as never);
+    createIssueMock.mockResolvedValue({
+      id: 'issue-created',
+      name: 'Knee Pain',
+      note: 'Front of knee',
+      active: 1,
+      created_at: 1,
+      updated_at: 1,
+    });
     createIssueCheckinMock.mockImplementation(async (_db, input) => {
       const nextCheckin = {
         id: `checkin-${recentCheckins.length + 1}`,
@@ -499,6 +509,125 @@ describe('IssueDetail reaction correction', () => {
     );
     await waitFor(() => expect(getByTestId('run-issue-routine-btn')).toBeTruthy());
     expect(getByText('Shoulder Pain Routine')).toBeTruthy();
+  });
+
+  it('creates a new Issue with routine options before the first save', async () => {
+    mockRouteParams = undefined;
+    createIssueMock.mockImplementationOnce(async (_db, input) => ({
+      id: 'issue-created',
+      name: input.name,
+      note: input.note?.trim() ? input.note.trim() : null,
+      active: 1,
+      created_at: 1,
+      updated_at: 1,
+    }));
+
+    const { getByTestId } = render(<IssueDetail />);
+
+    fireEvent.changeText(getByTestId('issue-name-input'), ' Knee Pain ');
+    fireEvent.changeText(getByTestId('issue-note-input'), ' Front of knee ');
+    fireEvent.press(getByTestId('initial-issue-severity-4'));
+    fireEvent.press(getByTestId('create-issue-routine-btn'));
+    fireEvent.press(getByTestId('add-routine-exercise-btn'));
+    fireEvent.press(getByTestId('mock-picker-select-face-pull'));
+    fireEvent.changeText(getByTestId(/^routine-target-sets-/), '3');
+    fireEvent.changeText(getByTestId(/^routine-target-reps-/), '12');
+    fireEvent.changeText(getByTestId(/^routine-note-/), 'Pain-free range');
+    fireEvent.press(getByTestId('save-issue-routine-btn'));
+
+    await waitFor(() => expect(getByTestId('issue-routine-summary')).toBeTruthy());
+    fireEvent.press(getByTestId('save-issue-btn'));
+
+    await waitFor(() =>
+      expect(createIssueMock).toHaveBeenCalledWith(mockDb, {
+        name: 'Knee Pain',
+        note: ' Front of knee ',
+      }),
+    );
+    expect(createIssueCheckinMock).toHaveBeenCalledWith(mockDb, {
+      issueId: 'issue-created',
+      severity: 4,
+      note: null,
+    });
+    expect(createIssueRoutineMock).toHaveBeenCalledWith(mockDb, {
+      issueId: 'issue-created',
+      name: 'Knee Pain Routine',
+      items: [
+        {
+          exerciseId: 'face-pull',
+          targetSets: 3,
+          targetReps: 12,
+          note: 'Pain-free range',
+        },
+      ],
+    });
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the existing Issue Routine edit flow working', async () => {
+    routine = {
+      id: 'routine-1',
+      issue_id: 'issue-1',
+      template_id: 'template-routine',
+      routine_name: 'Shoulder Pain Routine',
+      routine_note: null,
+      exercise_count: 1,
+      last_completed_at: null,
+      created_at: 1,
+      updated_at: 1,
+    };
+    routineItems = [
+      {
+        id: 'routine-item-1',
+        template_id: 'template-routine',
+        exercise_id: 'face-pull',
+        exercise_name: 'Face Pull',
+        exercise_category: 'cable',
+        exercise_default_unit: 'kg',
+        exercise_movement_pattern: null,
+        exercise_body_region: null,
+        exercise_mechanics: null,
+        exercise_equipment_json: null,
+        position: 0,
+        target_sets: 2,
+        target_reps: 15,
+        target_weight: null,
+        target_rpe: null,
+        rest_seconds: null,
+        note: 'Light',
+        progression_rule: 'none',
+        increment_kg: null,
+        increment_lb: null,
+        rep_range_min: null,
+        rep_range_max: null,
+        rpe_cap: null,
+        amrap_last_set: 0,
+      },
+    ];
+
+    const { getByTestId } = render(<IssueDetail />);
+
+    await waitFor(() => expect(getByTestId('edit-issue-routine-btn')).toBeTruthy());
+    fireEvent.press(getByTestId('edit-issue-routine-btn'));
+    fireEvent.changeText(getByTestId('routine-name-input'), 'Updated Shoulder Routine');
+    fireEvent.changeText(getByTestId(/^routine-target-sets-/), '3');
+    fireEvent.changeText(getByTestId(/^routine-target-reps-/), '12');
+    fireEvent.changeText(getByTestId(/^routine-note-/), 'Slow tempo');
+    fireEvent.press(getByTestId('save-issue-routine-btn'));
+
+    await waitFor(() =>
+      expect(updateIssueRoutineMock).toHaveBeenCalledWith(mockDb, 'issue-1', {
+        name: 'Updated Shoulder Routine',
+        items: [
+          {
+            exerciseId: 'face-pull',
+            targetSets: 3,
+            targetReps: 12,
+            note: 'Slow tempo',
+          },
+        ],
+      }),
+    );
   });
 
   it('runs an Issue Routine through LiveWorkout with the linked template', async () => {

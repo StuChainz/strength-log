@@ -347,6 +347,21 @@ export async function getExerciseById(db: SQLiteDatabase, id: string): Promise<E
   return db.getFirstAsync<Exercise>('SELECT * FROM exercises WHERE id = ?', [id]);
 }
 
+export async function getActiveExerciseByNormalizedName(
+  db: SQLiteDatabase,
+  name: string,
+): Promise<Exercise | null> {
+  return db.getFirstAsync<Exercise>(
+    `SELECT *
+       FROM exercises
+      WHERE normalized_name = ?
+        AND archived_at IS NULL
+      ORDER BY is_custom ASC, name ASC
+      LIMIT 1`,
+    [normalizeName(name)],
+  );
+}
+
 export async function searchExercises(db: SQLiteDatabase, query: string): Promise<Exercise[]> {
   const needle = normalizeName(query);
   return db.getAllAsync<Exercise>(
@@ -412,6 +427,19 @@ export async function createExercise(
   );
 
   return (await getExerciseById(db, id))!;
+}
+
+export async function createExerciseIfMissing(
+  db: SQLiteDatabase,
+  input: CreateExerciseInput,
+): Promise<{ exercise: Exercise; created: boolean }> {
+  const existing = await getActiveExerciseByNormalizedName(db, input.name);
+  if (existing) return { exercise: existing, created: false };
+
+  return {
+    exercise: await createExercise(db, { ...input, name: input.name.trim() }),
+    created: true,
+  };
 }
 
 export async function updateExercise(

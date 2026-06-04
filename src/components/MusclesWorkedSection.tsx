@@ -1,6 +1,7 @@
-import { memo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { memo, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Ellipse, Path, Rect } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import { MUSCLE_GROUPS, type MuscleGroup } from '@/domain/types';
 import { MUSCLE_LABELS } from '@/domain/muscleLabels';
 import type { SessionMuscleSummary } from '@/domain/sessionMuscles';
@@ -170,15 +171,41 @@ function BodyMapSvg({
   );
 }
 
-function MusclesWorkedSection({ muscleSummary }: { muscleSummary: SessionMuscleSummary }) {
+function MusclesWorkedSection({
+  muscleSummary,
+  title = 'Muscles Worked',
+  mapInitiallyExpanded = true,
+  collapsibleMap = false,
+}: {
+  muscleSummary: SessionMuscleSummary;
+  title?: string;
+  mapInitiallyExpanded?: boolean;
+  collapsibleMap?: boolean;
+}) {
   const ranking = getMuscleRanking(muscleSummary);
+  const [isMapExpanded, setMapExpanded] = useState(mapInitiallyExpanded);
 
   return (
     <View style={styles.block} testID="muscles-worked-section">
-      <Text style={styles.sectionLabel}>Muscles Worked</Text>
-      <View style={styles.mapsRow}>
-        <BodyMapSvg side="front" muscleSummary={muscleSummary} />
-        <BodyMapSvg side="back" muscleSummary={muscleSummary} />
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionLabel}>{title}</Text>
+        {collapsibleMap && (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={isMapExpanded ? 'Hide muscle map' : 'Show muscle map'}
+            hitSlop={8}
+            style={styles.mapToggle}
+            testID="muscle-map-toggle"
+            onPress={() => setMapExpanded((current) => !current)}
+          >
+            <Text style={styles.mapToggleText}>{isMapExpanded ? 'Hide map' : 'Show map'}</Text>
+            <Ionicons
+              name={isMapExpanded ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={T.muted}
+            />
+          </TouchableOpacity>
+        )}
       </View>
       <View style={styles.ranking} testID="muscle-ranking">
         {ranking.length === 0 ? (
@@ -192,6 +219,12 @@ function MusclesWorkedSection({ muscleSummary }: { muscleSummary: SessionMuscleS
           ))
         )}
       </View>
+      {isMapExpanded && (
+        <View style={styles.mapsRow}>
+          <BodyMapSvg side="front" muscleSummary={muscleSummary} />
+          <BodyMapSvg side="back" muscleSummary={muscleSummary} />
+        </View>
+      )}
     </View>
   );
 }
@@ -212,9 +245,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Courier New',
     fontSize: 11,
     textTransform: 'uppercase',
-    marginBottom: 12,
   },
-  mapsRow: { flexDirection: 'row', gap: 10 },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 10,
+  },
+  mapToggle: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  mapToggleText: { color: T.muted, fontSize: 13, fontWeight: '700' },
+  mapsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
   mapPanel: {
     flex: 1,
     minWidth: 0,
@@ -232,7 +273,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     textAlign: 'center',
   },
-  ranking: { marginTop: 12 },
+  ranking: {},
   rankingRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -28,6 +28,8 @@ export interface SaveIssueRoutineInput {
   name: string;
   items: {
     exerciseId: string;
+    exerciseName: string;
+    exerciseCategory: ExerciseCategory;
     targetSets: number;
     targetReps: number;
     note: string | null;
@@ -141,6 +143,8 @@ export default function IssueRoutineEditor({
       name: name.trim(),
       items: parsedItems.map(({ item, targetSets, targetReps }) => ({
         exerciseId: item.exerciseId,
+        exerciseName: item.exerciseName,
+        exerciseCategory: item.exerciseCategory,
         targetSets: targetSets!,
         targetReps: targetReps!,
         note: cleanNote(item.note),

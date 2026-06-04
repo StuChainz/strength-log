@@ -80,6 +80,15 @@ function formatLinkType(value: IssueExerciseLinkType): string {
   return value === 'helpful' ? 'Helpful' : 'Aggravating';
 }
 
+function toRepoRoutineItems(input: SaveIssueRoutineInput) {
+  return input.items.map((item) => ({
+    exerciseId: item.exerciseId,
+    targetSets: item.targetSets,
+    targetReps: item.targetReps,
+    note: item.note,
+  }));
+}
+
 export default function IssueDetail() {
   const navigation = useNavigation<IssueDetailNavigationProp>();
   const route = useRoute<IssueDetailRouteProp>();
@@ -97,7 +106,9 @@ export default function IssueDetail() {
   const [links, setLinks] = useState<IssueExerciseLinkWithExerciseName[]>([]);
   const [routine, setRoutine] = useState<IssueRoutineSummary | null>(null);
   const [routineItems, setRoutineItems] = useState<IssueRoutineEditorItem[]>([]);
+  const [pendingRoutine, setPendingRoutine] = useState<SaveIssueRoutineInput | null>(null);
   const [linkNoteDrafts, setLinkNoteDrafts] = useState<Record<string, string>>({});
+  const [initialSeverity, setInitialSeverity] = useState<number | null>(null);
   const [checkinSeverity, setCheckinSeverity] = useState<number | null>(null);
   const [checkinNote, setCheckinNote] = useState('');
   const [savingCheckin, setSavingCheckin] = useState(false);
@@ -163,7 +174,21 @@ export default function IssueDetail() {
     try {
       const db = await openDb();
       if (isNew) {
-        await createIssue(db, { name: trimmedName, note });
+        const createdIssue = await createIssue(db, { name: trimmedName, note });
+        if (initialSeverity !== null) {
+          await createIssueCheckin(db, {
+            issueId: createdIssue.id,
+            severity: initialSeverity,
+            note: null,
+          });
+        }
+        if (pendingRoutine) {
+          await createIssueRoutine(db, {
+            issueId: createdIssue.id,
+            name: pendingRoutine.name,
+            items: toRepoRoutineItems(pendingRoutine),
+          });
+        }
       } else {
         await updateIssue(db, issueId, { name: trimmedName, note, active });
       }
@@ -213,20 +238,24 @@ export default function IssueDetail() {
   };
 
   const saveRoutine = async (input: SaveIssueRoutineInput) => {
-    if (!issueId) return;
+    if (!issueId) {
+      setPendingRoutine(input);
+      setRoutineEditorVisible(false);
+      return;
+    }
     setSavingRoutine(true);
     try {
       const db = await openDb();
       if (routine) {
         await updateIssueRoutine(db, issueId, {
           name: input.name,
-          items: input.items,
+          items: toRepoRoutineItems(input),
         });
       } else {
         await createIssueRoutine(db, {
           issueId,
           name: input.name,
-          items: input.items,
+          items: toRepoRoutineItems(input),
         });
       }
       setRoutineEditorVisible(false);
@@ -284,7 +313,45 @@ export default function IssueDetail() {
   };
 
   const renderRoutine = () => {
-    if (isNew) return null;
+    if (isNew) {
+      return (
+        <View style={styles.routineBlock}>
+          <View style={styles.routineHeader}>
+            <Text style={styles.sectionLabel}>Issue Routine</Text>
+            <TouchableOpacity
+              style={styles.linkAddBtn}
+              onPress={() => setRoutineEditorVisible(true)}
+              testID={pendingRoutine ? 'edit-issue-routine-btn' : 'create-issue-routine-btn'}
+            >
+              <Ionicons
+                name={pendingRoutine ? 'create-outline' : 'add'}
+                size={14}
+                color={T.accentInk}
+              />
+              <Text style={styles.linkAddText}>{pendingRoutine ? 'Edit' : 'Create routine'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {!pendingRoutine ? (
+            <Text style={styles.emptyText} testID="issue-routine-empty">
+              No routine linked
+            </Text>
+          ) : (
+            <View style={styles.routineSummary} testID="issue-routine-summary">
+              <View style={styles.routineSummaryText}>
+                <Text style={styles.routineName} numberOfLines={1} testID="issue-routine-name">
+                  {pendingRoutine.name}
+                </Text>
+                <Text style={styles.routineMeta} testID="issue-routine-count">
+                  {pendingRoutine.items.length} exercise
+                  {pendingRoutine.items.length === 1 ? '' : 's'}
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+      );
+    }
     const lastCompleted = formatLastCompleted(routine?.last_completed_at ?? null);
     return (
       <View style={styles.routineBlock}>
@@ -457,6 +524,34 @@ export default function IssueDetail() {
     );
   };
 
+  const renderInitialSeverity = () => {
+    if (!isNew) return null;
+    return (
+      <View style={styles.fieldBlock}>
+        <Text style={styles.label}>Starting Severity</Text>
+        <View style={styles.severityRow}>
+          {[1, 2, 3, 4, 5].map((value) => (
+            <TouchableOpacity
+              key={value}
+              style={[styles.severityBtn, initialSeverity === value && styles.severityBtnSelected]}
+              onPress={() => setInitialSeverity((prev) => (prev === value ? null : value))}
+              testID={`initial-issue-severity-${value}`}
+            >
+              <Text
+                style={[
+                  styles.severityBtnText,
+                  initialSeverity === value && styles.severityBtnTextSelected,
+                ]}
+              >
+                {value}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
   const renderExerciseLinks = (linkType: IssueExerciseLinkType) => {
     const sectionLinks = links.filter((link) => link.link_type === linkType);
     return (
@@ -617,6 +712,8 @@ export default function IssueDetail() {
           />
         </View>
 
+        {renderInitialSeverity()}
+
         {!isNew && (
           <View style={styles.statusRow}>
             <Text style={styles.statusLabel}>Active</Text>
@@ -631,6 +728,8 @@ export default function IssueDetail() {
             </TouchableOpacity>
           </View>
         )}
+
+        {isNew && renderRoutine()}
 
         <TouchableOpacity
           style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
@@ -647,7 +746,7 @@ export default function IssueDetail() {
           </TouchableOpacity>
         )}
 
-        {renderRoutine()}
+        {!isNew && renderRoutine()}
         {renderCheckins()}
 
         {!isNew && (
@@ -706,8 +805,8 @@ export default function IssueDetail() {
       <IssueRoutineEditor
         visible={routineEditorVisible}
         issueName={name}
-        initialName={routine?.routine_name ?? null}
-        initialItems={routineItems}
+        initialName={pendingRoutine?.name ?? routine?.routine_name ?? null}
+        initialItems={pendingRoutine?.items ?? routineItems}
         saving={savingRoutine}
         onClose={() => setRoutineEditorVisible(false)}
         onSave={(input) => void saveRoutine(input)}

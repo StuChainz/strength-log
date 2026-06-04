@@ -95,10 +95,21 @@ export default function Settings() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={8}
+          testID="settings-back-btn"
+        >
+          <Ionicons name="arrow-back" size={20} color={T.textDim} />
+        </TouchableOpacity>
+        <View style={styles.headerText}>
+          <Text style={styles.eyebrow}>Beta</Text>
+          <Text style={styles.title}>Settings</Text>
+        </View>
+      </View>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Text style={styles.eyebrow}>Beta</Text>
-        <Text style={styles.title}>Settings</Text>
-
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Units</Text>
           <View style={styles.segmented}>
@@ -183,7 +194,28 @@ export default function Settings() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
   container: { flex: 1, backgroundColor: T.bg },
-  content: { padding: 22, paddingTop: 16, paddingBottom: 28 },
+  content: { padding: 22, paddingTop: 14, paddingBottom: 28 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+  },
+  backBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerText: { flex: 1, minWidth: 0 },
   eyebrow: {
     fontFamily: 'Courier New',
     fontSize: 10.5,

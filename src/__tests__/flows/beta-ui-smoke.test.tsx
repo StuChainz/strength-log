@@ -10,6 +10,7 @@ import { getSavedTags, savePostSessionDetails } from '@/db/repositories/tags.rep
 
 const mockPopToTop = jest.fn();
 const mockNavigate = jest.fn();
+const mockGoBack = jest.fn();
 const mockDb = {};
 
 jest.mock('@react-navigation/native', () => ({
@@ -17,6 +18,7 @@ jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({
     popToTop: mockPopToTop,
     navigate: mockNavigate,
+    goBack: mockGoBack,
   }),
   useRoute: () => ({ params: { sessionId: 'session-1' } }),
 }));
@@ -163,5 +165,14 @@ describe('beta UI smoke tests', () => {
     fireEvent.press(getByText('Injuries'));
 
     expect(mockNavigate).toHaveBeenCalledWith('Issues');
+  });
+
+  it('Settings has a working back action', async () => {
+    const { getByTestId } = render(<Settings />);
+
+    await waitFor(() => expect(getByTestId('settings-back-btn')).toBeTruthy());
+    fireEvent.press(getByTestId('settings-back-btn'));
+
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
   });
 });

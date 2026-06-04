@@ -11,14 +11,17 @@ import {
   View,
 } from 'react-native';
 import { openDb } from '@/db/client';
-import { getExercisesWithMetadata } from '@/db/repositories/exercises.repo';
 import {
   BASE_EXERCISE_FILTER_CHIPS,
   buildExerciseListFilters,
   type ExerciseFilterOption,
 } from '@/domain/exerciseFilters';
 import { formatExerciseMetadataSummary } from '@/domain/exerciseMetadata';
-import type { Exercise, ExerciseWithMetadata } from '@/domain/types';
+import {
+  createExerciseIfMissing,
+  getExercisesWithMetadata,
+} from '@/db/repositories/exercises.repo';
+import type { Exercise, ExerciseCategory, ExerciseWithMetadata } from '@/domain/types';
 
 interface ExercisePickerProps {
   visible: boolean;
@@ -26,11 +29,26 @@ interface ExercisePickerProps {
   onClose: () => void;
 }
 
+const CUSTOM_CATEGORIES: { label: string; value: ExerciseCategory }[] = [
+  { label: 'Barbell', value: 'barbell' },
+  { label: 'Dumbbell', value: 'dumbbell' },
+  { label: 'Machine', value: 'machine' },
+  { label: 'Bodyweight', value: 'bodyweight' },
+  { label: 'Cable', value: 'cable' },
+  { label: 'Other', value: 'other' },
+];
+
 export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerProps) {
   const [exercises, setExercises] = useState<ExerciseWithMetadata[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<ExerciseFilterOption>('all');
   const [loading, setLoading] = useState(false);
+  const [customVisible, setCustomVisible] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customPrimaryMuscle, setCustomPrimaryMuscle] = useState('');
+  const [customCategory, setCustomCategory] = useState<ExerciseCategory>('other');
+  const [customError, setCustomError] = useState<string | null>(null);
+  const [savingCustom, setSavingCustom] = useState(false);
   const dbRef = useRef<Awaited<ReturnType<typeof openDb>> | null>(null);
   const loadRequestIdRef = useRef(0);
   const activeFilterRef = useRef<ExerciseFilterOption>('all');
@@ -59,6 +77,11 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
     // Intentional: reset UI state when the modal opens.
     setSearchQuery('');
     setActiveFilter('all');
+    setCustomVisible(false);
+    setCustomName('');
+    setCustomPrimaryMuscle('');
+    setCustomCategory('other');
+    setCustomError(null);
     activeFilterRef.current = 'all';
     searchQueryRef.current = '';
     void loadExercises('all', '');
@@ -83,6 +106,49 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
   const handleSelect = (exercise: Exercise) => {
     onSelect(exercise);
     onClose();
+  };
+
+  const openCustomForm = () => {
+    setCustomName(searchQuery.trim());
+    setCustomPrimaryMuscle('');
+    setCustomCategory('other');
+    setCustomError(null);
+    setCustomVisible(true);
+  };
+
+  const saveCustomExercise = async () => {
+    const trimmedName = customName.trim();
+    if (!trimmedName) {
+      setCustomError('Exercise name is required.');
+      return;
+    }
+
+    setSavingCustom(true);
+    try {
+      const db = dbRef.current ?? (await openDb());
+      dbRef.current = db;
+      const result = await createExerciseIfMissing(db, {
+        name: trimmedName,
+        category: customCategory,
+        primary_muscle: customPrimaryMuscle.trim() || null,
+        default_unit: null,
+      });
+
+      if (!result.created) {
+        setCustomError(`"${result.exercise.name}" already exists.`);
+        return;
+      }
+
+      setCustomVisible(false);
+      setCustomError(null);
+      searchQueryRef.current = trimmedName;
+      activeFilterRef.current = 'all';
+      setSearchQuery(trimmedName);
+      setActiveFilter('all');
+      await loadExercises('all', trimmedName);
+    } finally {
+      setSavingCustom(false);
+    }
   };
 
   return (
@@ -118,6 +184,16 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
             autoCorrect={false}
             clearButtonMode="while-editing"
           />
+        </View>
+
+        <View style={styles.customActionWrap}>
+          <TouchableOpacity
+            style={styles.customAction}
+            onPress={openCustomForm}
+            testID="picker-custom-exercise-btn"
+          >
+            <Text style={styles.customActionText}>+ Custom Exercise</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Filter chips */}
@@ -178,6 +254,105 @@ export function ExercisePicker({ visible, onSelect, onClose }: ExercisePickerPro
           />
         )}
       </KeyboardAvoidingView>
+      <Modal
+        visible={customVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCustomVisible(false)}
+        testID="custom-exercise-modal"
+      >
+        <View style={styles.customBackdrop}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.customKeyboard}
+          >
+            <View style={styles.customSheet}>
+              <View style={styles.customHeader}>
+                <Text style={styles.customTitle}>Custom Exercise</Text>
+                <TouchableOpacity
+                  style={styles.customCloseBtn}
+                  onPress={() => setCustomVisible(false)}
+                  hitSlop={8}
+                  testID="custom-exercise-close-btn"
+                >
+                  <Text style={styles.customCloseText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.customContent}>
+                <Text style={styles.customLabel}>Name *</Text>
+                <TextInput
+                  style={[styles.customInput, customError ? styles.customInputError : null]}
+                  value={customName}
+                  onChangeText={(value) => {
+                    setCustomName(value);
+                    if (customError) setCustomError(null);
+                  }}
+                  placeholder="e.g. Cable Y Raise"
+                  placeholderTextColor="#555"
+                  autoCorrect={false}
+                  maxLength={100}
+                  testID="custom-exercise-name-input"
+                />
+                {customError ? (
+                  <Text style={styles.customError} testID="custom-exercise-error">
+                    {customError}
+                  </Text>
+                ) : null}
+
+                <Text style={styles.customLabel}>Category</Text>
+                <View style={styles.customChipRow}>
+                  {CUSTOM_CATEGORIES.map((category) => (
+                    <TouchableOpacity
+                      key={category.value}
+                      style={[
+                        styles.customChip,
+                        customCategory === category.value && styles.customChipActive,
+                      ]}
+                      onPress={() => setCustomCategory(category.value)}
+                      testID={`custom-category-${category.value}`}
+                    >
+                      <Text
+                        style={[
+                          styles.customChipText,
+                          customCategory === category.value && styles.customChipTextActive,
+                        ]}
+                      >
+                        {category.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.customLabel}>Primary Muscle</Text>
+                <TextInput
+                  style={styles.customInput}
+                  value={customPrimaryMuscle}
+                  onChangeText={setCustomPrimaryMuscle}
+                  placeholder="Optional"
+                  placeholderTextColor="#555"
+                  autoCorrect={false}
+                  maxLength={60}
+                  testID="custom-exercise-muscle-input"
+                />
+              </View>
+
+              <View style={styles.customFooter}>
+                <TouchableOpacity
+                  style={[styles.customSaveBtn, savingCustom && styles.customSaveBtnDisabled]}
+                  onPress={() => void saveCustomExercise()}
+                  disabled={savingCustom}
+                  testID="save-custom-exercise-btn"
+                >
+                  <Text style={styles.customSaveText}>
+                    {savingCustom ? 'Saving...' : 'Save Custom Exercise'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -209,6 +384,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a2a2a',
   },
+  customActionWrap: { paddingHorizontal: 12, paddingBottom: 8 },
+  customAction: {
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: '#ffc700',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customActionText: { color: '#0a0a0a', fontSize: 15, fontWeight: '800' },
 
   chipsList: { flexGrow: 0, flexShrink: 0, maxHeight: 46 },
   chipsRow: { paddingHorizontal: 12, paddingBottom: 8, gap: 8, alignItems: 'center' },
@@ -243,4 +427,79 @@ const styles = StyleSheet.create({
   separator: { height: 1, backgroundColor: '#1a1a1a', marginLeft: 16 },
 
   muted: { color: '#555', fontSize: 14 },
+  customBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.66)',
+    justifyContent: 'flex-end',
+  },
+  customKeyboard: { justifyContent: 'flex-end' },
+  customSheet: {
+    backgroundColor: '#0a0a0a',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    overflow: 'hidden',
+  },
+  customHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+  },
+  customTitle: { color: '#f5f5f5', fontSize: 18, fontWeight: '800' },
+  customCloseBtn: { minHeight: 34, justifyContent: 'center' },
+  customCloseText: { color: '#888', fontSize: 14, fontWeight: '700' },
+  customContent: { padding: 16, gap: 9 },
+  customLabel: {
+    color: '#888',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginTop: 8,
+  },
+  customInput: {
+    minHeight: 44,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    color: '#f5f5f5',
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  customInputError: { borderColor: '#ff7a6a' },
+  customError: { color: '#ff7a6a', fontSize: 12, fontWeight: '700' },
+  customChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  customChip: {
+    minHeight: 36,
+    borderRadius: 999,
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customChipActive: { backgroundColor: '#ffc700', borderColor: '#ffc700' },
+  customChipText: { color: '#888', fontSize: 13, fontWeight: '700' },
+  customChipTextActive: { color: '#0a0a0a' },
+  customFooter: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#1a1a1a',
+  },
+  customSaveBtn: {
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: '#ffc700',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customSaveBtnDisabled: { opacity: 0.6 },
+  customSaveText: { color: '#0a0a0a', fontSize: 15, fontWeight: '800' },
 });
