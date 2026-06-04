@@ -5,6 +5,9 @@ jest.mock('expo-notifications', () => ({
     DENIED: 'denied',
     GRANTED: 'granted',
   },
+  SchedulableTriggerInputTypes: {
+    TIME_INTERVAL: 'timeInterval',
+  },
   setNotificationHandler: jest.fn(),
   getPermissionsAsync: jest.fn(),
   requestPermissionsAsync: jest.fn(),
@@ -20,6 +23,7 @@ jest.mock('expo-notifications', () => ({
 const mockNotifications = require('expo-notifications') as {
   AndroidImportance: { MAX: string };
   PermissionStatus: { UNDETERMINED: string; DENIED: string; GRANTED: string };
+  SchedulableTriggerInputTypes: { TIME_INTERVAL: string };
   setNotificationHandler: jest.Mock;
   getPermissionsAsync: jest.Mock;
   requestPermissionsAsync: jest.Mock;
@@ -92,6 +96,7 @@ describe('rest timer notification scheduling', () => {
         },
       },
       trigger: {
+        type: 'timeInterval',
         channelId: restTimerNotificationTestIds.channelId,
         seconds: 90,
         repeats: false,

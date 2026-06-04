@@ -101,6 +101,7 @@ export function scheduleRestTimerNotification({
         },
       },
       trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
         channelId: REST_NOTIFICATION_CHANNEL_ID,
         seconds: Math.max(1, Math.floor(durationSeconds)),
         repeats: false,
