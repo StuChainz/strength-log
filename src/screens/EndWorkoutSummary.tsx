@@ -18,6 +18,7 @@ import {
   type WorkoutSummarySet,
 } from '@/db/repositories/sessionSummary.repo';
 import { calculateEstimated1RM } from '@/domain/prs';
+import type { NextTimePreview } from '@/domain/nextTimePreview';
 import { formatWorkoutVolumeKg } from '@/domain/volume';
 import { T } from '@/theme/tokens';
 import type {
@@ -169,11 +170,36 @@ export function groupPRsByExercise(prs: ExercisePRWithExercise[]): GroupedExerci
   return [...grouped.values()];
 }
 
+function NextTimeCard({ preview }: { preview: NextTimePreview }) {
+  return (
+    <View style={styles.nextTimeCard} testID={`next-time-card-${preview.exerciseId}`}>
+      <Text style={styles.nextTimeExercise}>{preview.exerciseName}</Text>
+      <View style={styles.nextTimeRow}>
+        <Text style={styles.nextTimeLabel}>Best set</Text>
+        <Text style={styles.nextTimeText}>{preview.bestSetLabel}</Text>
+      </View>
+      <View style={styles.nextTimeRow}>
+        <Text style={styles.nextTimeLabel}>Status</Text>
+        <Text style={styles.nextTimeText}>{preview.status}</Text>
+      </View>
+      <View style={styles.nextTimeHighlight}>
+        <Text style={styles.nextTimeHighlightLabel}>Next time</Text>
+        <Text style={styles.nextTimeTarget}>{preview.nextTargetLabel}</Text>
+      </View>
+      <View style={styles.nextTimeRow}>
+        <Text style={styles.nextTimeLabel}>Reason</Text>
+        <Text style={styles.nextTimeText}>{preview.reason}</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function EndWorkoutSummary() {
   const navigation = useNavigation<EndWorkoutSummaryNavigationProp>();
   const route = useRoute<EndWorkoutSummaryRouteProp>();
   const { sessionId } = route.params;
   const [summary, setSummary] = useState<WorkoutSummary | null>(null);
+  const [nextTimeExpanded, setNextTimeExpanded] = useState(true);
   const [isFinishing, setFinishing] = useState(false);
   const finishRequestedRef = useRef(false);
   const finishWorkout = useCallback(() => {
@@ -205,6 +231,7 @@ export default function EndWorkoutSummary() {
 
   const bestLift = getBestLift(summary);
   const groupedPRs = groupPRsByExercise(summary.prs);
+  const nextTimePreviews = summary.nextTimePreviews ?? [];
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -293,6 +320,32 @@ export default function EndWorkoutSummary() {
               ))
             )}
           </View>
+
+          {nextTimePreviews.length > 0 && (
+            <View style={styles.nextTimeSection} testID="next-time-section">
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={
+                  nextTimeExpanded ? 'Collapse Next Time' : 'Expand Next Time'
+                }
+                hitSlop={8}
+                style={styles.nextTimeHeader}
+                testID="next-time-toggle"
+                onPress={() => setNextTimeExpanded((expanded) => !expanded)}
+              >
+                <Text style={[styles.sectionTitle, styles.nextTimeTitle]}>Next Time</Text>
+                <Ionicons
+                  name={nextTimeExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={24}
+                  color={T.text}
+                />
+              </TouchableOpacity>
+              {nextTimeExpanded &&
+                nextTimePreviews.map((preview) => (
+                  <NextTimeCard key={preview.exerciseId} preview={preview} />
+                ))}
+            </View>
+          )}
 
           <MusclesWorkedSection
             muscleSummary={summary.muscleSummary}
@@ -434,6 +487,49 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   noPrText: { color: T.textDim, fontSize: 13 },
+  nextTimeSection: { marginTop: 28 },
+  nextTimeTitle: { marginBottom: 0 },
+  nextTimeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  nextTimeCard: {
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 14,
+    backgroundColor: T.surface,
+    padding: 16,
+    marginBottom: 12,
+  },
+  nextTimeExercise: { color: T.text, fontSize: 21, fontWeight: '900', marginBottom: 14 },
+  nextTimeRow: { marginTop: 10 },
+  nextTimeLabel: {
+    color: T.muted,
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  nextTimeText: { color: T.textDim, fontSize: 17, fontWeight: '700', lineHeight: 23 },
+  nextTimeHighlight: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: T.border,
+    paddingVertical: 12,
+    marginTop: 14,
+  },
+  nextTimeHighlightLabel: {
+    color: T.accent,
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  nextTimeTarget: { color: T.text, fontSize: 24, fontWeight: '900', lineHeight: 30 },
   primaryBtn: {
     marginTop: 'auto',
     flexDirection: 'row',

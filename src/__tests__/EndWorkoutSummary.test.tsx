@@ -179,6 +179,49 @@ describe('EndWorkoutSummary', () => {
     await waitFor(() => expect(getByText('No new PRs today.')).toBeTruthy());
   });
 
+  it('renders collapsible Next Time recommendations', async () => {
+    getWorkoutSummaryMock.mockResolvedValue({
+      ...baseSummary,
+      nextTimePreviews: [
+        {
+          exerciseId: 'arnold-press',
+          exerciseName: 'Arnold Press',
+          bestSetLabel: '40 kg × 10',
+          status: 'Double: build reps',
+          nextTargetLabel: '40 kg × 11',
+          reason: 'Double: build reps',
+          rule: 'double',
+          source: 'template_rule',
+          suggestion: {
+            label: 'Double: build reps',
+            reason: 'Double: build reps',
+            weight: 40,
+            reps: 11,
+            rpe: null,
+            unit: 'kg',
+            source: 'template_rule',
+            rule: 'double',
+          },
+        },
+      ],
+    });
+
+    const { getAllByText, getByTestId, getByText, queryByText } = render(<EndWorkoutSummary />);
+
+    await waitFor(() => expect(getByText('Next Time')).toBeTruthy());
+    expect(getByTestId('next-time-card-arnold-press')).toBeTruthy();
+    expect(getByText('Arnold Press')).toBeTruthy();
+    expect(getByText('40 kg × 10')).toBeTruthy();
+    expect(getByText('40 kg × 11')).toBeTruthy();
+    expect(getAllByText('Double: build reps')).toHaveLength(2);
+
+    fireEvent.press(getByTestId('next-time-toggle'));
+    expect(queryByText('40 kg × 11')).toBeNull();
+
+    fireEvent.press(getByTestId('next-time-toggle'));
+    expect(getByText('40 kg × 11')).toBeTruthy();
+  });
+
   it('sorts muscles by effective sets and keeps the body map collapsed by default', async () => {
     getWorkoutSummaryMock.mockResolvedValue({
       ...baseSummary,
