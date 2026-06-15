@@ -42,7 +42,8 @@ import {
   type ExerciseHistoryPoint,
 } from '@/domain/exerciseHistory';
 import { formatWorkoutVolumeKg } from '@/domain/volume';
-import { accentAlpha, T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import { accentAlpha, colorAlpha, type ThemeTokens } from '@/theme/tokens';
 import type {
   ExerciseCategory,
   ExercisePR,
@@ -174,9 +175,13 @@ function buildPath(points: ExerciseHistoryPoint[], width: number, height: number
 function MiniLineGraph({
   points,
   testID,
+  styles,
+  tokens: T,
 }: {
   points: ExerciseHistoryPoint[];
   testID: string;
+  styles: ReturnType<typeof createStyles>;
+  tokens: ThemeTokens;
 }) {
   const width = 260;
   const height = 64;
@@ -201,9 +206,13 @@ function MiniLineGraph({
 function MiniBarGraph({
   points,
   testID,
+  styles,
+  tokens: T,
 }: {
   points: ExerciseHistoryPoint[];
   testID: string;
+  styles: ReturnType<typeof createStyles>;
+  tokens: ThemeTokens;
 }) {
   const width = 260;
   const height = 64;
@@ -253,6 +262,8 @@ export default function ExerciseHistorySheet({
   onClose,
   onApplySuggestion,
 }: ExerciseHistorySheetProps) {
+  const { tokens: T } = useTheme();
+  const styles = useMemo(() => createStyles(T), [T]);
   const [history, setHistory] = useState<ExerciseHistorySession[]>([]);
   const [issueLinks, setIssueLinks] = useState<IssueExerciseLinkWithIssueName[]>([]);
   const [issueSummary, setIssueSummary] = useState<ExerciseIssueSummary[]>([]);
@@ -616,6 +627,8 @@ export default function ExerciseHistorySheet({
                           <MiniLineGraph
                             points={estimated1RMPoints}
                             testID="exercise-history-estimated-1rm-graph"
+                            styles={styles}
+                            tokens={T}
                           />
                         </View>
                       )}
@@ -630,6 +643,8 @@ export default function ExerciseHistorySheet({
                           <MiniBarGraph
                             points={volumePoints}
                             testID="exercise-history-volume-graph"
+                            styles={styles}
+                            tokens={T}
                           />
                         </View>
                       )}
@@ -805,7 +820,8 @@ export default function ExerciseHistorySheet({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(T: ThemeTokens) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.62)',
@@ -894,7 +910,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 999,
-    backgroundColor: 'rgba(10,10,10,0.12)',
+    backgroundColor: colorAlpha(T.accentInk, 0.12),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -971,7 +987,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   calendarDayMarked: {
-    backgroundColor: accentAlpha(0.2),
+    backgroundColor: accentAlpha(0.2, T),
     borderColor: T.accent,
   },
   calendarMark: {
@@ -1093,4 +1109,5 @@ const styles = StyleSheet.create({
   sessionIssueRow: { gap: 3 },
   sessionIssueText: { color: T.warning, fontFamily: 'Courier New', fontSize: 11 },
   sessionIssueNote: { color: T.muted, fontSize: 12 },
-});
+  });
+}

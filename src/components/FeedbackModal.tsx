@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,7 +22,8 @@ import {
   type FeedbackSource,
   type FeedbackType,
 } from '@/feedback/payload';
-import { T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import type { ThemeTokens } from '@/theme/tokens';
 
 interface FeedbackModalProps {
   visible: boolean;
@@ -37,6 +38,8 @@ export default function FeedbackModal({
   source,
   onClose,
 }: FeedbackModalProps) {
+  const { tokens: T } = useTheme();
+  const styles = useMemo(() => createStyles(T), [T]);
   const [feedbackType, setFeedbackType] = useState<FeedbackType>('Bug');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -172,7 +175,8 @@ export default function FeedbackModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(T: ThemeTokens) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.66)',
@@ -267,4 +271,5 @@ const styles = StyleSheet.create({
   },
   submitBtnDisabled: { opacity: 0.7 },
   submitText: { color: T.accentInk, fontSize: 15, fontWeight: '900' },
-});
+  });
+}

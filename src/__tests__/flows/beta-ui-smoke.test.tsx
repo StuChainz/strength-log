@@ -6,7 +6,7 @@ import PostSessionTags from '@/screens/PostSessionTags';
 import Settings from '@/screens/Settings';
 import { openDb } from '@/db/client';
 import { getWorkoutSummary } from '@/db/repositories/sessionSummary.repo';
-import { getAppSettings } from '@/db/repositories/settings.repo';
+import { getAppSettings, setAppSetting } from '@/db/repositories/settings.repo';
 import { getSavedTags, savePostSessionDetails } from '@/db/repositories/tags.repo';
 
 const mockPopToTop = jest.fn();
@@ -63,6 +63,7 @@ jest.mock('@/db/repositories/tags.repo', () => ({
 const openDbMock = openDb as jest.MockedFunction<typeof openDb>;
 const getWorkoutSummaryMock = getWorkoutSummary as jest.MockedFunction<typeof getWorkoutSummary>;
 const getAppSettingsMock = getAppSettings as jest.MockedFunction<typeof getAppSettings>;
+const setAppSettingMock = setAppSetting as jest.MockedFunction<typeof setAppSetting>;
 const getSavedTagsMock = getSavedTags as jest.MockedFunction<typeof getSavedTags>;
 const savePostSessionDetailsMock = savePostSessionDetails as jest.MockedFunction<
   typeof savePostSessionDetails
@@ -84,8 +85,10 @@ describe('beta UI smoke tests', () => {
       unit: 'kg',
       weekStartDay: 'monday',
       voiceMode: false,
+      themePreference: 'system',
       onboardingCompleted: true,
     });
+    setAppSettingMock.mockResolvedValue(undefined);
     getSavedTagsMock.mockResolvedValue([]);
     getWorkoutSummaryMock.mockResolvedValue({
       session: {
@@ -183,6 +186,28 @@ describe('beta UI smoke tests', () => {
     fireEvent.press(getByText('View Onboarding'));
 
     expect(mockNavigate).toHaveBeenCalledWith('Onboarding', { mode: 'revisit' });
+  });
+
+  it('Settings renders theme options', async () => {
+    const { getByText } = render(<Settings />);
+
+    await waitFor(() => expect(getByText('Theme')).toBeTruthy());
+    expect(getByText('System')).toBeTruthy();
+    expect(getByText('Performance Dark')).toBeTruthy();
+    expect(getByText('Warm Light')).toBeTruthy();
+    expect(getByText('Calm Dark')).toBeTruthy();
+    expect(getByText('Classic Neutral')).toBeTruthy();
+  });
+
+  it('Settings persists a selected theme', async () => {
+    const { getByTestId, getByText } = render(<Settings />);
+
+    await waitFor(() => expect(getByText('Theme')).toBeTruthy());
+    fireEvent.press(getByTestId('settings-theme-calm_dark'));
+
+    await waitFor(() =>
+      expect(setAppSettingMock).toHaveBeenCalledWith(mockDb, 'themePreference', 'calm_dark'),
+    );
   });
 
   it('Settings opens the Issues area', async () => {

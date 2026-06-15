@@ -1,11 +1,13 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import type { Unit } from '@/domain/types';
+import { DEFAULT_THEME_PREFERENCE, type AppThemePreference } from '@/theme/tokens';
 
 export type WeekStartDay = 'monday' | 'sunday';
 
 export interface AppSettings {
   unit: Unit;
   weekStartDay: WeekStartDay;
+  themePreference: AppThemePreference;
   voiceMode: boolean;
   onboardingCompleted: boolean;
 }
@@ -13,6 +15,7 @@ export interface AppSettings {
 const DEFAULT_SETTINGS: AppSettings = {
   unit: 'kg',
   weekStartDay: 'monday',
+  themePreference: DEFAULT_THEME_PREFERENCE,
   voiceMode: false,
   onboardingCompleted: false,
 };

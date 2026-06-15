@@ -1,4 +1,12 @@
-import { Component, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Component,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -7,20 +15,23 @@ import { openDb } from '@/db/client';
 import { getAppSettings } from '@/db/repositories/settings.repo';
 import { RootNavigator } from '@/navigation/RootNavigator';
 import { registerRestTimerNotificationNavigation } from '@/notifications/restTimerNotifications';
-import { T } from '@/theme/tokens';
+import { ThemeProvider, useTheme } from '@/theme/ThemeProvider';
+import { T, type ThemeTokens } from '@/theme/tokens';
 import type { RootStackParamList } from '@/navigation/types';
 
-const AppTheme = {
+function createNavigationTheme(tokens: ThemeTokens) {
+  return {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    primary: '#7c5cfc',
-    background: '#0a0a0a',
-    card: '#111111',
-    text: '#f5f5f5',
-    border: '#2a2a2a',
+    primary: tokens.accent,
+    background: tokens.bg,
+    card: tokens.surface,
+    text: tokens.text,
+    border: tokens.border,
   },
 };
+}
 
 interface StartupBoundaryState {
   error: Error | null;
@@ -56,11 +67,21 @@ class StartupBoundary extends Component<{ children: ReactNode }, StartupBoundary
 }
 
 export default function App() {
+  return (
+    <ThemeProvider>
+      <ThemedApp />
+    </ThemeProvider>
+  );
+}
+
+function ThemedApp() {
+  const { tokens, isDark } = useTheme();
   const [bootState, setBootState] = useState<'booting' | 'ready' | 'error'>('booting');
   const [bootError, setBootError] = useState<Error | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const bootAttemptRef = useRef(0);
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const appTheme = useMemo(() => createNavigationTheme(tokens), [tokens]);
 
   const boot = useCallback(() => {
     const bootAttempt = bootAttemptRef.current + 1;
@@ -103,7 +124,7 @@ export default function App() {
     <StartupBoundary>
       <SafeAreaProvider>
         {bootState === 'ready' ? (
-          <NavigationContainer ref={navigationRef} theme={AppTheme}>
+          <NavigationContainer ref={navigationRef} theme={appTheme}>
             <RootNavigator showOnboarding={showOnboarding} />
           </NavigationContainer>
         ) : bootState === 'error' ? (
@@ -111,7 +132,7 @@ export default function App() {
         ) : (
           <StartupLoading />
         )}
-        <StatusBar style="light" />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
       </SafeAreaProvider>
     </StartupBoundary>
   );

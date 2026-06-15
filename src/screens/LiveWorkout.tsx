@@ -60,7 +60,8 @@ import {
   cancelRestTimerNotification,
   scheduleRestTimerNotification,
 } from '@/notifications/restTimerNotifications';
-import { T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import { colorAlpha, type ThemeTokens } from '@/theme/tokens';
 import type { LiveWorkoutNavigationProp, LiveWorkoutRouteProp } from '@/navigation/types';
 import type {
   EventType,
@@ -222,6 +223,8 @@ function cancelRestNotificationSafely() {
 export default function LiveWorkout() {
   const navigation = useNavigation<LiveWorkoutNavigationProp>();
   const route = useRoute<LiveWorkoutRouteProp>();
+  const { tokens: T } = useTheme();
+  const styles = useMemo(() => createStyles(T), [T]);
   const templateId = route.params?.templateId;
   const notificationSessionId = route.params?.sessionId;
 
@@ -2517,7 +2520,8 @@ export default function LiveWorkout() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(T: ThemeTokens) {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
   keyboardAvoiding: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
@@ -2900,8 +2904,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   setRowPr: {
-    backgroundColor: '#151308',
-    borderColor: 'rgba(255,216,77,0.5)',
+    backgroundColor: colorAlpha(T.warning, 0.12),
+    borderColor: colorAlpha(T.warning, 0.5),
   },
   setRowMain: {
     flex: 1,
@@ -3461,4 +3465,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   saveEditText: { color: T.accentInk, fontSize: 15, fontWeight: '700' },
-});
+  });
+}

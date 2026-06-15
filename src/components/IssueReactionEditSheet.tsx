@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   StyleSheet,
@@ -8,7 +8,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import { colorAlpha, type ThemeTokens } from '@/theme/tokens';
 import type { ExerciseIssueEvent, IssueReactionType } from '@/domain/types';
 
 interface IssueReactionEditSheetProps {
@@ -36,6 +37,8 @@ export default function IssueReactionEditSheet({
   onSave,
   onDelete,
 }: IssueReactionEditSheetProps) {
+  const { tokens: T } = useTheme();
+  const styles = useMemo(() => createStyles(T), [T]);
   const [reactionType, setReactionType] = useState<IssueReactionType>('aggravated');
   const [severity, setSeverity] = useState<number | null>(null);
   const [note, setNote] = useState('');
@@ -151,7 +154,8 @@ export default function IssueReactionEditSheet({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(T: ThemeTokens) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.62)',
@@ -241,7 +245,7 @@ const styles = StyleSheet.create({
     minWidth: 104,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,122,106,0.35)',
+    borderColor: colorAlpha(T.danger, 0.35),
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -257,4 +261,5 @@ const styles = StyleSheet.create({
   },
   saveBtnDisabled: { opacity: 0.45 },
   saveText: { color: T.accentInk, fontSize: 15, fontWeight: '700' },
-});
+  });
+}

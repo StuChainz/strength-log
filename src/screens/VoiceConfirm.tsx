@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
 import type { IntentResult } from '@/voice/commands';
 
 interface VoiceConfirmProps {
@@ -7,11 +7,13 @@ interface VoiceConfirmProps {
 }
 
 export default function VoiceConfirm({ result }: VoiceConfirmProps) {
+  const { tokens: T } = useTheme();
+
   if (!result) return null;
   return (
-    <View style={styles.chip}>
-      <Text style={styles.intent}>{result.intent}</Text>
-      <Text style={styles.confidence}>{result.confidence}</Text>
+    <View style={[styles.chip, { backgroundColor: T.surface, borderColor: T.border }]}>
+      <Text style={[styles.intent, { color: T.text }]}>{result.intent}</Text>
+      <Text style={[styles.confidence, { color: T.muted }]}>{result.confidence}</Text>
     </View>
   );
 }
@@ -23,15 +25,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
     borderRadius: 12,
-    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: T.border,
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
-  intent: { color: T.text, fontFamily: 'Courier New', fontSize: 12 },
+  intent: { fontFamily: 'Courier New', fontSize: 12 },
   confidence: {
-    color: T.muted,
     fontFamily: 'Courier New',
     fontSize: 11,
     textTransform: 'uppercase',

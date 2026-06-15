@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ExercisePicker } from '@/components/ExercisePicker';
-import { T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import type { ThemeTokens } from '@/theme/tokens';
 import type { Exercise, ExerciseCategory } from '@/domain/types';
 
 export interface IssueRoutineEditorItem {
@@ -92,6 +93,8 @@ export default function IssueRoutineEditor({
   onClose,
   onSave,
 }: IssueRoutineEditorProps) {
+  const { tokens: T } = useTheme();
+  const styles = useMemo(() => createStyles(T), [T]);
   const [name, setName] = useState('');
   const [items, setItems] = useState<DraftItem[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -289,7 +292,8 @@ export default function IssueRoutineEditor({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(T: ThemeTokens) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.66)',
@@ -448,4 +452,5 @@ const styles = StyleSheet.create({
   },
   saveBtnDisabled: { opacity: 0.55 },
   saveText: { color: T.accentInk, fontSize: 15, fontWeight: '800' },
-});
+  });
+}

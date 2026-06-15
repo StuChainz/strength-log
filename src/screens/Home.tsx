@@ -28,7 +28,8 @@ import {
   type TrainingVolumeExposureSet,
 } from '@/domain/sessionMuscles';
 import { formatWorkoutVolumeKg } from '@/domain/volume';
-import { T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import { colorAlpha, type ThemeTokens } from '@/theme/tokens';
 import type { MuscleGroup, SetType, WeeklyInsightCard, WorkoutSession } from '@/domain/types';
 import type { HomeNavigationProp } from '@/navigation/types';
 
@@ -184,12 +185,14 @@ function formatChipValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-function muscleColor(muscle: MuscleGroup): string {
-  return MUSCLE_COLORS[muscle] ?? T.accent;
+function muscleColor(muscle: MuscleGroup, tokens: ThemeTokens): string {
+  return MUSCLE_COLORS[muscle] ?? tokens.accent;
 }
 
 export default function Home() {
   const navigation = useNavigation<HomeNavigationProp>();
+  const { tokens: T } = useTheme();
+  const styles = useMemo(() => createStyles(T), [T]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [activeProgramPresetId, setActiveProgramPresetId] = useState<string | null>(null);
   const [templateLastUsed, setTemplateLastUsed] = useState<Record<string, number>>({});
@@ -587,7 +590,7 @@ export default function Home() {
                           styles.muscleFill,
                           {
                             width: `${Math.max(8, (row.totalExposure / maxMuscleExposure) * 100)}%`,
-                            backgroundColor: muscleColor(row.muscle),
+                            backgroundColor: muscleColor(row.muscle, T),
                           },
                         ]}
                       >
@@ -656,11 +659,14 @@ export default function Home() {
                           key={chip.muscle}
                           style={[
                             styles.muscleChip,
-                            { backgroundColor: `${muscleColor(chip.muscle)}33` },
+                            { backgroundColor: colorAlpha(muscleColor(chip.muscle, T), 0.2) },
                           ]}
                         >
                           <Text
-                            style={[styles.muscleChipText, { color: muscleColor(chip.muscle) }]}
+                            style={[
+                              styles.muscleChipText,
+                              { color: muscleColor(chip.muscle, T) },
+                            ]}
                           >
                             {chip.label} {formatChipValue(chip.value)}
                           </Text>
@@ -814,7 +820,8 @@ function buildRecentMuscleChips(rows: RecentMuscleRow[]): Record<string, MuscleC
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(T: ThemeTokens) {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
   container: { flex: 1, backgroundColor: T.bg },
   content: { paddingBottom: 24 },
@@ -905,7 +912,7 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
   },
   activeStatus: {
-    color: 'rgba(10,10,10,0.7)',
+    color: colorAlpha(T.accentInk, 0.72),
     fontSize: 12,
     fontWeight: '800',
     textTransform: 'uppercase',
@@ -938,7 +945,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: 18,
     borderRadius: 13,
-    backgroundColor: 'rgba(10,10,10,0.1)',
+    backgroundColor: colorAlpha(T.accentInk, 0.12),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1120,7 +1127,7 @@ const styles = StyleSheet.create({
   recentVolume: { color: T.text, fontSize: 16, fontWeight: '800' },
   recentSets: { color: T.muted, fontSize: 12, marginTop: 5 },
   prBadge: {
-    backgroundColor: 'rgba(255,216,77,0.28)',
+    backgroundColor: colorAlpha(T.accent, 0.2),
     borderRadius: 7,
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -1129,4 +1136,5 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12 },
   muscleChip: { borderRadius: 5, paddingHorizontal: 9, paddingVertical: 5 },
   muscleChipText: { fontSize: 12, fontWeight: '800' },
-});
+  });
+}

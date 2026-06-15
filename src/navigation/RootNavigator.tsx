@@ -19,19 +19,22 @@ import Insights from '@/screens/Insights';
 import TrainingVolume from '@/screens/TrainingVolume';
 import TrainingDashboard from '@/screens/TrainingDashboard';
 import Onboarding from '@/screens/Onboarding';
-import { T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import { colorAlpha } from '@/theme/tokens';
 import type { RootStackParamList, MainTabParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 function MainTabs() {
+  const { tokens: T } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: 'rgba(10,10,10,0.96)',
+          backgroundColor: colorAlpha(T.bg, 0.96),
           borderTopColor: T.border,
           borderTopWidth: 1,
           paddingBottom: 0,
@@ -94,6 +97,8 @@ function MainTabs() {
 }
 
 export function RootNavigator({ showOnboarding }: { showOnboarding: boolean }) {
+  const { tokens: T } = useTheme();
+
   return (
     <Stack.Navigator
       initialRouteName={showOnboarding ? 'Onboarding' : 'Main'}

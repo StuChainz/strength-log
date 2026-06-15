@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -12,11 +12,14 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { getIssues, type IssueWithReactionCount } from '@/db/repositories/issues.repo';
-import { T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import type { ThemeTokens } from '@/theme/tokens';
 import type { IssuesNavigationProp } from '@/navigation/types';
 
 export default function Issues() {
   const navigation = useNavigation<IssuesNavigationProp>();
+  const { tokens: T } = useTheme();
+  const styles = useMemo(() => createStyles(T), [T]);
   const [issues, setIssues] = useState<IssueWithReactionCount[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -104,7 +107,8 @@ export default function Issues() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(T: ThemeTokens) {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
   header: {
     flexDirection: 'row',
@@ -174,4 +178,5 @@ const styles = StyleSheet.create({
   issueMeta: { alignItems: 'flex-end', gap: 4 },
   issueCount: { color: T.textDim, fontFamily: 'Courier New', fontSize: 11 },
   archivedText: { color: T.muted, fontFamily: 'Courier New', fontSize: 10 },
-});
+  });
+}

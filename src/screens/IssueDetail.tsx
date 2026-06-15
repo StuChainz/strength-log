@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -45,7 +45,8 @@ import {
   updateExerciseIssueEvent,
   updateIssue,
 } from '@/db/repositories/issues.repo';
-import { T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import { colorAlpha, type ThemeTokens } from '@/theme/tokens';
 import type { IssueDetailNavigationProp, IssueDetailRouteProp } from '@/navigation/types';
 import type { Exercise, IssueCheckin, IssueExerciseLinkType } from '@/domain/types';
 
@@ -92,6 +93,8 @@ function toRepoRoutineItems(input: SaveIssueRoutineInput) {
 export default function IssueDetail() {
   const navigation = useNavigation<IssueDetailNavigationProp>();
   const route = useRoute<IssueDetailRouteProp>();
+  const { tokens: T } = useTheme();
+  const styles = useMemo(() => createStyles(T), [T]);
   const issueId = route.params?.issueId ?? null;
   const isNew = issueId === null;
 
@@ -815,7 +818,8 @@ export default function IssueDetail() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(T: ThemeTokens) {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
   header: {
     flexDirection: 'row',
@@ -901,7 +905,7 @@ const styles = StyleSheet.create({
   archiveBtn: {
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,122,106,0.35)',
+    borderColor: colorAlpha(T.danger, 0.35),
     paddingVertical: 14,
     alignItems: 'center',
   },
@@ -953,7 +957,7 @@ const styles = StyleSheet.create({
     minHeight: 34,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,122,106,0.35)',
+    borderColor: colorAlpha(T.danger, 0.35),
     paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1104,4 +1108,5 @@ const styles = StyleSheet.create({
   eventDate: { color: T.muted, fontFamily: 'Courier New', fontSize: 11 },
   eventReaction: { color: T.textDim, fontFamily: 'Courier New', fontSize: 12, marginTop: 6 },
   eventNote: { color: T.text, fontSize: 13, marginTop: 7 },
-});
+  });
+}

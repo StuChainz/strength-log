@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -20,15 +20,26 @@ import {
   type AppSettings,
   type WeekStartDay,
 } from '@/db/repositories/settings.repo';
-import { T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import {
+  THEME_OPTIONS,
+  THEME_TOKENS,
+  colorAlpha,
+  resolveThemeId,
+  type AppThemePreference,
+  type ThemeTokens,
+} from '@/theme/tokens';
 import type { Unit } from '@/domain/types';
 import type { SettingsNavigationProp } from '@/navigation/types';
 
 export default function Settings() {
   const navigation = useNavigation<SettingsNavigationProp>();
+  const { preference, setThemePreference, tokens: T } = useTheme();
+  const styles = useMemo(() => createStyles(T), [T]);
   const [settings, setSettings] = useState<AppSettings>({
     unit: 'kg',
     weekStartDay: 'monday',
+    themePreference: preference,
     voiceMode: false,
     onboardingCompleted: false,
   });
@@ -46,8 +57,12 @@ export default function Settings() {
   }, [load]);
 
   const update = async <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
-    const db = await openDb();
-    await setAppSetting(db, key, value);
+    if (key === 'themePreference') {
+      await setThemePreference(value as AppThemePreference);
+    } else {
+      const db = await openDb();
+      await setAppSetting(db, key, value);
+    }
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -140,6 +155,47 @@ export default function Settings() {
           </View>
         </View>
 
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Theme</Text>
+          <View style={styles.themeList}>
+            {THEME_OPTIONS.map((option) => {
+              const selected = settings.themePreference === option.id;
+              const swatchTokens = THEME_TOKENS[resolveThemeId(option.id, 'dark')];
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[styles.themeRow, selected && styles.themeRowActive]}
+                  onPress={() => void update('themePreference', option.id)}
+                  testID={`settings-theme-${option.id}`}
+                >
+                  <View style={styles.themePreview} accessibilityElementsHidden>
+                    <View style={[styles.themePreviewBand, { backgroundColor: swatchTokens.bg }]} />
+                    <View
+                      style={[
+                        styles.themePreviewBand,
+                        { backgroundColor: swatchTokens.surface },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.themePreviewBand,
+                        { backgroundColor: swatchTokens.accent },
+                      ]}
+                    />
+                  </View>
+                  <View style={styles.themeText}>
+                    <Text style={styles.themeName}>{option.label}</Text>
+                    <Text style={styles.themeDescription}>{option.description}</Text>
+                  </View>
+                  {selected ? (
+                    <Ionicons name="checkmark-circle" size={22} color={T.accent} />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
         <TouchableOpacity
           style={styles.actionRow}
           onPress={() => void exportData()}
@@ -190,7 +246,8 @@ export default function Settings() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(T: ThemeTokens) {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
   container: { flex: 1, backgroundColor: T.bg },
   content: { padding: 22, paddingTop: 14, paddingBottom: 28 },
@@ -244,6 +301,32 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: T.accent },
   segmentText: { color: T.textDim, fontSize: 12, fontWeight: '700' },
   segmentTextActive: { color: T.accentInk },
+  themeList: { gap: 10 },
+  themeRow: {
+    minHeight: 76,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 12,
+  },
+  themeRowActive: { borderColor: T.accent, borderWidth: 2 },
+  themePreview: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  themePreviewBand: { flex: 1 },
+  themeText: { flex: 1, minWidth: 0 },
+  themeName: { color: T.text, fontSize: 15, fontWeight: '800' },
+  themeDescription: { color: T.textDim, fontSize: 12.5, fontWeight: '600', marginTop: 4 },
   actionRow: {
     marginTop: 12,
     flexDirection: 'row',
@@ -256,6 +339,7 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   actionText: { color: T.text, fontSize: 15, fontWeight: '700' },
-  dangerRow: { borderColor: 'rgba(255,122,106,0.35)' },
+  dangerRow: { borderColor: colorAlpha(T.danger, 0.35) },
   dangerText: { color: T.danger, fontSize: 15, fontWeight: '700' },
-});
+  });
+}

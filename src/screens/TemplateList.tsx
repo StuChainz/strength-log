@@ -13,7 +13,8 @@ import {
 } from '@/db/repositories/templates.repo';
 import { ALL_PRESETS } from '@/programs/presets';
 import { formatSetCount } from '@/programs/volume';
-import { T } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import type { ThemeTokens } from '@/theme/tokens';
 import type { TemplateListNavigationProp } from '@/navigation/types';
 
 export type TemplateProgramSection = {
@@ -93,6 +94,8 @@ function getTotalWorkingSets(templates: TemplateSummary[]): number {
 
 export default function TemplateList() {
   const navigation = useNavigation<TemplateListNavigationProp>();
+  const { tokens: T } = useTheme();
+  const styles = useMemo(() => createStyles(T), [T]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [activeProgramPresetId, setActiveProgramPresetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -322,6 +325,8 @@ export default function TemplateList() {
                               navigation.navigate('LiveWorkout', { templateId: template.id })
                             }
                             onArchive={() => handleArchiveTemplate(template)}
+                            styles={styles}
+                            tokens={T}
                           />
                         ))}
                       </View>
@@ -348,6 +353,8 @@ export default function TemplateList() {
                           navigation.navigate('LiveWorkout', { templateId: template.id })
                         }
                         onArchive={() => handleArchiveTemplate(template)}
+                        styles={styles}
+                        tokens={T}
                       />
                     ))}
                   </View>
@@ -367,12 +374,16 @@ function TemplateRow({
   onEdit,
   onStart,
   onArchive,
+  styles,
+  tokens: T,
 }: {
   template: TemplateSummary;
   formatLastUsed: (ts: number) => string;
   onEdit: () => void;
   onStart: () => void;
   onArchive: () => void;
+  styles: ReturnType<typeof createStyles>;
+  tokens: ThemeTokens;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -431,7 +442,8 @@ function TemplateRow({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(T: ThemeTokens) {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
   container: { flex: 1, backgroundColor: T.bg },
   content: { paddingBottom: 24 },
@@ -656,4 +668,5 @@ const styles = StyleSheet.create({
   emptyState: { paddingVertical: 40, alignItems: 'center' },
   emptyTitle: { color: T.text, fontSize: 17, fontWeight: '600', marginBottom: 8 },
   emptyHint: { color: T.muted, fontSize: 14, textAlign: 'center' },
-});
+  });
+}
