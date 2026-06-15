@@ -135,7 +135,7 @@ describe('TemplateList', () => {
     expect(mockNavigate).toHaveBeenCalledWith('ProgramLibrary');
   });
 
-  it('navigates to Injuries from the visible shortcut', async () => {
+  it('navigates to Issues from the visible shortcut', async () => {
     const { getByTestId } = render(<TemplateList />);
     await waitFor(() => expect(getByTestId('browse-injuries-btn')).toBeTruthy());
 

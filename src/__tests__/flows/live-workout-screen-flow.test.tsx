@@ -460,7 +460,7 @@ describe('LiveWorkout screen core flow', () => {
   it('displays an issue-suppressed suggestion reason', () => {
     getLiveWorkoutSuggestionMock.mockReturnValue({
       label: 'Repeat target',
-      reason: 'Issue marked aggravated recently: repeat target.',
+      reason: 'Recent issue note: repeat target.',
       weight: 80,
       reps: 5,
       rpe: null,
@@ -475,13 +475,13 @@ describe('LiveWorkout screen core flow', () => {
 
     const { getByText } = render(<LiveWorkout />);
 
-    expect(getByText('Issue marked aggravated recently: repeat target.')).toBeTruthy();
+    expect(getByText('Recent issue note: repeat target.')).toBeTruthy();
   });
 
   it('loads helpful alternatives when suggestion is issue-suppressed', async () => {
     getLiveWorkoutSuggestionMock.mockReturnValue({
       label: 'Repeat target',
-      reason: 'Issue marked aggravated recently: repeat target.',
+      reason: 'Recent issue note: repeat target.',
       weight: 80,
       reps: 5,
       rpe: null,
@@ -514,7 +514,7 @@ describe('LiveWorkout screen core flow', () => {
   it('renders helpful alternatives hint when results exist', async () => {
     getLiveWorkoutSuggestionMock.mockReturnValue({
       label: 'Repeat target',
-      reason: 'Issue marked aggravated recently: repeat target.',
+      reason: 'Recent issue note: repeat target.',
       weight: 80,
       reps: 5,
       rpe: null,
@@ -552,14 +552,14 @@ describe('LiveWorkout screen core flow', () => {
 
     await waitFor(() => expect(getByTestId('helpful-alternatives-hint')).toBeTruthy());
     expect(
-      getByText('Previously marked helpful: DB Floor Press, Machine Chest Press'),
+      getByText('Helpful before: DB Floor Press, Machine Chest Press'),
     ).toBeTruthy();
   });
 
-  it('renders no helpful alternatives recorded yet when suppressed but none exist', async () => {
+  it('hides the helpful alternatives hint when suppressed but none exist', async () => {
     getLiveWorkoutSuggestionMock.mockReturnValue({
       label: 'Repeat target',
-      reason: 'Issue marked aggravated recently: repeat target.',
+      reason: 'Recent issue note: repeat target.',
       weight: 80,
       reps: 5,
       rpe: null,
@@ -578,9 +578,10 @@ describe('LiveWorkout screen core flow', () => {
     getHelpfulIssueAlternativesMock.mockResolvedValue([]);
     useSessionStoreMock.mockReturnValue(activeStore({ sets: [] }));
 
-    const { getByText } = render(<LiveWorkout />);
+    const { queryByTestId } = render(<LiveWorkout />);
 
-    await waitFor(() => expect(getByText('No helpful alternatives recorded yet')).toBeTruthy());
+    await waitFor(() => expect(getHelpfulIssueAlternativesMock).toHaveBeenCalledTimes(1));
+    expect(queryByTestId('helpful-alternatives-hint')).toBeNull();
   });
 
   it('does not load or render alternatives when suggestion is not issue-suppressed', async () => {
@@ -596,12 +597,11 @@ describe('LiveWorkout screen core flow', () => {
     });
     useSessionStoreMock.mockReturnValue(activeStore({ sets: [] }));
 
-    const { queryByTestId, queryByText } = render(<LiveWorkout />);
+    const { queryByTestId } = render(<LiveWorkout />);
 
     await waitFor(() => expect(getActiveIssuesMock).toHaveBeenCalledTimes(1));
     expect(getHelpfulIssueAlternativesMock).not.toHaveBeenCalled();
     expect(queryByTestId('helpful-alternatives-hint')).toBeNull();
-    expect(queryByText('No helpful alternatives recorded yet')).toBeNull();
   });
 
   it('renders suggestion reason from a template rule and tapping only fills the logger', async () => {
@@ -741,6 +741,76 @@ describe('LiveWorkout screen core flow', () => {
         reactionType: 'aggravated',
         severity: 3,
         note: '',
+      }),
+    );
+  });
+
+  it('logs a set and then records a set-level aggravated Issue reaction with full context', async () => {
+    const logSet = jest.fn().mockResolvedValue(undefined);
+    const initialStore = activeStore({ sets: [], logSet });
+    useSessionStoreMock.mockReturnValue(initialStore);
+
+    const { getByTestId, rerender } = render(<LiveWorkout />);
+
+    fireEvent.changeText(getByTestId('weight-input'), '82.5');
+    fireEvent.changeText(getByTestId('reps-input'), '6');
+    fireEvent.press(getByTestId('rpe-toggle'));
+    fireEvent.press(getByTestId('rpe-option-8'));
+    fireEvent.press(getByTestId('log-set-btn'));
+
+    await waitFor(() =>
+      expect(logSet).toHaveBeenCalledWith({
+        exerciseId: 'bench',
+        weight: 82.5,
+        reps: 6,
+        rpe: 8,
+        unit: 'kg',
+        setType: 'working',
+      }),
+    );
+
+    useSessionStoreMock.mockReturnValue(
+      activeStore({
+        logSet,
+        sets: [
+          {
+            id: 'set-logged',
+            session_id: 'session-1',
+            exercise_id: 'bench',
+            position: 0,
+            weight: 82.5,
+            reps: 6,
+            rpe: 8,
+            unit: 'kg',
+            is_warmup: 0,
+            set_type: 'working',
+            logged_at: Date.now(),
+            source: 'tap',
+            client_set_id: 'client-set-logged',
+            deleted_at: null,
+          },
+        ],
+      }),
+    );
+    rerender(<LiveWorkout />);
+
+    fireEvent.press(getByTestId('set-issue-reaction-btn-set-logged'));
+    await waitFor(() => expect(getByTestId('issue-reaction-sheet')).toBeTruthy());
+    fireEvent.press(getByTestId('issue-reaction-aggravated'));
+    fireEvent.press(getByTestId('issue-severity-4'));
+    fireEvent.changeText(getByTestId('issue-note-quick-input'), 'Tingling after set 1');
+    fireEvent.press(getByTestId('save-issue-reaction-btn'));
+
+    await waitFor(() =>
+      expect(recordExerciseIssueEventMock).toHaveBeenCalledWith(mockDb, {
+        issueId: 'issue-shoulder',
+        exerciseId: 'bench',
+        sessionId: 'session-1',
+        setId: 'set-logged',
+        clientEventId: expect.any(String),
+        reactionType: 'aggravated',
+        severity: 4,
+        note: 'Tingling after set 1',
       }),
     );
   });

@@ -1283,10 +1283,10 @@ export default function LiveWorkout() {
     suppressedIssueId === null || helpfulIssueAlternatives === null
       ? null
       : helpfulIssueAlternatives.length > 0
-        ? `Previously marked helpful: ${helpfulIssueAlternatives
+        ? `Helpful before: ${helpfulIssueAlternatives
             .map((alternative) => alternative.exerciseName)
             .join(', ')}`
-        : 'No helpful alternatives recorded yet';
+        : null;
   const nextSetSummary = `${wgt} ${activeUnit} × ${reps} reps${
     rpe !== null ? ` · RPE ${formatWeightInput(rpe)}` : ''
   } · ${getSetTypeLabel(setType)}`;
@@ -1718,7 +1718,7 @@ export default function LiveWorkout() {
                         style={styles.setIssueBtn}
                         onPress={() => openIssueSheet(item.id)}
                         hitSlop={8}
-                        accessibilityLabel="Noted on this set"
+                        accessibilityLabel="Add issue note to this set"
                         testID={`set-issue-reaction-btn-${item.id}`}
                       >
                         <Ionicons name="alert-circle-outline" size={16} color={T.textDim} />

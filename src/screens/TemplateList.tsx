@@ -196,8 +196,8 @@ export default function TemplateList() {
             testID="browse-injuries-btn"
           >
             <View style={{ flex: 1 }}>
-              <Text style={styles.emptyCardTitle}>Injuries</Text>
-              <Text style={styles.emptyCardSub}>Track symptoms and check-ins</Text>
+              <Text style={styles.emptyCardTitle}>Issues</Text>
+              <Text style={styles.emptyCardSub}>Track notes and check-ins</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={T.muted} />
           </TouchableOpacity>

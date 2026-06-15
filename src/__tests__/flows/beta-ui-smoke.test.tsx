@@ -185,11 +185,11 @@ describe('beta UI smoke tests', () => {
     expect(mockNavigate).toHaveBeenCalledWith('Onboarding', { mode: 'revisit' });
   });
 
-  it('Settings opens the Injuries area', async () => {
+  it('Settings opens the Issues area', async () => {
     const { getByText } = render(<Settings />);
 
-    await waitFor(() => expect(getByText('Injuries')).toBeTruthy());
-    fireEvent.press(getByText('Injuries'));
+    await waitFor(() => expect(getByText('Issues')).toBeTruthy());
+    fireEvent.press(getByText('Issues'));
 
     expect(mockNavigate).toHaveBeenCalledWith('Issues');
   });

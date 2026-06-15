@@ -447,17 +447,17 @@ export default function ExerciseHistorySheet({
     const lines: string[] = [];
     if (hasSessionIssueEvents && recentSessions.length > 0) {
       lines.push(
-        `Issue notes co-occurred with ${eventSessionsInSample.size} of last ${formatCount(
+        `Issue notes appear in ${eventSessionsInSample.size} of last ${formatCount(
           recentSessions.length,
           'session',
           'sessions',
         )}.`,
       );
     } else if (eventCount > 0) {
-      lines.push(`${formatCount(eventCount, 'issue record', 'issue records')} noted.`);
+      lines.push(`${formatCount(eventCount, 'issue note', 'issue notes')} logged.`);
     } else {
       lines.push(
-        `${formatCount(issueLinks.length, 'active issue link', 'active issue links')} marked.`,
+        `${formatCount(issueLinks.length, 'active issue link', 'active issue links')} saved.`,
       );
     }
 
@@ -467,16 +467,10 @@ export default function ExerciseHistorySheet({
       );
     }
     if (aggravatedCount > 0) {
-      lines.push(`Marked aggravated ${formatCount(aggravatedCount, 'time', 'times')}.`);
+      lines.push(`Aggravated: ${formatCount(aggravatedCount, 'time', 'times')}.`);
     }
     if (helpedCount > 0) {
-      lines.push(
-        `${aggravatedCount > 0 ? 'Also marked' : 'Marked'} helped ${formatCount(
-          helpedCount,
-          'time',
-          'times',
-        )}.`,
-      );
+      lines.push(`Helped: ${formatCount(helpedCount, 'time', 'times')}.`);
     }
     if (eventCount === 0 && issueLinks.length > 0) {
       lines.push(
@@ -495,7 +489,7 @@ export default function ExerciseHistorySheet({
       hasSessionIssueEvents && recentSessions.length > 0
         ? `Sample: ${formatCount(recentSessions.length, 'recent session', 'recent sessions')}`
         : eventCount > 0
-          ? `Sample: ${formatCount(eventCount, 'issue record', 'issue records')}`
+          ? `Sample: ${formatCount(eventCount, 'issue note', 'issue notes')}`
           : `Sample: ${formatCount(issueLinks.length, 'active issue link', 'active issue links')}`;
 
     return { lines, sample };
@@ -591,7 +585,7 @@ export default function ExerciseHistorySheet({
                 <View style={styles.toleranceBlock} testID="exercise-history-tolerance-summary">
                   <View style={styles.sectionHeaderRow}>
                     <Text style={styles.sectionTitle}>Tolerance</Text>
-                    <Text style={styles.sectionMeta}>Worth noticing</Text>
+                    <Text style={styles.sectionMeta}>Logged notes</Text>
                   </View>
                   {toleranceSummary.lines.map((line) => (
                     <Text key={line} style={styles.toleranceLine}>
@@ -1048,7 +1042,7 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 6,
   },
-  toleranceLine: { color: T.textDim, fontFamily: 'Courier New', fontSize: 12 },
+  toleranceLine: { color: T.textDim, fontSize: 12.5, lineHeight: 17 },
   toleranceSample: {
     color: T.muted,
     fontFamily: 'Courier New',

@@ -170,11 +170,11 @@ describe('ExerciseHistorySheet Issue history', () => {
 
     await waitFor(() => expect(getByText('Issue history')).toBeTruthy());
     expect(getByTestId('exercise-history-tolerance-summary')).toBeTruthy();
-    expect(getByText('4 issue records noted.')).toBeTruthy();
+    expect(getByText('4 issue notes logged.')).toBeTruthy();
     expect(getByText(/Latest: Aggravated 3\/5 · /)).toBeTruthy();
-    expect(getByText('Marked aggravated 3 times.')).toBeTruthy();
-    expect(getByText('Also marked helped 1 time.')).toBeTruthy();
-    expect(getByText('Sample: 4 issue records')).toBeTruthy();
+    expect(getByText('Aggravated: 3 times.')).toBeTruthy();
+    expect(getByText('Helped: 1 time.')).toBeTruthy();
+    expect(getByText('Sample: 4 issue notes')).toBeTruthy();
     expect(getByText('Shoulder Pain')).toBeTruthy();
     expect(getByText('Aggravated 3 times')).toBeTruthy();
     expect(getByText('Helped 1 time')).toBeTruthy();
@@ -220,7 +220,7 @@ describe('ExerciseHistorySheet Issue history', () => {
     const { getByText } = render(<ExerciseHistorySheet {...baseProps} />);
 
     await waitFor(() => expect(getByText('Sample: 2 recent sessions')).toBeTruthy());
-    expect(getByText('Issue notes co-occurred with 2 of last 2 sessions.')).toBeTruthy();
+    expect(getByText('Issue notes appear in 2 of last 2 sessions.')).toBeTruthy();
   });
 
   it('shows only the last 5 recent sessions', async () => {
@@ -392,7 +392,7 @@ describe('ExerciseHistorySheet Issue history', () => {
 
     await waitFor(() =>
       expect(
-        getByText('High issue aggravation noted recently: consider an easier set.'),
+        getByText('Recent high issue note: consider an easier set.'),
       ).toBeTruthy(),
     );
   });

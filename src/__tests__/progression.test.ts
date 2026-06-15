@@ -257,7 +257,7 @@ describe('getProgressionSuggestion', () => {
           expect.objectContaining({
             weight: 80,
             reps: 5,
-            reason: 'Issue noted recently: repeat target.',
+            reason: 'Recent issue note: use the same target.',
             suppressedByIssue: true,
             requiresUserAction: false,
           }),
@@ -286,7 +286,7 @@ describe('getProgressionSuggestion', () => {
         expect.objectContaining({
           weight: 80,
           reps: 5,
-          reason: 'Issue marked aggravated recently: repeat target.',
+          reason: 'Recent issue note: repeat target.',
           suppressedByIssue: true,
           requiresUserAction: true,
         }),
@@ -316,7 +316,7 @@ describe('getProgressionSuggestion', () => {
           expect.objectContaining({
             weight: 80,
             reps: 5,
-            reason: 'High issue aggravation noted recently: consider an easier set.',
+            reason: 'Recent high issue note: consider an easier set.',
             suppressedByIssue: true,
             requiresUserAction: true,
           }),
@@ -350,7 +350,7 @@ describe('getProgressionSuggestion', () => {
         ],
       });
 
-      expect(next.reason).toBe('Issue noted recently: repeat target.');
+      expect(next.reason).toBe('Recent issue note: use the same target.');
       expect(next.issueContext).toEqual({
         issueId: 'issue-newer',
         issueName: 'Newer issue',

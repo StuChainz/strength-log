@@ -477,7 +477,7 @@ describe('Home screen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('LiveWorkout', { templateId: 'template-push' });
   });
 
-  it('opens Injuries and Settings from the home header actions', async () => {
+  it('opens Issues and Settings from the home header actions', async () => {
     render(<Home />);
 
     await waitFor(() => expect(screen.getByTestId('home-injuries-btn')).toBeTruthy());

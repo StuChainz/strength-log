@@ -276,10 +276,10 @@ function issueSuppressionSuggestion(input: ProgressionInput): ProgressionSuggest
   const highSeverity = severity >= 4;
   const reason =
     severity >= 4
-      ? 'High issue aggravation noted recently: consider an easier set.'
+      ? 'Recent high issue note: consider an easier set.'
       : severity >= 3
-        ? 'Issue marked aggravated recently: repeat target.'
-        : 'Issue noted recently: repeat target.';
+        ? 'Recent issue note: repeat target.'
+        : 'Recent issue note: use the same target.';
   const suggestion = repeatTargetSuggestion(
     input.templateTarget,
     input.recentSets,
