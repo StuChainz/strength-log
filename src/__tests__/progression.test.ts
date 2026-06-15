@@ -105,7 +105,7 @@ describe('getProgressionSuggestion', () => {
     );
   });
 
-  it('double progression uses previous-session weight for the first set when current sets are empty', () => {
+  it('double progression builds reps from previous 3x8 when current sets are empty', () => {
     const next = suggestion({
       templateTarget: {
         targetSets: 3,
@@ -123,7 +123,97 @@ describe('getProgressionSuggestion', () => {
     });
 
     expect(next).toEqual(
-      expect.objectContaining({ weight: 40, reps: 8, reason: 'Double: build reps' }),
+      expect.objectContaining({ weight: 40, reps: 9, reason: 'Double: build reps' }),
+    );
+  });
+
+  it('double progression builds reps from previous 3x9 when current sets are empty', () => {
+    const next = suggestion({
+      templateTarget: {
+        targetSets: 3,
+        targetReps: null,
+        targetWeight: null,
+        unit: 'kg',
+      },
+      progressionRule: { rule: 'double', repRangeMin: 8, repRangeMax: 12 },
+      recentSets: [],
+      previousSessionSets: [
+        { ...baseSet, weight: 40, reps: 9 },
+        { ...baseSet, weight: 40, reps: 9 },
+        { ...baseSet, weight: 40, reps: 9 },
+      ],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({ weight: 40, reps: 10, reason: 'Double: build reps' }),
+    );
+  });
+
+  it('double progression adds weight and resets reps from previous 3x12 when current sets are empty', () => {
+    const next = suggestion({
+      templateTarget: {
+        targetSets: 3,
+        targetReps: null,
+        targetWeight: null,
+        unit: 'kg',
+      },
+      progressionRule: { rule: 'double', repRangeMin: 8, repRangeMax: 12 },
+      recentSets: [],
+      previousSessionSets: [
+        { ...baseSet, weight: 40, reps: 12 },
+        { ...baseSet, weight: 40, reps: 12 },
+        { ...baseSet, weight: 40, reps: 12 },
+      ],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({ weight: 42.5, reps: 8, reason: 'Double: top of range hit' }),
+    );
+  });
+
+  it('double progression does not build past the lowest previous target working set', () => {
+    const next = suggestion({
+      templateTarget: {
+        targetSets: 3,
+        targetReps: null,
+        targetWeight: null,
+        unit: 'kg',
+      },
+      progressionRule: { rule: 'double', repRangeMin: 8, repRangeMax: 12 },
+      recentSets: [],
+      previousSessionSets: [
+        { ...baseSet, weight: 40, reps: 8 },
+        { ...baseSet, weight: 40, reps: 8 },
+        { ...baseSet, weight: 40, reps: 7 },
+      ],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({ weight: 40, reps: 7, reason: 'Double: build reps' }),
+    );
+    expect(next.reps).not.toBe(9);
+  });
+
+  it('double progression ignores warm-up sets when building from previous sessions', () => {
+    const next = suggestion({
+      templateTarget: {
+        targetSets: 3,
+        targetReps: null,
+        targetWeight: null,
+        unit: 'kg',
+      },
+      progressionRule: { rule: 'double', repRangeMin: 8, repRangeMax: 12 },
+      recentSets: [],
+      previousSessionSets: [
+        { ...baseSet, weight: 20, reps: 12, set_type: 'warmup' },
+        { ...baseSet, weight: 40, reps: 8 },
+        { ...baseSet, weight: 40, reps: 8 },
+        { ...baseSet, weight: 40, reps: 8 },
+      ],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({ weight: 40, reps: 9, reason: 'Double: build reps' }),
     );
   });
 

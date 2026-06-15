@@ -95,6 +95,30 @@ function historySession(id: string, startedAt: number, weight = 100, reps = 5) {
   };
 }
 
+function doubleProgressionHistorySession(id: string, startedAt: number, weight: number, reps: number) {
+  const sets = [0, 1, 2].map((position) => ({
+    id: `${id}-set-${position + 1}`,
+    weight,
+    reps,
+    rpe: null,
+    unit: 'kg' as const,
+    set_type: 'working' as const,
+    logged_at: startedAt + position,
+    position,
+  }));
+
+  return {
+    sessionId: id,
+    startedAt,
+    endedAt: startedAt + 60_000,
+    sets,
+    volume: sets.reduce((total, set) => total + (set.weight ?? 0) * (set.reps ?? 0), 0),
+    topSetWeight: weight,
+    topSetReps: reps,
+    est1rm: weight * (1 + reps / 30),
+  };
+}
+
 describe('ExerciseHistorySheet Issue history', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -395,6 +419,25 @@ describe('ExerciseHistorySheet Issue history', () => {
         getByText('Recent high issue note: consider an easier set.'),
       ).toBeTruthy(),
     );
+  });
+
+  it('shows double progression from the previous completed session in the suggestion card', async () => {
+    getExerciseHistoryMock.mockResolvedValueOnce([
+      doubleProgressionHistorySession('session-1', 1_900_000_000_000, 40, 8),
+    ]);
+    getExerciseIssueSummaryMock.mockResolvedValueOnce([]);
+    getExerciseIssueEventsForExerciseMock.mockResolvedValueOnce([]);
+
+    const { getByText } = render(
+      <ExerciseHistorySheet
+        {...baseProps}
+        targetSets={3}
+        progressionRule={{ rule: 'double', repRangeMin: 8, repRangeMax: 12, incrementKg: 2.5 }}
+      />,
+    );
+
+    await waitFor(() => expect(getByText('Double: build reps')).toBeTruthy());
+    expect(getByText('40 kg × 9')).toBeTruthy();
   });
 
   it('shows manual Issue links separately from reaction history', async () => {

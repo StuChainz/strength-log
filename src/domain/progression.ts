@@ -429,7 +429,7 @@ function linearSuggestion(input: ProgressionInput): ProgressionSuggestion {
 }
 
 function doubleSuggestion(input: ProgressionInput): ProgressionSuggestion {
-  const { templateTarget, progressionRule, recentSets } = input;
+  const { templateTarget, progressionRule } = input;
   const baseSets = firstSetBaseSets(input);
   const repMin = progressionRule.repRangeMin ?? templateTarget.targetReps ?? 1;
   const repMax = progressionRule.repRangeMax ?? Math.max(repMin, templateTarget.targetReps ?? repMin);
@@ -437,7 +437,7 @@ function doubleSuggestion(input: ProgressionInput): ProgressionSuggestion {
   const currentWeight = targetWeightOrLast(templateTarget, baseSets);
   const highRpe = (maxRpe(targetSets) ?? 0) > 9;
 
-  if (recentSets.length === 0 || !hasEnoughSets(targetSets, templateTarget.targetSets)) {
+  if (!hasEnoughSets(targetSets, templateTarget.targetSets)) {
     return {
       label: 'Double: build reps',
       reason: 'Double: build reps',
