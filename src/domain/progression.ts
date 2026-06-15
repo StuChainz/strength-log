@@ -36,6 +36,7 @@ export interface ProgressionTemplateTarget {
 }
 
 export interface ProgressionIssueReactionContext {
+  issueId: string;
   issueName: string;
   reactionType: IssueReactionType;
   severity: number | null;
@@ -109,6 +110,7 @@ export interface ProgressionSuggestion {
    */
   requiresUserAction?: boolean;
   issueContext?: {
+    issueId: string;
     issueName: string;
     reactionType: IssueReactionType;
     severity: number | null;
@@ -290,6 +292,7 @@ function issueSuppressionSuggestion(input: ProgressionInput): ProgressionSuggest
     ...suggestion,
     reason,
     issueContext: {
+      issueId: issue.issueId,
       issueName: issue.issueName,
       reactionType: issue.reactionType,
       severity: issue.severity,

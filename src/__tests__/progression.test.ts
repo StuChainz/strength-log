@@ -242,6 +242,7 @@ describe('getProgressionSuggestion', () => {
           recentSets: hitTargetSets,
           recentIssueReactions: [
             {
+              issueId: 'issue-shoulder',
               issueName: 'Shoulder',
               reactionType: 'aggravated',
               severity,
@@ -270,6 +271,7 @@ describe('getProgressionSuggestion', () => {
         recentSets: hitTargetSets,
         recentIssueReactions: [
           {
+            issueId: 'issue-shoulder',
             issueName: 'Shoulder',
             reactionType: 'aggravated',
             severity: 3,
@@ -299,6 +301,7 @@ describe('getProgressionSuggestion', () => {
           recentSets: hitTargetSets,
           recentIssueReactions: [
             {
+              issueId: 'issue-shoulder',
               issueName: 'Shoulder',
               reactionType: 'aggravated',
               severity,
@@ -327,6 +330,7 @@ describe('getProgressionSuggestion', () => {
         recentSets: hitTargetSets,
         recentIssueReactions: [
           {
+            issueId: 'issue-older',
             issueName: 'Older issue',
             reactionType: 'aggravated',
             severity: 4,
@@ -335,6 +339,7 @@ describe('getProgressionSuggestion', () => {
             setId: null,
           },
           {
+            issueId: 'issue-newer',
             issueName: 'Newer issue',
             reactionType: 'aggravated',
             severity: 2,
@@ -347,6 +352,7 @@ describe('getProgressionSuggestion', () => {
 
       expect(next.reason).toBe('Issue noted recently: repeat target.');
       expect(next.issueContext).toEqual({
+        issueId: 'issue-newer',
         issueName: 'Newer issue',
         reactionType: 'aggravated',
         severity: 2,
@@ -359,6 +365,7 @@ describe('getProgressionSuggestion', () => {
         recentSets: hitTargetSets,
         recentIssueReactions: [
           {
+            issueId: 'issue-shoulder',
             issueName: 'Shoulder',
             reactionType: 'helped',
             severity: 5,

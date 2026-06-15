@@ -24,7 +24,9 @@ import {
   getActiveIssueExerciseLinksForExercise,
   getActiveIssues,
   getExerciseIssueEventsForExercise,
+  getHelpfulIssueAlternatives,
   type ExerciseIssueEventWithIssueName,
+  type HelpfulIssueAlternative,
   recordExerciseIssueEvent,
   type IssueExerciseLinkWithIssueName,
 } from '@/db/repositories/issues.repo';
@@ -132,6 +134,7 @@ function toProgressionIssueReaction(
   event: ExerciseIssueEventWithIssueName,
 ): ProgressionIssueReactionContext {
   return {
+    issueId: event.issue_id,
     issueName: event.issue_name,
     reactionType: event.reaction_type,
     severity: event.severity,
@@ -271,6 +274,9 @@ export default function LiveWorkout() {
   const [activeExerciseIssueEvents, setActiveExerciseIssueEvents] = useState<
     ExerciseIssueEventWithIssueName[]
   >([]);
+  const [helpfulIssueAlternatives, setHelpfulIssueAlternatives] = useState<
+    HelpfulIssueAlternative[] | null
+  >(null);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [selectedIssueSetId, setSelectedIssueSetId] = useState<string | null>(null);
   const [issueClientEventId, setIssueClientEventId] = useState<string | null>(null);
@@ -431,6 +437,10 @@ export default function LiveWorkout() {
     [exerciseRestSecondsById],
   );
   const activeRestSeconds = activeExercise ? getExerciseRestSeconds(activeExercise) : null;
+  const suppressedIssueId =
+    suggestion.suppressedByIssue === true && suggestion.issueContext?.issueName
+      ? (suggestion.issueContext.issueId ?? null)
+      : null;
 
   useEffect(() => {
     if (!session || exerciseIdsKey.length === 0) {
@@ -499,6 +509,27 @@ export default function LiveWorkout() {
       cancelled = true;
     };
   }, [activeExerciseId, phase]);
+
+  useEffect(() => {
+    if (phase !== 'active' || !activeExerciseId || !suppressedIssueId) {
+      setHelpfulIssueAlternatives(null);
+      return;
+    }
+
+    let cancelled = false;
+    setHelpfulIssueAlternatives(null);
+    openDb()
+      .then((db) => getHelpfulIssueAlternatives(db, suppressedIssueId, activeExerciseId, 3))
+      .then((rows) => {
+        if (!cancelled) setHelpfulIssueAlternatives(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setHelpfulIssueAlternatives([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeExerciseId, phase, suppressedIssueId]);
 
   // Elapsed timer
   useEffect(() => {
@@ -1248,6 +1279,14 @@ export default function LiveWorkout() {
   const suggestionLine = suggestionHasValue
     ? `${suggestion.weight !== null ? formatWeightInput(suggestion.weight) : '—'} × ${suggestionRepsDisplay}`
     : '—';
+  const helpfulAlternativesHint =
+    suppressedIssueId === null || helpfulIssueAlternatives === null
+      ? null
+      : helpfulIssueAlternatives.length > 0
+        ? `Previously marked helpful: ${helpfulIssueAlternatives
+            .map((alternative) => alternative.exerciseName)
+            .join(', ')}`
+        : 'No helpful alternatives recorded yet';
   const nextSetSummary = `${wgt} ${activeUnit} × ${reps} reps${
     rpe !== null ? ` · RPE ${formatWeightInput(rpe)}` : ''
   } · ${getSetTypeLabel(setType)}`;
@@ -1443,6 +1482,14 @@ export default function LiveWorkout() {
                   </Text>
                 </TouchableOpacity>
               </View>
+              {helpfulAlternativesHint !== null && (
+                <View style={styles.helpfulAlternativesHint} testID="helpful-alternatives-hint">
+                  <Ionicons name="information-circle-outline" size={13} color={T.muted} />
+                  <Text style={styles.helpfulAlternativesText} numberOfLines={2}>
+                    {helpfulAlternativesHint}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         )}
@@ -2625,6 +2672,18 @@ const styles = StyleSheet.create({
     color: T.muted,
     fontSize: 11,
     lineHeight: 14,
+  },
+  helpfulAlternativesHint: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    paddingTop: 2,
+  },
+  helpfulAlternativesText: {
+    flex: 1,
+    color: T.muted,
+    fontSize: 11.5,
+    lineHeight: 15,
   },
   restTimerPanel: {
     minHeight: 48,

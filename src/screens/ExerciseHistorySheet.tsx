@@ -131,6 +131,7 @@ function toProgressionIssueReaction(
   event: ExerciseIssueEventWithIssueName,
 ): ProgressionIssueReactionContext {
   return {
+    issueId: event.issue_id,
     issueName: event.issue_name,
     reactionType: event.reaction_type,
     severity: event.severity,

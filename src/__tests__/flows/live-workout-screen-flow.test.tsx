@@ -8,6 +8,7 @@ import {
   getActiveIssueExerciseLinksForExercise,
   getActiveIssues,
   getExerciseIssueEventsForExercise,
+  getHelpfulIssueAlternatives,
   recordExerciseIssueEvent,
 } from '@/db/repositories/issues.repo';
 import { getPreviousPRDataForExercises } from '@/db/repositories/prs.repo';
@@ -62,6 +63,7 @@ jest.mock('@/db/repositories/issues.repo', () => ({
   getActiveIssueExerciseLinksForExercise: jest.fn(),
   getActiveIssues: jest.fn(),
   getExerciseIssueEventsForExercise: jest.fn(),
+  getHelpfulIssueAlternatives: jest.fn(),
   recordExerciseIssueEvent: jest.fn(),
 }));
 
@@ -109,6 +111,9 @@ const getActiveIssueExerciseLinksForExerciseMock =
 const getActiveIssuesMock = getActiveIssues as jest.MockedFunction<typeof getActiveIssues>;
 const getExerciseIssueEventsForExerciseMock =
   getExerciseIssueEventsForExercise as jest.MockedFunction<typeof getExerciseIssueEventsForExercise>;
+const getHelpfulIssueAlternativesMock = getHelpfulIssueAlternatives as jest.MockedFunction<
+  typeof getHelpfulIssueAlternatives
+>;
 const createIssueMock = createIssue as jest.MockedFunction<typeof createIssue>;
 const recordExerciseIssueEventMock = recordExerciseIssueEvent as jest.MockedFunction<
   typeof recordExerciseIssueEvent
@@ -203,6 +208,7 @@ describe('LiveWorkout screen core flow', () => {
     });
     getActiveIssueExerciseLinksForExerciseMock.mockResolvedValue([]);
     getExerciseIssueEventsForExerciseMock.mockResolvedValue([]);
+    getHelpfulIssueAlternativesMock.mockResolvedValue([]);
     getActiveIssuesMock.mockResolvedValue([
       {
         id: 'issue-shoulder',
@@ -437,6 +443,7 @@ describe('LiveWorkout screen core flow', () => {
         expect.objectContaining({
           recentIssueReactions: [
             {
+              issueId: 'issue-shoulder',
               issueName: 'Shoulder',
               reactionType: 'aggravated',
               severity: 3,
@@ -469,6 +476,132 @@ describe('LiveWorkout screen core flow', () => {
     const { getByText } = render(<LiveWorkout />);
 
     expect(getByText('Issue marked aggravated recently: repeat target.')).toBeTruthy();
+  });
+
+  it('loads helpful alternatives when suggestion is issue-suppressed', async () => {
+    getLiveWorkoutSuggestionMock.mockReturnValue({
+      label: 'Repeat target',
+      reason: 'Issue marked aggravated recently: repeat target.',
+      weight: 80,
+      reps: 5,
+      rpe: null,
+      unit: 'kg',
+      source: 'template_rule',
+      rule: 'linear',
+      suppressedByIssue: true,
+      requiresUserAction: true,
+      issueContext: {
+        issueId: 'issue-shoulder',
+        issueName: 'Shoulder',
+        reactionType: 'aggravated',
+        severity: 3,
+      },
+    });
+    useSessionStoreMock.mockReturnValue(activeStore({ sets: [] }));
+
+    render(<LiveWorkout />);
+
+    await waitFor(() =>
+      expect(getHelpfulIssueAlternativesMock).toHaveBeenCalledWith(
+        mockDb,
+        'issue-shoulder',
+        'bench',
+        3,
+      ),
+    );
+  });
+
+  it('renders helpful alternatives hint when results exist', async () => {
+    getLiveWorkoutSuggestionMock.mockReturnValue({
+      label: 'Repeat target',
+      reason: 'Issue marked aggravated recently: repeat target.',
+      weight: 80,
+      reps: 5,
+      rpe: null,
+      unit: 'kg',
+      source: 'template_rule',
+      rule: 'linear',
+      suppressedByIssue: true,
+      requiresUserAction: true,
+      issueContext: {
+        issueId: 'issue-shoulder',
+        issueName: 'Shoulder',
+        reactionType: 'aggravated',
+        severity: 3,
+      },
+    });
+    getHelpfulIssueAlternativesMock.mockResolvedValue([
+      {
+        exerciseId: 'db-floor-press',
+        exerciseName: 'DB Floor Press',
+        helpedCount: 2,
+        latestHelpedAt: 2_000,
+        lastNote: null,
+      },
+      {
+        exerciseId: 'machine-chest-press',
+        exerciseName: 'Machine Chest Press',
+        helpedCount: 1,
+        latestHelpedAt: 1_000,
+        lastNote: null,
+      },
+    ]);
+    useSessionStoreMock.mockReturnValue(activeStore({ sets: [] }));
+
+    const { getByTestId, getByText } = render(<LiveWorkout />);
+
+    await waitFor(() => expect(getByTestId('helpful-alternatives-hint')).toBeTruthy());
+    expect(
+      getByText('Previously marked helpful: DB Floor Press, Machine Chest Press'),
+    ).toBeTruthy();
+  });
+
+  it('renders no helpful alternatives recorded yet when suppressed but none exist', async () => {
+    getLiveWorkoutSuggestionMock.mockReturnValue({
+      label: 'Repeat target',
+      reason: 'Issue marked aggravated recently: repeat target.',
+      weight: 80,
+      reps: 5,
+      rpe: null,
+      unit: 'kg',
+      source: 'template_rule',
+      rule: 'linear',
+      suppressedByIssue: true,
+      requiresUserAction: true,
+      issueContext: {
+        issueId: 'issue-shoulder',
+        issueName: 'Shoulder',
+        reactionType: 'aggravated',
+        severity: 3,
+      },
+    });
+    getHelpfulIssueAlternativesMock.mockResolvedValue([]);
+    useSessionStoreMock.mockReturnValue(activeStore({ sets: [] }));
+
+    const { getByText } = render(<LiveWorkout />);
+
+    await waitFor(() => expect(getByText('No helpful alternatives recorded yet')).toBeTruthy());
+  });
+
+  it('does not load or render alternatives when suggestion is not issue-suppressed', async () => {
+    getLiveWorkoutSuggestionMock.mockReturnValue({
+      label: 'Linear: target hit',
+      reason: 'Linear: target hit',
+      weight: 82.5,
+      reps: 5,
+      rpe: null,
+      unit: 'kg',
+      source: 'template_rule',
+      rule: 'linear',
+    });
+    useSessionStoreMock.mockReturnValue(activeStore({ sets: [] }));
+
+    const { queryByTestId, queryByText } = render(<LiveWorkout />);
+
+    await waitFor(() => expect(getActiveIssuesMock).toHaveBeenCalledTimes(1));
+    expect(getHelpfulIssueAlternativesMock).not.toHaveBeenCalled();
+    expect(queryByTestId('helpful-alternatives-hint')).toBeNull();
+    expect(queryByText('No helpful alternatives recorded yet')).toBeNull();
   });
 
   it('renders suggestion reason from a template rule and tapping only fills the logger', async () => {

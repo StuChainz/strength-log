@@ -9,6 +9,7 @@ import {
   deleteIssueExerciseLink,
   getActiveIssueExerciseLinksForExercise,
   getExerciseIssueSummary,
+  getHelpfulIssueAlternatives,
   getIssueById,
   getIssueCheckinTrend,
   getIssueExerciseLinks,
@@ -756,6 +757,126 @@ describe('issues repository', () => {
     expect(events).toEqual([
       { reaction_type: 'aggravated', severity: 4, note: 'Pinch at depth' },
       { reaction_type: 'helped', severity: 2, note: null },
+    ]);
+  });
+
+  it('returns helpful alternatives with helped events for the same issue', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const otherIssue = await createIssue(db as never, { name: 'Knee Pain' });
+    const current = await createExercise(db, 'Barbell Bench Press');
+    const floorPress = await createExercise(db, 'DB Floor Press');
+    const legPress = await createExercise(db, 'Leg Press');
+
+    jest.spyOn(Date, 'now').mockReturnValue(1_900_000_000_100);
+    await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: floorPress.id,
+      reactionType: 'helped',
+      severity: 2,
+      note: 'Controlled range',
+    });
+    await recordExerciseIssueEvent(db as never, {
+      issueId: otherIssue.id,
+      exerciseId: legPress.id,
+      reactionType: 'helped',
+      severity: 1,
+    });
+
+    expect(await getHelpfulIssueAlternatives(db as never, issue.id, current.id)).toEqual([
+      {
+        exerciseId: floorPress.id,
+        exerciseName: 'DB Floor Press',
+        helpedCount: 1,
+        latestHelpedAt: 1_900_000_000_100,
+        lastNote: 'Controlled range',
+      },
+    ]);
+  });
+
+  it('excludes the current exercise from helpful alternatives', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const current = await createExercise(db, 'Barbell Bench Press');
+    const machinePress = await createExercise(db, 'Machine Chest Press');
+
+    await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: current.id,
+      reactionType: 'helped',
+      severity: 1,
+    });
+    await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: machinePress.id,
+      reactionType: 'helped',
+      severity: 1,
+    });
+
+    expect(await getHelpfulIssueAlternatives(db as never, issue.id, current.id)).toEqual([
+      expect.objectContaining({
+        exerciseId: machinePress.id,
+        exerciseName: 'Machine Chest Press',
+      }),
+    ]);
+  });
+
+  it('does not include aggravated events in helpful alternatives', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const current = await createExercise(db, 'Barbell Bench Press');
+    const overheadPress = await createExercise(db, 'Overhead Press');
+
+    await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: overheadPress.id,
+      reactionType: 'aggravated',
+      severity: 4,
+    });
+
+    expect(await getHelpfulIssueAlternatives(db as never, issue.id, current.id)).toEqual([]);
+  });
+
+  it('orders helpful alternatives by helped count then latest helped time', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Shoulder Pain' });
+    const current = await createExercise(db, 'Barbell Bench Press');
+    const floorPress = await createExercise(db, 'DB Floor Press');
+    const machinePress = await createExercise(db, 'Machine Chest Press');
+    const pushUp = await createExercise(db, 'Push-Up');
+
+    for (const [createdAt, exerciseId] of [
+      [1_900_000_000_100, floorPress.id],
+      [1_900_000_000_200, machinePress.id],
+      [1_900_000_000_300, floorPress.id],
+      [1_900_000_000_400, machinePress.id],
+      [1_900_000_000_500, pushUp.id],
+    ] as const) {
+      jest.spyOn(Date, 'now').mockReturnValue(createdAt);
+      await recordExerciseIssueEvent(db as never, {
+        issueId: issue.id,
+        exerciseId,
+        reactionType: 'helped',
+        severity: 1,
+      });
+    }
+
+    expect(await getHelpfulIssueAlternatives(db as never, issue.id, current.id)).toEqual([
+      expect.objectContaining({
+        exerciseId: machinePress.id,
+        helpedCount: 2,
+        latestHelpedAt: 1_900_000_000_400,
+      }),
+      expect.objectContaining({
+        exerciseId: floorPress.id,
+        helpedCount: 2,
+        latestHelpedAt: 1_900_000_000_300,
+      }),
+      expect.objectContaining({
+        exerciseId: pushUp.id,
+        helpedCount: 1,
+        latestHelpedAt: 1_900_000_000_500,
+      }),
     ]);
   });
 

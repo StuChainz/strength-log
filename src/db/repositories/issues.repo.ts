@@ -55,6 +55,14 @@ export interface ExerciseIssueSummary {
   latestEvent: ExerciseIssueEvent;
 }
 
+export interface HelpfulIssueAlternative {
+  exerciseId: string;
+  exerciseName: string;
+  helpedCount: number;
+  latestHelpedAt: number;
+  lastNote: string | null;
+}
+
 export type IssueCheckinTrend =
   | { status: 'insufficient'; count: number }
   | {
@@ -693,6 +701,41 @@ export async function getExerciseIssueEventsForExercise(
       ORDER BY e.created_at DESC
       LIMIT ?`,
     [exerciseId, limit],
+  );
+}
+
+export async function getHelpfulIssueAlternatives(
+  db: SQLiteDatabase,
+  issueId: string,
+  currentExerciseId: string,
+  limit = 3,
+): Promise<HelpfulIssueAlternative[]> {
+  return db.getAllAsync<HelpfulIssueAlternative>(
+    `SELECT e.exercise_id AS exerciseId,
+            ex.name AS exerciseName,
+            COUNT(*) AS helpedCount,
+            MAX(e.created_at) AS latestHelpedAt,
+            (
+              SELECT latest.note
+                FROM exercise_issue_events latest
+               WHERE latest.issue_id = e.issue_id
+                 AND latest.exercise_id = e.exercise_id
+                 AND latest.reaction_type = 'helped'
+                 AND latest.note IS NOT NULL
+               ORDER BY latest.created_at DESC
+               LIMIT 1
+            ) AS lastNote
+       FROM exercise_issue_events e
+       JOIN issues i ON i.id = e.issue_id
+       JOIN exercises ex ON ex.id = e.exercise_id
+      WHERE e.issue_id = ?
+        AND e.exercise_id != ?
+        AND e.reaction_type = 'helped'
+        AND i.active = 1
+      GROUP BY e.exercise_id, ex.name
+      ORDER BY helpedCount DESC, latestHelpedAt DESC
+      LIMIT ?`,
+    [issueId, currentExerciseId, limit],
   );
 }
 
