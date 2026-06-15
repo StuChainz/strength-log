@@ -546,6 +546,141 @@ describe('LiveWorkout screen core flow', () => {
     );
   });
 
+  it('passes loaded double-progression rep ranges into live suggestions', () => {
+    const store = activeStore({
+      exercises: [
+        {
+          id: 'bench',
+          name: 'Barbell Bench Press',
+          category: 'barbell',
+          defaultUnit: 'kg',
+          targetSets: 3,
+          targetReps: null,
+          targetWeight: null,
+          targetRpe: null,
+          restSeconds: null,
+          note: null,
+          progressionRule: {
+            rule: 'double',
+            repRangeMin: 8,
+            repRangeMax: 12,
+            incrementKg: 2.5,
+            incrementLb: null,
+            rpeCap: null,
+          },
+        },
+      ],
+      sets: [],
+    });
+    useSessionStoreMock.mockReturnValue(store);
+
+    render(<LiveWorkout />);
+
+    expect(getLiveWorkoutSuggestionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        templateTarget: expect.objectContaining({
+          targetSets: 3,
+          targetReps: null,
+          targetWeight: null,
+        }),
+        progressionRule: expect.objectContaining({
+          rule: 'double',
+          repRangeMin: 8,
+          repRangeMax: 12,
+        }),
+      }),
+    );
+  });
+
+  it('starts a new double-progression workout from previous 3x8 at 9 reps', async () => {
+    const actualProgression = jest.requireActual<typeof import('@/domain/progression')>(
+      '@/domain/progression',
+    );
+    getLiveWorkoutSuggestionMock.mockImplementation(actualProgression.getLiveWorkoutSuggestion);
+    mockDb.getAllAsync.mockResolvedValueOnce([
+      {
+        id: 'prev-set-1',
+        session_id: 'completed-session-1',
+        exercise_id: 'bench',
+        position: 0,
+        weight: 40,
+        reps: 8,
+        rpe: 8,
+        unit: 'kg',
+        is_warmup: 0,
+        set_type: 'working',
+        logged_at: 1,
+        source: 'tap',
+        client_set_id: 'prev-client-set-1',
+        deleted_at: null,
+      },
+      {
+        id: 'prev-set-2',
+        session_id: 'completed-session-1',
+        exercise_id: 'bench',
+        position: 1,
+        weight: 40,
+        reps: 8,
+        rpe: 8,
+        unit: 'kg',
+        is_warmup: 0,
+        set_type: 'working',
+        logged_at: 2,
+        source: 'tap',
+        client_set_id: 'prev-client-set-2',
+        deleted_at: null,
+      },
+      {
+        id: 'prev-set-3',
+        session_id: 'completed-session-1',
+        exercise_id: 'bench',
+        position: 2,
+        weight: 40,
+        reps: 8,
+        rpe: 8,
+        unit: 'kg',
+        is_warmup: 0,
+        set_type: 'working',
+        logged_at: 3,
+        source: 'tap',
+        client_set_id: 'prev-client-set-3',
+        deleted_at: null,
+      },
+    ]);
+    const store = activeStore({
+      exercises: [
+        {
+          id: 'bench',
+          name: 'Barbell Bench Press',
+          category: 'barbell',
+          defaultUnit: 'kg',
+          targetSets: 3,
+          targetReps: null,
+          targetWeight: null,
+          targetRpe: null,
+          restSeconds: null,
+          note: null,
+          progressionRule: {
+            rule: 'double',
+            repRangeMin: 8,
+            repRangeMax: 12,
+            incrementKg: 2.5,
+            incrementLb: null,
+            rpeCap: null,
+          },
+        },
+      ],
+      sets: [],
+    });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId, getByText } = render(<LiveWorkout />);
+
+    await waitFor(() => expect(getByText('40 × 9')).toBeTruthy());
+    expect(getByTestId('weight-input').props.value).toBe('40');
+    expect(getByTestId('reps-input').props.value).toBe('9');
+  });
+
   it('passes recent aggravated issue context into live suggestions', async () => {
     getExerciseIssueEventsForExerciseMock.mockResolvedValue([
       {
