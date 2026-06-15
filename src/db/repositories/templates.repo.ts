@@ -24,6 +24,8 @@ export interface TemplateSummary {
   id: string;
   name: string;
   notes: string | null;
+  program_preset_id?: string | null;
+  is_active_programme?: 0 | 1;
   archived_at: number | null;
   created_at: number;
   updated_at: number;
@@ -48,8 +50,9 @@ export interface DraftItemInput {
   amrap_last_set?: boolean | 0 | 1 | null;
 }
 
-interface NormalizedDraftItemInput
-  extends Required<Omit<DraftItemInput, 'amrap_last_set' | 'note'>> {
+interface NormalizedDraftItemInput extends Required<
+  Omit<DraftItemInput, 'amrap_last_set' | 'note'>
+> {
   note: string | null;
   progression_rule: ProgressionRule;
   amrap_last_set: 0 | 1;
@@ -171,10 +174,70 @@ export async function getNormalTemplatesWithCount(db: SQLiteDatabase): Promise<T
   );
 }
 
-export async function getTemplateById(
+export async function getActiveProgramPresetId(db: SQLiteDatabase): Promise<string | null> {
+  const row = await db.getFirstAsync<{ program_preset_id: string | null }>(
+    `SELECT program_preset_id
+       FROM templates
+      WHERE archived_at IS NULL
+        AND is_active_programme = 1
+        AND program_preset_id IS NOT NULL
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+  );
+  return row?.program_preset_id ?? null;
+}
+
+export async function setActiveProgramForTemplates(
   db: SQLiteDatabase,
-  id: string,
-): Promise<Template | null> {
+  programPresetId: string,
+  templateIds: string[],
+): Promise<void> {
+  const now = Date.now();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `UPDATE templates
+          SET is_active_programme = 0,
+              updated_at = CASE WHEN is_active_programme = 1 THEN ? ELSE updated_at END
+        WHERE is_active_programme = 1`,
+      [now],
+    );
+
+    if (templateIds.length === 0) {
+      await db.runAsync(
+        `UPDATE templates
+            SET is_active_programme = 1,
+                updated_at = ?
+          WHERE id = (
+            SELECT id
+              FROM templates
+             WHERE archived_at IS NULL
+               AND program_preset_id = ?
+             ORDER BY updated_at DESC, name ASC
+             LIMIT 1
+          )`,
+        [now, programPresetId],
+      );
+      return;
+    }
+
+    await db.runAsync(
+      `UPDATE templates
+          SET program_preset_id = COALESCE(program_preset_id, ?),
+              updated_at = ?
+        WHERE id IN (${templateIds.map(() => '?').join(',')})`,
+      [programPresetId, now, ...templateIds],
+    );
+    await db.runAsync(
+      `UPDATE templates
+          SET is_active_programme = 1,
+              updated_at = ?
+        WHERE id = ?`,
+      [now, templateIds[0] ?? ''],
+    );
+  });
+}
+
+export async function getTemplateById(db: SQLiteDatabase, id: string): Promise<Template | null> {
   return db.getFirstAsync<Template>('SELECT * FROM templates WHERE id = ?', [id]);
 }
 
@@ -200,16 +263,22 @@ export async function getTemplateItemsWithExercise(
 
 export async function createTemplate(
   db: SQLiteDatabase,
-  data: { name: string; notes: string | null; items: DraftItemInput[] },
+  data: {
+    name: string;
+    notes: string | null;
+    items: DraftItemInput[];
+    programPresetId?: string | null;
+  },
 ): Promise<Template> {
   const id = newId();
   const now = Date.now();
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      `INSERT INTO templates (id, name, notes, archived_at, created_at, updated_at)
-       VALUES (?, ?, ?, NULL, ?, ?)`,
-      [id, data.name, data.notes, now, now],
+      `INSERT INTO templates
+         (id, name, notes, program_preset_id, is_active_programme, archived_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 0, NULL, ?, ?)`,
+      [id, data.name, data.notes, data.programPresetId ?? null, now, now],
     );
     for (let i = 0; i < data.items.length; i++) {
       const item = normalizeDraftItem(data.items[i]!);
@@ -246,6 +315,8 @@ export async function createTemplate(
     id,
     name: data.name,
     notes: data.notes,
+    program_preset_id: data.programPresetId ?? null,
+    is_active_programme: 0,
     archived_at: null,
     created_at: now,
     updated_at: now,
@@ -260,10 +331,12 @@ export async function updateTemplate(
   const now = Date.now();
 
   await db.withTransactionAsync(async () => {
-    await db.runAsync(
-      `UPDATE templates SET name = ?, notes = ?, updated_at = ? WHERE id = ?`,
-      [data.name, data.notes, now, id],
-    );
+    await db.runAsync(`UPDATE templates SET name = ?, notes = ?, updated_at = ? WHERE id = ?`, [
+      data.name,
+      data.notes,
+      now,
+      id,
+    ]);
     await db.runAsync(`DELETE FROM template_items WHERE template_id = ?`, [id]);
     for (let i = 0; i < data.items.length; i++) {
       const item = normalizeDraftItem(data.items[i]!);
@@ -299,8 +372,9 @@ export async function updateTemplate(
 
 export async function archiveTemplate(db: SQLiteDatabase, id: string): Promise<void> {
   const now = Date.now();
-  await db.runAsync(
-    `UPDATE templates SET archived_at = ?, updated_at = ? WHERE id = ?`,
-    [now, now, id],
-  );
+  await db.runAsync(`UPDATE templates SET archived_at = ?, updated_at = ? WHERE id = ?`, [
+    now,
+    now,
+    id,
+  ]);
 }

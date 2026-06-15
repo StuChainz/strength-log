@@ -38,6 +38,7 @@ jest.mock('@/notifications/restTimerNotifications', () => ({
 }));
 
 jest.mock('@/db/repositories/templates.repo', () => ({
+  getActiveProgramPresetId: jest.fn().mockResolvedValue(null),
   getNormalTemplatesWithCount: jest.fn().mockResolvedValue([]),
 }));
 

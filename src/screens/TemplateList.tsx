@@ -4,7 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
-import { getNormalTemplatesWithCount, type TemplateSummary } from '@/db/repositories/templates.repo';
+import {
+  getActiveProgramPresetId,
+  getNormalTemplatesWithCount,
+  setActiveProgramForTemplates,
+  type TemplateSummary,
+} from '@/db/repositories/templates.repo';
 import { ALL_PRESETS } from '@/programs/presets';
 import { formatSetCount } from '@/programs/volume';
 import { T } from '@/theme/tokens';
@@ -27,6 +32,16 @@ function getMatchingPresetIds(templateName: string): string[] {
   ).map((preset) => preset.id);
 }
 
+function getTemplateProgramPresetIds(template: TemplateSummary): string[] {
+  if (
+    template.program_preset_id &&
+    ALL_PRESETS.some((preset) => preset.id === template.program_preset_id)
+  ) {
+    return [template.program_preset_id];
+  }
+  return getMatchingPresetIds(template.name);
+}
+
 function getPresetMatchCounts(templates: TemplateSummary[]): Map<string, number> {
   const templateNames = new Set(templates.map((template) => template.name));
   return new Map(
@@ -43,7 +58,7 @@ export function getTemplateSections(templates: TemplateSummary[]): TemplateSecti
   const custom: TemplateSummary[] = [];
 
   for (const template of templates) {
-    const matchingPresetIds = getMatchingPresetIds(template.name);
+    const matchingPresetIds = getTemplateProgramPresetIds(template);
     if (matchingPresetIds.length === 0) {
       custom.push(template);
       continue;
@@ -78,6 +93,7 @@ function getTotalWorkingSets(templates: TemplateSummary[]): number {
 export default function TemplateList() {
   const navigation = useNavigation<TemplateListNavigationProp>();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [activeProgramPresetId, setActiveProgramPresetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState<number>(Date.now);
   const templateSections = useMemo(() => getTemplateSections(templates), [templates]);
@@ -85,8 +101,12 @@ export default function TemplateList() {
   const loadTemplates = useCallback(async () => {
     try {
       const db = await openDb();
-      const data = await getNormalTemplatesWithCount(db);
+      const [data, activeProgramId] = await Promise.all([
+        getNormalTemplatesWithCount(db),
+        getActiveProgramPresetId(db),
+      ]);
       setTemplates(data);
+      setActiveProgramPresetId(activeProgramId);
       setNow(Date.now());
     } finally {
       setLoading(false);
@@ -107,6 +127,17 @@ export default function TemplateList() {
     if (days < 7) return `${days}D AGO`;
     const weeks = Math.floor(days / 7);
     return `${weeks}W AGO`;
+  };
+
+  const handleSetActiveProgram = async (section: TemplateProgramSection) => {
+    const db = await openDb();
+    await setActiveProgramForTemplates(
+      db,
+      section.id,
+      section.templates.map((template) => template.id),
+    );
+    setActiveProgramPresetId(section.id);
+    await loadTemplates();
   };
 
   return (
@@ -207,16 +238,56 @@ export default function TemplateList() {
                   {templateSections.programs.map((section) => (
                     <View key={section.id} style={styles.templateGroup}>
                       <View style={styles.groupHeader}>
-                        <Text
-                          style={styles.groupLabel}
-                          testID={`template-program-section-${section.id}`}
-                        >
-                          {section.title}
-                        </Text>
+                        <View style={styles.groupTitleWrap}>
+                          <Text
+                            style={styles.groupLabel}
+                            testID={`template-program-section-${section.id}`}
+                          >
+                            {section.title}
+                          </Text>
+                          {activeProgramPresetId === section.id && (
+                            <Text
+                              style={styles.activeProgramLabel}
+                              testID={`active-program-${section.id}`}
+                            >
+                              Active
+                            </Text>
+                          )}
+                        </View>
                         <Text style={styles.groupMeta}>
                           {formatSetCount(getTotalWorkingSets(section.templates))}/wk
                         </Text>
                       </View>
+                      <TouchableOpacity
+                        style={[
+                          styles.activeProgramBtn,
+                          activeProgramPresetId === section.id && styles.activeProgramBtnSelected,
+                        ]}
+                        activeOpacity={0.82}
+                        onPress={() => void handleSetActiveProgram(section)}
+                        testID={`set-active-program-${section.id}`}
+                      >
+                        <Ionicons
+                          name={
+                            activeProgramPresetId === section.id
+                              ? 'checkmark-circle'
+                              : 'ellipse-outline'
+                          }
+                          size={17}
+                          color={activeProgramPresetId === section.id ? T.accent : T.textDim}
+                        />
+                        <Text
+                          style={[
+                            styles.activeProgramBtnText,
+                            activeProgramPresetId === section.id &&
+                              styles.activeProgramBtnTextSelected,
+                          ]}
+                        >
+                          {activeProgramPresetId === section.id
+                            ? 'Active programme'
+                            : 'Make active'}
+                        </Text>
+                      </TouchableOpacity>
                       <View style={styles.templateList}>
                         {section.templates.map((template) => (
                           <TemplateRow
@@ -413,16 +484,40 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 10,
   },
+  groupTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 },
   groupLabel: {
     color: T.text,
     fontSize: 15,
     fontWeight: '700',
+  },
+  activeProgramLabel: {
+    color: T.accent,
+    fontFamily: 'Courier New',
+    fontSize: 10.5,
+    fontWeight: '800',
+    textTransform: 'uppercase',
   },
   groupMeta: {
     color: T.muted,
     fontFamily: 'Courier New',
     fontSize: 11,
   },
+  activeProgramBtn: {
+    minHeight: 38,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surface,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  activeProgramBtnSelected: { borderColor: T.accent, backgroundColor: T.surface2 },
+  activeProgramBtnText: { color: T.textDim, fontSize: 12.5, fontWeight: '700' },
+  activeProgramBtnTextSelected: { color: T.text },
   templateList: { gap: 10 },
   templateRow: {
     backgroundColor: T.surface,

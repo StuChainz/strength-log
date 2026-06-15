@@ -5,6 +5,7 @@ import type {
   Mechanics,
   MovementPattern,
   ProgressionRule,
+  IssueReactionType,
   SetType,
   Unit,
 } from './types';
@@ -32,6 +33,15 @@ export interface ProgressionTemplateTarget {
   targetWeight: number | null;
   unit: Unit;
   amrapLastSet?: boolean;
+}
+
+export interface ProgressionIssueReactionContext {
+  issueName: string;
+  reactionType: IssueReactionType;
+  severity: number | null;
+  createdAt: number;
+  sessionId: string | null;
+  setId: string | null;
 }
 
 export interface ProgressionRuleConfig {
@@ -65,6 +75,7 @@ export interface ProgressionInput {
   progressionRule: ProgressionRuleConfig;
   recentSets: ProgressionSet[];
   previousSessionSets?: ProgressionSet[];
+  recentIssueReactions?: ProgressionIssueReactionContext[];
 }
 
 export interface ProgressionSuggestion {
@@ -97,6 +108,12 @@ export interface ProgressionSuggestion {
    * still never auto-applied.
    */
   requiresUserAction?: boolean;
+  issueContext?: {
+    issueName: string;
+    reactionType: IssueReactionType;
+    severity: number | null;
+  };
+  suppressedByIssue?: boolean;
 }
 
 function roundWeight(weight: number): number {
@@ -235,6 +252,50 @@ function repeatTargetSuggestion(
     rule,
     confidence: 'medium',
     requiresUserAction: false,
+  };
+}
+
+function mostRecentAggravatedIssue(
+  reactions: ProgressionIssueReactionContext[] | undefined,
+): ProgressionIssueReactionContext | null {
+  if (!reactions || reactions.length === 0) return null;
+  return (
+    reactions
+      .filter((reaction) => reaction.reactionType === 'aggravated')
+      .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null
+  );
+}
+
+function issueSuppressionSuggestion(input: ProgressionInput): ProgressionSuggestion | null {
+  const issue = mostRecentAggravatedIssue(input.recentIssueReactions);
+  if (!issue) return null;
+
+  const severity = issue.severity ?? 2;
+  const highSeverity = severity >= 4;
+  const reason =
+    severity >= 4
+      ? 'High issue aggravation noted recently: consider an easier set.'
+      : severity >= 3
+        ? 'Issue marked aggravated recently: repeat target.'
+        : 'Issue noted recently: repeat target.';
+  const suggestion = repeatTargetSuggestion(
+    input.templateTarget,
+    input.recentSets,
+    input.progressionRule.rule,
+    reason,
+    highSeverity ? 'Consider an easier set' : 'Repeat target',
+  );
+
+  return {
+    ...suggestion,
+    reason,
+    issueContext: {
+      issueName: issue.issueName,
+      reactionType: issue.reactionType,
+      severity: issue.severity,
+    },
+    suppressedByIssue: true,
+    requiresUserAction: severity >= 3,
   };
 }
 
@@ -650,6 +711,9 @@ function repeatLatestLoggedSetSuggestion(input: ProgressionInput): ProgressionSu
 }
 
 export function getLiveWorkoutSuggestion(input: ProgressionInput): ProgressionSuggestion {
+  const issueGate = issueSuppressionSuggestion(input);
+  if (issueGate) return withDefaults(withAmrapOverride(input, issueGate), input);
+
   const latestLogged = repeatLatestLoggedSetSuggestion(input);
   if (latestLogged) return latestLogged;
 
@@ -660,6 +724,9 @@ export function getLiveWorkoutSuggestion(input: ProgressionInput): ProgressionSu
 }
 
 export function getProgressionSuggestion(input: ProgressionInput): ProgressionSuggestion {
+  const issueGate = issueSuppressionSuggestion(input);
+  if (issueGate) return withDefaults(withAmrapOverride(input, issueGate), input);
+
   const amrapGate = amrapThresholdSuggestion(input);
   if (amrapGate) return withDefaults(withAmrapOverride(input, amrapGate), input);
 

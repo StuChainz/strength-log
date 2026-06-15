@@ -1,7 +1,11 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import TemplateList, { getTemplateSections } from '@/screens/TemplateList';
-import { getNormalTemplatesWithCount } from '@/db/repositories/templates.repo';
+import {
+  getActiveProgramPresetId,
+  getNormalTemplatesWithCount,
+  setActiveProgramForTemplates,
+} from '@/db/repositories/templates.repo';
 
 const mockNavigate = jest.fn();
 const mockSetOptions = jest.fn();
@@ -18,9 +22,11 @@ jest.mock('@react-navigation/native', () => ({
   useFocusEffect: (cb: Parameters<typeof mockUseFocusEffect>[0]) => mockUseFocusEffect(cb),
 }));
 
-jest.mock('@/db/client', () => ({ openDb: jest.fn() }));
+jest.mock('@/db/client', () => ({ openDb: jest.fn().mockResolvedValue({ __db: true }) }));
 jest.mock('@/db/repositories/templates.repo', () => ({
+  getActiveProgramPresetId: jest.fn(),
   getNormalTemplatesWithCount: jest.fn(),
+  setActiveProgramForTemplates: jest.fn().mockResolvedValue(undefined),
 }));
 
 const mockTemplates = [
@@ -63,6 +69,8 @@ describe('TemplateList', () => {
       cb();
     });
     (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue(mockTemplates);
+    (getActiveProgramPresetId as jest.Mock).mockResolvedValue(null);
+    (setActiveProgramForTemplates as jest.Mock).mockResolvedValue(undefined);
   });
 
   it('renders templates after load', async () => {
@@ -179,6 +187,68 @@ describe('TemplateList', () => {
     expect(getByText('18 sets/wk')).toBeTruthy();
     expect(getByText('CUSTOM TEMPLATES · 1')).toBeTruthy();
     expect(getByText('Hotel Upper')).toBeTruthy();
+  });
+
+  it('marks one programme as active', async () => {
+    (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue([
+      {
+        id: 'phul-upper',
+        name: 'Upper Power',
+        notes: null,
+        program_preset_id: 'phul',
+        archived_at: null,
+        created_at: 1000,
+        updated_at: 1000,
+        item_count: 6,
+        working_set_count: 18,
+      },
+      {
+        id: 'phul-lower',
+        name: 'Lower Power',
+        notes: null,
+        program_preset_id: 'phul',
+        archived_at: null,
+        created_at: 1000,
+        updated_at: 1000,
+        item_count: 6,
+        working_set_count: 18,
+      },
+    ]);
+
+    const { getByTestId } = render(<TemplateList />);
+
+    await waitFor(() => expect(getByTestId('set-active-program-phul')).toBeTruthy());
+    fireEvent.press(getByTestId('set-active-program-phul'));
+
+    await waitFor(() =>
+      expect(setActiveProgramForTemplates).toHaveBeenCalledWith(
+        expect.objectContaining({ __db: true }),
+        'phul',
+        ['phul-upper', 'phul-lower'],
+      ),
+    );
+  });
+
+  it('shows the active programme badge', async () => {
+    (getActiveProgramPresetId as jest.Mock).mockResolvedValue('phul');
+    (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue([
+      {
+        id: 'phul-upper',
+        name: 'Upper Power',
+        notes: null,
+        program_preset_id: 'phul',
+        archived_at: null,
+        created_at: 1000,
+        updated_at: 1000,
+        item_count: 6,
+        working_set_count: 18,
+      },
+    ]);
+
+    const { getByTestId, getByText } = render(<TemplateList />);
+
+    await waitFor(() => expect(getByTestId('active-program-phul')).toBeTruthy());
+    expect(getByText('Active programme')).toBeTruthy();
   });
 
   it('builds deterministic template groups from existing preset workout names', () => {

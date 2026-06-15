@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import Home from '@/screens/Home';
 import { openDb } from '@/db/client';
-import { getNormalTemplatesWithCount } from '@/db/repositories/templates.repo';
+import {
+  getActiveProgramPresetId,
+  getNormalTemplatesWithCount,
+} from '@/db/repositories/templates.repo';
 import { discardSession, getSessionRecovery } from '@/db/repositories/sessions.repo';
 import { getTrainingVolumeReport } from '@/db/repositories/trainingVolume.repo';
 import { dismissInsightCard, maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
@@ -35,6 +38,7 @@ jest.mock('@/db/client', () => ({
 }));
 
 jest.mock('@/db/repositories/templates.repo', () => ({
+  getActiveProgramPresetId: jest.fn(),
   getNormalTemplatesWithCount: jest.fn(),
 }));
 
@@ -60,6 +64,9 @@ jest.mock('@/db/repositories/insights.repo', () => ({
 const openDbMock = openDb as jest.MockedFunction<typeof openDb>;
 const getNormalTemplatesWithCountMock = getNormalTemplatesWithCount as jest.MockedFunction<
   typeof getNormalTemplatesWithCount
+>;
+const getActiveProgramPresetIdMock = getActiveProgramPresetId as jest.MockedFunction<
+  typeof getActiveProgramPresetId
 >;
 const getSessionRecoveryMock = getSessionRecovery as jest.MockedFunction<typeof getSessionRecovery>;
 const discardSessionMock = discardSession as jest.MockedFunction<typeof discardSession>;
@@ -158,6 +165,7 @@ describe('Home screen', () => {
         working_set_count: 18,
       },
     ]);
+    getActiveProgramPresetIdMock.mockResolvedValue(null);
     getSessionRecoveryMock.mockResolvedValue({ status: 'none', sessions: [] });
     getTrainingVolumeReportMock.mockResolvedValue({
       window: {
@@ -435,6 +443,28 @@ describe('Home screen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('WorkoutDetails', { sessionId: 'session-1' });
   });
 
+  it('falls back to Workout only when a recent workout name is unavailable', async () => {
+    recentRows = [
+      {
+        id: 'session-empty-name',
+        name: '   ',
+        started_at: NOW - 24 * 60 * 60_000,
+        ended_at: NOW - 24 * 60 * 60_000 + 30 * 60_000,
+        total_volume_cached: 1200,
+        set_count: 8,
+        pr_count: 0,
+      },
+    ];
+    configureDbMock();
+
+    render(<Home />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('recent-workout-session-empty-name')).toBeTruthy(),
+    );
+    expect(screen.getByText('Workout')).toBeTruthy();
+  });
+
   it('renders templates with exercise count, last used, and tap navigation', async () => {
     render(<Home />);
 
@@ -467,6 +497,56 @@ describe('Home screen', () => {
     fireEvent.press(screen.getByTestId('home-overflow-feedback'));
 
     expect(screen.getByTestId('feedback-modal')).toBeTruthy();
+  });
+
+  it('renders the home overflow menu in an overlay above the Start Workout content', async () => {
+    render(<Home />);
+
+    await waitFor(() => expect(screen.getByTestId('home-overflow-btn')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('home-overflow-btn'));
+
+    const menu = screen.getByTestId('home-overflow-menu');
+    expect(menu).toBeTruthy();
+    expect(menu.props.style).toEqual(
+      expect.objectContaining({
+        zIndex: 1000,
+        elevation: 24,
+      }),
+    );
+  });
+
+  it('prioritises active programme templates on Home recommendations', async () => {
+    getActiveProgramPresetIdMock.mockResolvedValue('phul');
+    getNormalTemplatesWithCountMock.mockResolvedValue([
+      {
+        id: 'custom-template',
+        name: 'Friday Upper',
+        notes: null,
+        archived_at: null,
+        created_at: 1,
+        updated_at: 1,
+        item_count: 4,
+        working_set_count: 12,
+      },
+      {
+        id: 'phul-template',
+        name: 'Upper Power',
+        notes: null,
+        program_preset_id: 'phul',
+        archived_at: null,
+        created_at: 1,
+        updated_at: 1,
+        item_count: 6,
+        working_set_count: 18,
+      },
+    ]);
+
+    render(<Home />);
+
+    await waitFor(() => expect(screen.getByTestId('start-workout-btn')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('start-workout-btn'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('LiveWorkout', { templateId: 'phul-template' });
   });
 
   it('discards the active workout through the secondary action', async () => {

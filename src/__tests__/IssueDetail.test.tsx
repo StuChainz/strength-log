@@ -163,6 +163,8 @@ const event = {
   issue_id: 'issue-1',
   exercise_id: 'bench',
   session_id: 'session-1',
+  set_id: null,
+  client_event_id: null,
   reaction_type: 'aggravated' as const,
   severity: 3,
   note: 'Tingling after set 2',

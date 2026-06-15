@@ -200,7 +200,8 @@ export default function EndWorkoutSummary() {
   const route = useRoute<EndWorkoutSummaryRouteProp>();
   const { sessionId } = route.params;
   const [summary, setSummary] = useState<WorkoutSummary | null>(null);
-  const [nextTimeExpanded, setNextTimeExpanded] = useState(true);
+  const [prExpanded, setPrExpanded] = useState(false);
+  const [nextTimeExpanded, setNextTimeExpanded] = useState(false);
   const [isFinishing, setFinishing] = useState(false);
   const [feedbackVisible, setFeedbackVisible] = useState(false);
   const finishRequestedRef = useRef(false);
@@ -309,46 +310,63 @@ export default function EndWorkoutSummary() {
             </View>
           )}
 
-          <View style={styles.sectionBlock}>
-            <Text style={styles.sectionTitle}>Personal Records</Text>
-            {groupedPRs.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <Text style={styles.noPrText}>No new PRs today.</Text>
-              </View>
-            ) : (
-              groupedPRs.map((exercise) => (
-                <View key={exercise.exerciseId} style={styles.prCard}>
-                  <View style={styles.prHeader}>
-                    <Text style={styles.prExerciseName}>{exercise.exerciseName}</Text>
-                    {exercise.rows.length > 1 && (
-                      <Text style={styles.prCount}>{exercise.rows.length} PRs</Text>
-                    )}
-                  </View>
-                  {exercise.rows.map((row) => (
-                    <View key={row.key} style={styles.prRow}>
-                      <Ionicons name="checkmark" size={18} color={T.accent} />
-                      <Text style={styles.prLabel}>{row.label}</Text>
-                      {row.detail && <Text style={styles.prDetail}>{row.detail}</Text>}
-                    </View>
-                  ))}
+          <View style={styles.sectionBlock} testID="pr-section">
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={prExpanded ? 'Collapse PRs' : 'Expand PRs'}
+              hitSlop={8}
+              style={styles.collapsibleHeader}
+              testID="pr-toggle"
+              onPress={() => setPrExpanded((expanded) => !expanded)}
+            >
+              <Text style={[styles.sectionTitle, styles.collapsibleTitle]}>
+                Personal Records ({summary.prCount})
+              </Text>
+              <Ionicons
+                name={prExpanded ? 'chevron-up' : 'chevron-down'}
+                size={24}
+                color={T.text}
+              />
+            </TouchableOpacity>
+            {prExpanded &&
+              (groupedPRs.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <Text style={styles.noPrText}>No new PRs today.</Text>
                 </View>
-              ))
-            )}
+              ) : (
+                groupedPRs.map((exercise) => (
+                  <View key={exercise.exerciseId} style={styles.prCard}>
+                    <View style={styles.prHeader}>
+                      <Text style={styles.prExerciseName}>{exercise.exerciseName}</Text>
+                      {exercise.rows.length > 1 && (
+                        <Text style={styles.prCount}>{exercise.rows.length} PRs</Text>
+                      )}
+                    </View>
+                    {exercise.rows.map((row) => (
+                      <View key={row.key} style={styles.prRow}>
+                        <Ionicons name="checkmark" size={18} color={T.accent} />
+                        <Text style={styles.prLabel}>{row.label}</Text>
+                        {row.detail && <Text style={styles.prDetail}>{row.detail}</Text>}
+                      </View>
+                    ))}
+                  </View>
+                ))
+              ))}
           </View>
 
           {nextTimePreviews.length > 0 && (
             <View style={styles.nextTimeSection} testID="next-time-section">
               <TouchableOpacity
                 accessibilityRole="button"
-                accessibilityLabel={
-                  nextTimeExpanded ? 'Collapse Next Time' : 'Expand Next Time'
-                }
+                accessibilityLabel={nextTimeExpanded ? 'Collapse Next Time' : 'Expand Next Time'}
                 hitSlop={8}
                 style={styles.nextTimeHeader}
                 testID="next-time-toggle"
                 onPress={() => setNextTimeExpanded((expanded) => !expanded)}
               >
-                <Text style={[styles.sectionTitle, styles.nextTimeTitle]}>Next Time</Text>
+                <Text style={[styles.sectionTitle, styles.nextTimeTitle]}>
+                  Next Time ({nextTimePreviews.length})
+                </Text>
                 <Ionicons
                   name={nextTimeExpanded ? 'chevron-up' : 'chevron-down'}
                   size={24}
@@ -519,6 +537,13 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   noPrText: { color: T.textDim, fontSize: 13 },
+  collapsibleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  collapsibleTitle: { marginBottom: 0 },
   nextTimeSection: { marginTop: 28 },
   nextTimeTitle: { marginBottom: 0 },
   nextTimeHeader: {

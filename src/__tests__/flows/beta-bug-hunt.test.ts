@@ -343,6 +343,11 @@ describe('beta bug-hunt repository flows', () => {
       DROP TABLE IF EXISTS session_notes;
       DROP TABLE IF EXISTS post_session_tags;
       DROP TABLE IF EXISTS exercise_history_cache;
+      DROP TABLE IF EXISTS issue_checkins;
+      DROP TABLE IF EXISTS issue_routines;
+      DROP TABLE IF EXISTS issue_exercise_links;
+      DROP TABLE IF EXISTS exercise_issue_events;
+      DROP TABLE IF EXISTS issues;
       DROP TABLE IF EXISTS exercise_prs;
       DROP TABLE IF EXISTS workout_sets;
       DROP TABLE IF EXISTS workout_events;

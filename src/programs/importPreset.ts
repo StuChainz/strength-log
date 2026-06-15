@@ -27,13 +27,8 @@ export class PresetExerciseResolutionError extends Error {
   }
 }
 
-async function resolveExerciseId(
-  db: SQLiteDatabase,
-  match: ExerciseMatch,
-): Promise<string | null> {
-  const candidates = [match.normalizedName, ...(match.aliases ?? [])].map((n) =>
-    normalizeName(n),
-  );
+async function resolveExerciseId(db: SQLiteDatabase, match: ExerciseMatch): Promise<string | null> {
+  const candidates = [match.normalizedName, ...(match.aliases ?? [])].map((n) => normalizeName(n));
 
   for (const needle of candidates) {
     const byName = await db.getFirstAsync<{ id: string }>(
@@ -126,6 +121,7 @@ export async function importPreset(
       const template = await createTemplate(db, {
         name: workout.name,
         notes: workout.notes ?? null,
+        programPresetId: preset.id,
         items,
       });
       created.push(template);

@@ -160,9 +160,11 @@ describe('EndWorkoutSummary', () => {
       ],
     });
 
-    const { getByText } = render(<EndWorkoutSummary />);
+    const { getByTestId, getByText, queryByText } = render(<EndWorkoutSummary />);
 
-    await waitFor(() => expect(getByText('Personal Records')).toBeTruthy());
+    await waitFor(() => expect(getByText('Personal Records (3)')).toBeTruthy());
+    expect(queryByText('Bench Press')).toBeNull();
+    fireEvent.press(getByTestId('pr-toggle'));
     expect(getByText('Bench Press')).toBeTruthy();
     expect(getByText('2 PRs')).toBeTruthy();
     expect(getByText('Rep PR')).toBeTruthy();
@@ -174,9 +176,11 @@ describe('EndWorkoutSummary', () => {
   it('handles sessions with no PRs without crashing', async () => {
     getWorkoutSummaryMock.mockResolvedValue(baseSummary);
 
-    const { getByText } = render(<EndWorkoutSummary />);
+    const { getByTestId, getByText } = render(<EndWorkoutSummary />);
 
-    await waitFor(() => expect(getByText('No new PRs today.')).toBeTruthy());
+    await waitFor(() => expect(getByText('Personal Records (0)')).toBeTruthy());
+    fireEvent.press(getByTestId('pr-toggle'));
+    expect(getByText('No new PRs today.')).toBeTruthy();
   });
 
   it('opens feedback from the workout summary header', async () => {
@@ -219,7 +223,9 @@ describe('EndWorkoutSummary', () => {
 
     const { getAllByText, getByTestId, getByText, queryByText } = render(<EndWorkoutSummary />);
 
-    await waitFor(() => expect(getByText('Next Time')).toBeTruthy());
+    await waitFor(() => expect(getByText('Next Time (1)')).toBeTruthy());
+    expect(queryByText('Arnold Press')).toBeNull();
+    fireEvent.press(getByTestId('next-time-toggle'));
     expect(getByTestId('next-time-card-arnold-press')).toBeTruthy();
     expect(getByText('Arnold Press')).toBeTruthy();
     expect(getByText('40 kg × 10')).toBeTruthy();
@@ -231,6 +237,60 @@ describe('EndWorkoutSummary', () => {
 
     fireEvent.press(getByTestId('next-time-toggle'));
     expect(getByText('40 kg × 11')).toBeTruthy();
+  });
+
+  it('keeps PR and Next Time sections collapsed by default', async () => {
+    getWorkoutSummaryMock.mockResolvedValue({
+      ...baseSummary,
+      prCount: 1,
+      prs: [
+        {
+          id: 'pr-1',
+          exercise_id: 'bench',
+          exercise_name: 'Bench Press',
+          session_id: 'session-1',
+          set_id: 'set-1',
+          record_type: 'rep_max',
+          record_key: 'rep_max:5',
+          reps: 5,
+          weight: 80,
+          value: 80,
+          unit: 'kg',
+          achieved_at: 1,
+          created_at: 2,
+        },
+      ],
+      nextTimePreviews: [
+        {
+          exerciseId: 'bench',
+          exerciseName: 'Bench Press',
+          bestSetLabel: '80 kg × 5',
+          status: 'Repeat',
+          nextTargetLabel: '80 kg × 5',
+          reason: 'Repeat target',
+          rule: 'none',
+          source: 'fallback',
+          suggestion: {
+            label: 'Repeat',
+            reason: 'Repeat target',
+            weight: 80,
+            reps: 5,
+            rpe: null,
+            unit: 'kg',
+            source: 'fallback',
+            rule: 'none',
+          },
+        },
+      ],
+    });
+
+    const { getByText, queryByTestId, queryByText } = render(<EndWorkoutSummary />);
+
+    await waitFor(() => expect(getByText('Personal Records (1)')).toBeTruthy());
+    expect(getByText('Next Time (1)')).toBeTruthy();
+    expect(queryByText('Rep PR')).toBeNull();
+    expect(queryByTestId('next-time-card-bench')).toBeNull();
+    expect(queryByTestId('pr-section')).toBeTruthy();
   });
 
   it('sorts muscles by effective sets and keeps the body map collapsed by default', async () => {

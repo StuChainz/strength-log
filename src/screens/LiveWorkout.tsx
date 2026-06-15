@@ -20,8 +20,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import { insertEvent, getLatestRestTimerEvent } from '@/db/repositories/events.repo';
 import {
+  createIssue,
   getActiveIssueExerciseLinksForExercise,
   getActiveIssues,
+  getExerciseIssueEventsForExercise,
+  type ExerciseIssueEventWithIssueName,
   recordExerciseIssueEvent,
   type IssueExerciseLinkWithIssueName,
 } from '@/db/repositories/issues.repo';
@@ -31,7 +34,10 @@ import { ExercisePicker } from '@/components/ExercisePicker';
 import { MicButton } from '@/components/MicButton';
 import ExerciseHistorySheet from '@/screens/ExerciseHistorySheet';
 import VoiceConfirm from '@/screens/VoiceConfirm';
-import { getLiveWorkoutSuggestion } from '@/domain/progression';
+import {
+  getLiveWorkoutSuggestion,
+  type ProgressionIssueReactionContext,
+} from '@/domain/progression';
 import { detectLivePotentialPRs, type LivePotentialPR, type PreviousPRData } from '@/domain/prs';
 import {
   calculateSessionVolume,
@@ -120,6 +126,19 @@ function getExerciseCategoryLabel(category: string | null | undefined): string {
 
 function formatIssueLinkType(linkType: IssueExerciseLinkType): string {
   return linkType === 'helpful' ? 'Helpful' : 'Aggravating';
+}
+
+function toProgressionIssueReaction(
+  event: ExerciseIssueEventWithIssueName,
+): ProgressionIssueReactionContext {
+  return {
+    issueName: event.issue_name,
+    reactionType: event.reaction_type,
+    severity: event.severity,
+    createdAt: event.created_at,
+    sessionId: event.session_id,
+    setId: event.set_id,
+  };
 }
 
 function getCompactTargetLine(exercise: {
@@ -249,11 +268,20 @@ export default function LiveWorkout() {
   const [activeExerciseIssueLinks, setActiveExerciseIssueLinks] = useState<
     IssueExerciseLinkWithIssueName[]
   >([]);
+  const [activeExerciseIssueEvents, setActiveExerciseIssueEvents] = useState<
+    ExerciseIssueEventWithIssueName[]
+  >([]);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  const [selectedIssueSetId, setSelectedIssueSetId] = useState<string | null>(null);
+  const [issueClientEventId, setIssueClientEventId] = useState<string | null>(null);
   const [issueReaction, setIssueReaction] = useState<IssueReactionType>('aggravated');
   const [issueSeverity, setIssueSeverity] = useState<number | null>(null);
   const [issueNote, setIssueNote] = useState('');
   const [issueSaving, setIssueSaving] = useState(false);
+  const [creatingIssue, setCreatingIssue] = useState(false);
+  const [newIssueName, setNewIssueName] = useState('');
+  const [newIssueNote, setNewIssueNote] = useState('');
+  const [newIssueSaving, setNewIssueSaving] = useState(false);
   const [previousPRData, setPreviousPRData] = useState<PreviousPRData | null>(null);
   const [voiceText, setVoiceText] = useState('');
   const [voiceResult, setVoiceResult] = useState<IntentResult | null>(null);
@@ -369,8 +397,9 @@ export default function LiveWorkout() {
       progressionRule: activeExercise?.progressionRule ?? { rule: 'none' },
       recentSets: activeSets,
       previousSessionSets: lastSessionSets.length > 0 ? lastSessionSets : previousSessionSets,
+      recentIssueReactions: activeExerciseIssueEvents.map(toProgressionIssueReaction),
     });
-  }, [activeExercise, activeSets, lastSets]);
+  }, [activeExercise, activeExerciseIssueEvents, activeSets, lastSets]);
   const potentialPRs = useMemo(
     () => (previousPRData ? detectLivePotentialPRs(sets, previousPRData) : []),
     [previousPRData, sets],
@@ -444,17 +473,27 @@ export default function LiveWorkout() {
   useEffect(() => {
     if (phase !== 'active' || !activeExerciseId) {
       setActiveExerciseIssueLinks([]);
+      setActiveExerciseIssueEvents([]);
       return;
     }
 
     let cancelled = false;
     openDb()
-      .then((db) => getActiveIssueExerciseLinksForExercise(db, activeExerciseId))
-      .then((rows) => {
-        if (!cancelled) setActiveExerciseIssueLinks(rows);
+      .then((db) =>
+        Promise.all([
+          getActiveIssueExerciseLinksForExercise(db, activeExerciseId),
+          getExerciseIssueEventsForExercise(db, activeExerciseId, 5),
+        ]),
+      )
+      .then(([links, events]) => {
+        if (cancelled) return;
+        setActiveExerciseIssueLinks(links);
+        setActiveExerciseIssueEvents(events);
       })
       .catch(() => {
-        if (!cancelled) setActiveExerciseIssueLinks([]);
+        if (cancelled) return;
+        setActiveExerciseIssueLinks([]);
+        setActiveExerciseIssueEvents([]);
       });
     return () => {
       cancelled = true;
@@ -989,34 +1028,84 @@ export default function LiveWorkout() {
     [store],
   );
 
-  const openIssueSheet = useCallback(() => {
-    setSelectedIssueId((current) => current ?? activeIssues[0]?.id ?? null);
-    setIssueReaction('aggravated');
-    setIssueSeverity(null);
-    setIssueNote('');
-    setIssueSheetVisible(true);
-  }, [activeIssues]);
+  const getDefaultIssueId = useCallback(
+    () => activeExerciseIssueLinks[0]?.issue_id ?? activeIssues[0]?.id ?? null,
+    [activeExerciseIssueLinks, activeIssues],
+  );
+
+  const openIssueSheet = useCallback(
+    (setId: string | null = null) => {
+      setSelectedIssueId(getDefaultIssueId());
+      setSelectedIssueSetId(setId);
+      setIssueClientEventId(newId());
+      setIssueReaction('aggravated');
+      setIssueSeverity(null);
+      setIssueNote('');
+      setCreatingIssue(false);
+      setNewIssueName('');
+      setNewIssueNote('');
+      setIssueSheetVisible(true);
+    },
+    [getDefaultIssueId],
+  );
+
+  const handleCreateIssueInline = useCallback(async () => {
+    const name = newIssueName.trim();
+    if (name.length === 0 || newIssueSaving) return;
+    setNewIssueSaving(true);
+    try {
+      const db = await openDb();
+      const issue = await createIssue(db, { name, note: newIssueNote });
+      setActiveIssues((current) => [issue, ...current.filter((item) => item.id !== issue.id)]);
+      setSelectedIssueId(issue.id);
+      setCreatingIssue(false);
+      setNewIssueName('');
+      setNewIssueNote('');
+    } finally {
+      setNewIssueSaving(false);
+    }
+  }, [newIssueName, newIssueNote, newIssueSaving]);
 
   const handleSaveIssueReaction = useCallback(async () => {
     if (!activeExerciseId || !selectedIssueId || issueSeverity === null) return;
     setIssueSaving(true);
     try {
       const db = await openDb();
-      await recordExerciseIssueEvent(db, {
+      const event = await recordExerciseIssueEvent(db, {
         issueId: selectedIssueId,
         exerciseId: activeExerciseId,
         sessionId: session?.id ?? null,
+        setId: selectedIssueSetId,
+        clientEventId: issueClientEventId,
         reactionType: issueReaction,
         severity: issueSeverity,
         note: issueNote,
       });
       setIssueSheetVisible(false);
+      const issueName =
+        activeIssues.find((issue) => issue.id === event.issue_id)?.name ?? 'Issue';
+      setActiveExerciseIssueEvents((current) => [
+        { ...event, issue_name: issueName },
+        ...current.filter((item) => item.id !== event.id),
+      ]);
+      setSelectedIssueSetId(null);
+      setIssueClientEventId(null);
       setIssueNote('');
       setIssueSeverity(null);
     } finally {
       setIssueSaving(false);
     }
-  }, [activeExerciseId, issueNote, issueReaction, issueSeverity, selectedIssueId, session?.id]);
+  }, [
+    activeExerciseId,
+    activeIssues,
+    issueClientEventId,
+    issueNote,
+    issueReaction,
+    issueSeverity,
+    selectedIssueId,
+    selectedIssueSetId,
+    session?.id,
+  ]);
 
   const commitVoiceResult = useCallback(
     async (parsed: IntentResult) => {
@@ -1164,6 +1253,7 @@ export default function LiveWorkout() {
   } · ${getSetTypeLabel(setType)}`;
   const canSaveIssueReaction =
     activeExerciseId !== null && selectedIssueId !== null && issueSeverity !== null && !issueSaving;
+  const canCreateIssueInline = newIssueName.trim().length > 0 && !newIssueSaving;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -1208,7 +1298,7 @@ export default function LiveWorkout() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.summaryActionBtn}
-            onPress={openIssueSheet}
+            onPress={() => openIssueSheet(null)}
             hitSlop={8}
             testID="issue-reaction-btn"
           >
@@ -1347,6 +1437,9 @@ export default function LiveWorkout() {
                     numberOfLines={1}
                   >
                     {suggestionLine}
+                  </Text>
+                  <Text style={styles.progressionReason} numberOfLines={2}>
+                    {suggestion.reason}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1508,16 +1601,17 @@ export default function LiveWorkout() {
               const rowPotentialPRs = potentialPRsBySetId.get(item.id) ?? [];
               return (
                 <View style={styles.setRowWrap}>
-                  <TouchableOpacity
-                    activeOpacity={0.78}
-                    onPress={() => openEditSet(item)}
-                    onLongPress={() => handleDeleteSet(item)}
-                    delayLongPress={450}
-                    testID={`edit-set-btn-${item.id}`}
+                  <View
+                    style={[styles.setRow, rowPotentialPRs.length > 0 && styles.setRowPr]}
+                    testID={`set-row-${item.id}`}
                   >
-                    <View
-                      style={[styles.setRow, rowPotentialPRs.length > 0 && styles.setRowPr]}
-                      testID={`set-row-${item.id}`}
+                    <TouchableOpacity
+                      style={styles.setRowMain}
+                      activeOpacity={0.78}
+                      onPress={() => openEditSet(item)}
+                      onLongPress={() => handleDeleteSet(item)}
+                      delayLongPress={450}
+                      testID={`edit-set-btn-${item.id}`}
                     >
                       <Text style={styles.setIndex}>#{index + 1}</Text>
                       <View style={styles.setMetric}>
@@ -1571,11 +1665,22 @@ export default function LiveWorkout() {
                           </Text>
                         </View>
                       )}
+                    </TouchableOpacity>
+                    <View style={styles.setActionCluster}>
+                      <TouchableOpacity
+                        style={styles.setIssueBtn}
+                        onPress={() => openIssueSheet(item.id)}
+                        hitSlop={8}
+                        accessibilityLabel="Noted on this set"
+                        testID={`set-issue-reaction-btn-${item.id}`}
+                      >
+                        <Ionicons name="alert-circle-outline" size={16} color={T.textDim} />
+                      </TouchableOpacity>
                       <View style={styles.setCheck}>
                         <Ionicons name="checkmark" size={18} color={T.success} />
                       </View>
                     </View>
-                  </TouchableOpacity>
+                  </View>
                 </View>
               );
             }}
@@ -1843,121 +1948,211 @@ export default function LiveWorkout() {
           animationType="fade"
           onRequestClose={() => setIssueSheetVisible(false)}
         >
-          <View style={styles.modalBackdrop}>
-            <View style={styles.issueSheet} testID="issue-reaction-sheet">
-              <View style={styles.editHeader}>
-                <Text style={styles.editTitle}>Issue</Text>
-                <TouchableOpacity
-                  style={styles.iconBtn}
-                  onPress={() => setIssueSheetVisible(false)}
-                  hitSlop={8}
-                >
-                  <Ionicons name="close" size={16} color={T.textDim} />
-                </TouchableOpacity>
-              </View>
-
-              {activeIssues.length === 0 ? (
-                <View style={styles.issueEmpty}>
-                  <Text style={styles.issueEmptyText}>Create an Issue in Settings first.</Text>
+          <KeyboardAvoidingView
+            style={styles.modalKeyboardAvoiding}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 18 : 0}
+            testID="issue-modal-keyboard-avoiding"
+          >
+            <View style={styles.modalBackdrop}>
+              <View style={styles.issueSheet} testID="issue-reaction-sheet">
+                <View style={styles.editHeader}>
+                  <Text style={styles.editTitle}>
+                    {creatingIssue
+                      ? 'Create Issue'
+                      : selectedIssueSetId
+                        ? 'Noted on this set'
+                        : 'Issue'}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.iconBtn}
+                    onPress={() => setIssueSheetVisible(false)}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="close" size={16} color={T.textDim} />
+                  </TouchableOpacity>
                 </View>
-              ) : (
-                <>
-                  <View style={styles.issueField}>
-                    <Text style={styles.issueSheetLabel}>Issue</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.issueChipRow}
+
+                <ScrollView
+                  style={styles.issueScroll}
+                  contentContainerStyle={styles.issueScrollContent}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                >
+                  {creatingIssue ? (
+                    <>
+                      <View style={styles.issueField}>
+                        <Text style={styles.issueSheetLabel}>Name</Text>
+                        <TextInput
+                          style={styles.issueTextInput}
+                          value={newIssueName}
+                          onChangeText={setNewIssueName}
+                          placeholder="Left shoulder pinch"
+                          placeholderTextColor={T.muted}
+                          returnKeyType="next"
+                          testID="new-issue-name-input"
+                        />
+                      </View>
+                      <View style={styles.issueField}>
+                        <Text style={styles.issueSheetLabel}>Optional note</Text>
+                        <TextInput
+                          style={styles.issueNoteInput}
+                          value={newIssueNote}
+                          onChangeText={setNewIssueNote}
+                          placeholder="Started during today's session"
+                          placeholderTextColor={T.muted}
+                          multiline
+                          textAlignVertical="top"
+                          testID="new-issue-note-input"
+                        />
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={styles.createIssueAction}
+                        activeOpacity={0.84}
+                        onPress={() => setCreatingIssue(true)}
+                        testID="create-new-issue-action"
+                      >
+                        <Ionicons name="add-circle-outline" size={18} color={T.accent} />
+                        <Text style={styles.createIssueActionText}>Create New Issue</Text>
+                      </TouchableOpacity>
+
+                      {activeIssues.length === 0 ? (
+                        <View style={styles.issueEmpty}>
+                          <Text style={styles.issueEmptyText}>
+                            No active issues yet. Create one here and keep logging.
+                          </Text>
+                        </View>
+                      ) : (
+                        <>
+                          <View style={styles.issueField}>
+                            <Text style={styles.issueSheetLabel}>Issue</Text>
+                            <ScrollView
+                              horizontal
+                              showsHorizontalScrollIndicator={false}
+                              contentContainerStyle={styles.issueChipRow}
+                            >
+                              {activeIssues.map((issue) => (
+                                <TouchableOpacity
+                                  key={issue.id}
+                                  style={[
+                                    styles.issueSelectChip,
+                                    selectedIssueId === issue.id && styles.issueSelectChipActive,
+                                  ]}
+                                  onPress={() => setSelectedIssueId(issue.id)}
+                                  testID={`issue-option-${issue.id}`}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.issueSelectText,
+                                      selectedIssueId === issue.id && styles.issueSelectTextActive,
+                                    ]}
+                                  >
+                                    {issue.name}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          </View>
+
+                          <View style={styles.issueField}>
+                            <Text style={styles.issueSheetLabel}>Reaction</Text>
+                            <View style={styles.issueSegmented}>
+                              {(['aggravated', 'helped'] as IssueReactionType[]).map((reaction) => (
+                                <TouchableOpacity
+                                  key={reaction}
+                                  style={[
+                                    styles.issueSegment,
+                                    issueReaction === reaction && styles.issueSegmentActive,
+                                  ]}
+                                  onPress={() => setIssueReaction(reaction)}
+                                  testID={`issue-reaction-${reaction}`}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.issueSegmentText,
+                                      issueReaction === reaction && styles.issueSegmentTextActive,
+                                    ]}
+                                  >
+                                    {reaction === 'aggravated' ? 'Aggravated' : 'Helped'}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          </View>
+
+                          <View style={styles.issueField}>
+                            <Text style={styles.issueSheetLabel}>Severity</Text>
+                            <View style={styles.severityRow}>
+                              {[1, 2, 3, 4, 5].map((value) => (
+                                <TouchableOpacity
+                                  key={value}
+                                  style={[
+                                    styles.severityBtn,
+                                    issueSeverity === value && styles.severityBtnActive,
+                                  ]}
+                                  onPress={() => setIssueSeverity(value)}
+                                  testID={`issue-severity-${value}`}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.severityText,
+                                      issueSeverity === value && styles.severityTextActive,
+                                    ]}
+                                  >
+                                    {value}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          </View>
+
+                          <View style={styles.issueField}>
+                            <Text style={styles.issueSheetLabel}>Optional note</Text>
+                            <TextInput
+                              style={styles.issueNoteInput}
+                              value={issueNote}
+                              onChangeText={setIssueNote}
+                              placeholder="Tingling after set 2"
+                              placeholderTextColor={T.muted}
+                              multiline
+                              textAlignVertical="top"
+                              testID="issue-note-quick-input"
+                            />
+                          </View>
+                        </>
+                      )}
+                    </>
+                  )}
+                </ScrollView>
+
+                {creatingIssue ? (
+                  <View style={styles.issueFooterRow}>
+                    <TouchableOpacity
+                      style={styles.secondarySheetBtn}
+                      onPress={() => setCreatingIssue(false)}
+                      testID="cancel-create-issue-btn"
                     >
-                      {activeIssues.map((issue) => (
-                        <TouchableOpacity
-                          key={issue.id}
-                          style={[
-                            styles.issueSelectChip,
-                            selectedIssueId === issue.id && styles.issueSelectChipActive,
-                          ]}
-                          onPress={() => setSelectedIssueId(issue.id)}
-                          testID={`issue-option-${issue.id}`}
-                        >
-                          <Text
-                            style={[
-                              styles.issueSelectText,
-                              selectedIssueId === issue.id && styles.issueSelectTextActive,
-                            ]}
-                          >
-                            {issue.name}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
+                      <Text style={styles.secondarySheetText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.saveEditBtn,
+                        styles.issueFooterPrimary,
+                        !canCreateIssueInline && styles.issueSaveBtnDisabled,
+                      ]}
+                      disabled={!canCreateIssueInline}
+                      onPress={() => void handleCreateIssueInline()}
+                      testID="save-new-issue-btn"
+                    >
+                      <Text style={styles.saveEditText}>
+                        {newIssueSaving ? 'Creating...' : 'Create'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-
-                  <View style={styles.issueField}>
-                    <Text style={styles.issueSheetLabel}>Reaction</Text>
-                    <View style={styles.issueSegmented}>
-                      {(['aggravated', 'helped'] as IssueReactionType[]).map((reaction) => (
-                        <TouchableOpacity
-                          key={reaction}
-                          style={[
-                            styles.issueSegment,
-                            issueReaction === reaction && styles.issueSegmentActive,
-                          ]}
-                          onPress={() => setIssueReaction(reaction)}
-                          testID={`issue-reaction-${reaction}`}
-                        >
-                          <Text
-                            style={[
-                              styles.issueSegmentText,
-                              issueReaction === reaction && styles.issueSegmentTextActive,
-                            ]}
-                          >
-                            {reaction === 'aggravated' ? 'Aggravated' : 'Helped'}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.issueField}>
-                    <Text style={styles.issueSheetLabel}>Severity</Text>
-                    <View style={styles.severityRow}>
-                      {[1, 2, 3, 4, 5].map((value) => (
-                        <TouchableOpacity
-                          key={value}
-                          style={[
-                            styles.severityBtn,
-                            issueSeverity === value && styles.severityBtnActive,
-                          ]}
-                          onPress={() => setIssueSeverity(value)}
-                          testID={`issue-severity-${value}`}
-                        >
-                          <Text
-                            style={[
-                              styles.severityText,
-                              issueSeverity === value && styles.severityTextActive,
-                            ]}
-                          >
-                            {value}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.issueField}>
-                    <Text style={styles.issueSheetLabel}>Optional note</Text>
-                    <TextInput
-                      style={styles.issueNoteInput}
-                      value={issueNote}
-                      onChangeText={setIssueNote}
-                      placeholder="Tingling after set 2"
-                      placeholderTextColor={T.muted}
-                      multiline
-                      textAlignVertical="top"
-                      testID="issue-note-quick-input"
-                    />
-                  </View>
-
+                ) : (
                   <TouchableOpacity
                     style={[
                       styles.saveEditBtn,
@@ -1969,10 +2164,10 @@ export default function LiveWorkout() {
                   >
                     <Text style={styles.saveEditText}>{issueSaving ? 'Saving...' : 'Save'}</Text>
                   </TouchableOpacity>
-                </>
-              )}
+                )}
+              </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         <Modal
@@ -2426,6 +2621,11 @@ const styles = StyleSheet.create({
   progressionValueSuggested: {
     color: T.accent,
   },
+  progressionReason: {
+    color: T.muted,
+    fontSize: 11,
+    lineHeight: 14,
+  },
   restTimerPanel: {
     minHeight: 48,
     marginHorizontal: 16,
@@ -2560,7 +2760,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     minHeight: 68,
-    paddingHorizontal: 18,
+    paddingHorizontal: 12,
     paddingVertical: 12,
     backgroundColor: T.surface,
     borderWidth: 1,
@@ -2570,6 +2770,13 @@ const styles = StyleSheet.create({
   setRowPr: {
     backgroundColor: '#151308',
     borderColor: 'rgba(255,216,77,0.5)',
+  },
+  setRowMain: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   setIndex: {
     fontFamily: 'Courier New',
@@ -2603,7 +2810,24 @@ const styles = StyleSheet.create({
     color: T.textDim,
   },
   setUnit: { fontSize: 13, color: T.muted, fontWeight: '700' },
-  setCheck: { width: 28, alignItems: 'flex-end' },
+  setActionCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 6,
+    marginLeft: 8,
+  },
+  setIssueBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  setCheck: { width: 22, alignItems: 'flex-end' },
   setPrBadge: {
     minWidth: 82,
     height: 34,
@@ -2883,6 +3107,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.62)',
     justifyContent: 'flex-end',
   },
+  modalKeyboardAvoiding: { flex: 1 },
   editSheet: {
     backgroundColor: T.bg,
     borderTopWidth: 1,
@@ -2900,7 +3125,10 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 28,
     gap: 14,
+    maxHeight: '90%',
   },
+  issueScroll: { maxHeight: 440 },
+  issueScrollContent: { gap: 14, paddingBottom: 2 },
   issueEmpty: {
     borderWidth: 1,
     borderStyle: 'dashed',
@@ -2911,12 +3139,35 @@ const styles = StyleSheet.create({
   },
   issueEmptyText: { color: T.muted, fontSize: 13 },
   issueField: { gap: 8 },
+  createIssueAction: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    backgroundColor: T.surface,
+    paddingHorizontal: 12,
+  },
+  createIssueActionText: { color: T.text, fontSize: 14, fontWeight: '800' },
   issueSheetLabel: {
     fontFamily: 'Courier New',
     fontSize: 10.5,
     letterSpacing: 1.1,
     textTransform: 'uppercase',
     color: T.muted,
+  },
+  issueTextInput: {
+    minHeight: 46,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    color: T.text,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
   },
   issueChipRow: { gap: 7 },
   issueSelectChip: {
@@ -2974,6 +3225,19 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
   },
+  issueFooterRow: { flexDirection: 'row', gap: 10 },
+  issueFooterPrimary: { flex: 1 },
+  secondarySheetBtn: {
+    minWidth: 104,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: T.borderBright,
+    backgroundColor: T.surface,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondarySheetText: { color: T.text, fontSize: 15, fontWeight: '700' },
   issueSaveBtnDisabled: { opacity: 0.45 },
   summarySheet: {
     backgroundColor: T.bg,

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import FeedbackModal from '@/components/FeedbackModal';
 import { openDb } from '@/db/client';
 import { dismissInsightCard, maybeGenerateWeeklyInsight } from '@/db/repositories/insights.repo';
 import {
+  getActiveProgramPresetId,
   getNormalTemplatesWithCount,
   type TemplateSummary,
 } from '@/db/repositories/templates.repo';
@@ -143,6 +144,11 @@ function formatDuration(startedAt: number, endedAt: number | null): string {
   return `${mins}m`;
 }
 
+function formatSessionName(name: string | null): string {
+  const trimmed = name?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : 'Workout';
+}
+
 function formatDateHeader(date: Date): string {
   const weekday = date.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
   const month = date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
@@ -185,6 +191,7 @@ function muscleColor(muscle: MuscleGroup): string {
 export default function Home() {
   const navigation = useNavigation<HomeNavigationProp>();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [activeProgramPresetId, setActiveProgramPresetId] = useState<string | null>(null);
   const [templateLastUsed, setTemplateLastUsed] = useState<Record<string, number>>({});
   const [recents, setRecents] = useState<RecentSession[]>([]);
   const [recentMuscles, setRecentMuscles] = useState<Record<string, MuscleChip[]>>({});
@@ -217,6 +224,7 @@ export default function Home() {
         weeklyInsightCard,
         lastUsedRows,
         totalsRows,
+        activeProgramId,
       ] = await Promise.all([
         getNormalTemplatesWithCount(db),
         db.getAllAsync<RecentSession>(
@@ -265,6 +273,7 @@ export default function Home() {
                 AND sess.started_at >= ?`,
           [sevenDaysAgo],
         ),
+        getActiveProgramPresetId(db),
       ]);
 
       const activeSession = active.status === 'none' ? null : active.session;
@@ -277,6 +286,7 @@ export default function Home() {
       ]);
 
       setTemplates(tpls);
+      setActiveProgramPresetId(activeProgramId);
       setTemplateLastUsed(
         Object.fromEntries(lastUsedRows.map((row) => [row.template_id, row.last_used_at])),
       );
@@ -302,7 +312,16 @@ export default function Home() {
   );
 
   const today = useMemo(() => new Date(now), [now]);
-  const nextTemplate: TemplateSummary | null = templates[0] ?? null;
+  const orderedTemplates = useMemo(() => {
+    if (!activeProgramPresetId) return templates;
+    return [...templates].sort((a, b) => {
+      const aActive = a.program_preset_id === activeProgramPresetId ? 0 : 1;
+      const bActive = b.program_preset_id === activeProgramPresetId ? 0 : 1;
+      if (aActive !== bActive) return aActive - bActive;
+      return templates.indexOf(a) - templates.indexOf(b);
+    });
+  }, [activeProgramPresetId, templates]);
+  const nextTemplate: TemplateSummary | null = orderedTemplates[0] ?? null;
   const topMuscles = trainingReport?.muscles.slice(0, 4) ?? [];
   const maxMuscleExposure = Math.max(...topMuscles.map((row) => row.totalExposure), 1);
 
@@ -375,19 +394,6 @@ export default function Home() {
               <Text style={styles.weekCountValue}>{trainingTotals.session_count}</Text>
               <Text style={styles.weekCountLabel}>this week</Text>
             </View>
-            {overflowOpen && (
-              <View style={styles.overflowMenu} testID="home-overflow-menu">
-                <TouchableOpacity
-                  style={styles.overflowItem}
-                  activeOpacity={0.84}
-                  onPress={openFeedback}
-                  testID="home-overflow-feedback"
-                >
-                  <Ionicons name="chatbox-ellipses-outline" size={16} color={T.textDim} />
-                  <Text style={styles.overflowItemText}>Send Feedback</Text>
-                </TouchableOpacity>
-              </View>
-            )}
           </View>
         </View>
 
@@ -495,7 +501,7 @@ export default function Home() {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>TEMPLATES</Text>
           <View style={styles.templateGrid}>
-            {templates.slice(0, 3).map((template) => (
+            {orderedTemplates.slice(0, 3).map((template) => (
               <TouchableOpacity
                 key={template.id}
                 style={styles.templateCard}
@@ -616,7 +622,7 @@ export default function Home() {
                   <View style={styles.recentTop}>
                     <View style={styles.recentInfo}>
                       <View style={styles.recentTitleRow}>
-                        <Text style={styles.recentName}>{session.name ?? 'Workout'}</Text>
+                        <Text style={styles.recentName}>{formatSessionName(session.name)}</Text>
                         {session.pr_count > 0 && (
                           <View style={styles.prBadge}>
                             <Text style={styles.prBadgeText}>
@@ -668,6 +674,31 @@ export default function Home() {
           </View>
         )}
       </ScrollView>
+      <Modal
+        visible={overflowOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOverflowOpen(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.overflowBackdrop}
+          onPress={() => setOverflowOpen(false)}
+          testID="home-overflow-backdrop"
+        >
+          <View style={styles.overflowMenu} testID="home-overflow-menu">
+            <TouchableOpacity
+              style={styles.overflowItem}
+              activeOpacity={0.84}
+              onPress={openFeedback}
+              testID="home-overflow-feedback"
+            >
+              <Ionicons name="chatbox-ellipses-outline" size={16} color={T.textDim} />
+              <Text style={styles.overflowItemText}>Send Feedback</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
       <FeedbackModal
         visible={feedbackVisible}
         currentRoute="Home"
@@ -813,8 +844,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
-    position: 'relative',
-    zIndex: 10,
   },
   headerIconButton: {
     width: 38,
@@ -830,18 +859,22 @@ const styles = StyleSheet.create({
   weekCount: { alignItems: 'flex-end', paddingBottom: 2 },
   weekCountValue: { color: T.text, fontSize: 22, fontWeight: '700' },
   weekCountLabel: { color: T.muted, fontSize: 12, marginTop: 2 },
+  overflowBackdrop: {
+    flex: 1,
+    alignItems: 'flex-end',
+    paddingTop: 72,
+    paddingRight: 18,
+    backgroundColor: 'transparent',
+  },
   overflowMenu: {
-    position: 'absolute',
-    top: 46,
-    right: 0,
     minWidth: 178,
     borderRadius: 12,
     backgroundColor: T.surface2,
     borderWidth: 1,
     borderColor: T.borderBright,
     padding: 6,
-    zIndex: 20,
-    elevation: 8,
+    zIndex: 1000,
+    elevation: 24,
   },
   overflowItem: {
     minHeight: 42,

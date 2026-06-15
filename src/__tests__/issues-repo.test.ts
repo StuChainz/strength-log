@@ -143,6 +143,37 @@ async function createExercise(db: ExpoLikeDb, name = 'Bench Press'): Promise<Exe
   return exercise;
 }
 
+async function createWorkoutSet(
+  db: ExpoLikeDb,
+  sessionId: string,
+  exerciseId: string,
+): Promise<string> {
+  const id = newId();
+  await db.runAsync(
+    `INSERT INTO workout_sets
+       (id, session_id, exercise_id, position, weight, reps, rpe, unit,
+        is_warmup, set_type, logged_at, source, client_set_id, deleted_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      sessionId,
+      exerciseId,
+      0,
+      100,
+      5,
+      null,
+      'kg',
+      0,
+      'working',
+      Date.now(),
+      'tap',
+      `client-${id}`,
+      null,
+    ],
+  );
+  return id;
+}
+
 describe('issues repository', () => {
   let db: ExpoLikeDb | null;
 
@@ -726,6 +757,59 @@ describe('issues repository', () => {
       { reaction_type: 'aggravated', severity: 4, note: 'Pinch at depth' },
       { reaction_type: 'helped', severity: 2, note: null },
     ]);
+  });
+
+  it('records set context when provided on an Issue reaction', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Knee pain' });
+    const exercise = await createExercise(db, 'Squat');
+    const session = await createSession(db as never, { templateId: null, name: null });
+    const setId = await createWorkoutSet(db, session.id, exercise.id);
+
+    const event = await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      sessionId: session.id,
+      setId,
+      reactionType: 'aggravated',
+      severity: 4,
+    });
+
+    expect(event.set_id).toBe(setId);
+    expect(
+      await db.getFirstAsync('SELECT set_id FROM exercise_issue_events WHERE id = ?', [event.id]),
+    ).toEqual({ set_id: setId });
+  });
+
+  it('returns the existing Issue reaction for a repeated client event id', async () => {
+    db = await setupDb();
+    const issue = await createIssue(db as never, { name: 'Elbow discomfort' });
+    const exercise = await createExercise(db, 'Press');
+
+    const first = await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      clientEventId: 'issue-event-client-1',
+      reactionType: 'aggravated',
+      severity: 3,
+      note: 'First write',
+    });
+    const second = await recordExerciseIssueEvent(db as never, {
+      issueId: issue.id,
+      exerciseId: exercise.id,
+      clientEventId: 'issue-event-client-1',
+      reactionType: 'helped',
+      severity: 1,
+      note: 'Retry write',
+    });
+
+    expect(second).toEqual(first);
+    expect(
+      await db.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM exercise_issue_events WHERE client_event_id = ?',
+        ['issue-event-client-1'],
+      ),
+    ).toEqual({ count: 1 });
   });
 
   it('validates severity from 1 to 5', async () => {

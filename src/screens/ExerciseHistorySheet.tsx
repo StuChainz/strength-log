@@ -28,6 +28,7 @@ import { getFinalPRsByExercise } from '@/db/repositories/prs.repo';
 import {
   getProgressionSuggestion,
   type ProgressionExercise,
+  type ProgressionIssueReactionContext,
   type ProgressionRuleConfig,
   type ProgressionSuggestion,
 } from '@/domain/progression';
@@ -99,9 +100,44 @@ function formatLinkType(value: IssueExerciseLinkType): string {
   return value === 'helpful' ? 'Helpful' : 'Aggravating';
 }
 
-function formatIssueEvent(event: ExerciseIssueEventWithIssueName): string {
-  const severity = event.severity !== null ? ` · ${event.severity}/5` : '';
-  return `${event.issue_name}: ${formatReaction(event.reaction_type)}${severity}`;
+function formatReactionDetail(
+  event: Pick<ExerciseIssueEvent, 'reaction_type' | 'severity'>,
+): string {
+  const severity = event.severity !== null ? ` ${event.severity}/5` : '';
+  return `${formatReaction(event.reaction_type)}${severity}`;
+}
+
+function getSetNumberForEvent(
+  session: ExerciseHistorySession,
+  event: ExerciseIssueEventWithIssueName,
+): number | null {
+  if (!event.set_id) return null;
+  const index = session.sets.findIndex((set) => set.id === event.set_id);
+  return index >= 0 ? index + 1 : null;
+}
+
+function formatIssueEvent(
+  event: ExerciseIssueEventWithIssueName,
+  session?: ExerciseHistorySession,
+): string {
+  const setNumber = session ? getSetNumberForEvent(session, event) : null;
+  if (setNumber !== null) {
+    return `Set ${setNumber}: ${event.issue_name} · ${formatReactionDetail(event)}`;
+  }
+  return `${event.issue_name}: ${formatReactionDetail(event)}`;
+}
+
+function toProgressionIssueReaction(
+  event: ExerciseIssueEventWithIssueName,
+): ProgressionIssueReactionContext {
+  return {
+    issueName: event.issue_name,
+    reactionType: event.reaction_type,
+    severity: event.severity,
+    createdAt: event.created_at,
+    sessionId: event.session_id,
+    setId: event.set_id,
+  };
 }
 
 function formatPR(record: ExercisePR): string {
@@ -114,6 +150,10 @@ function formatPR(record: ExercisePR): string {
   return `Best ${record.reps ?? 'rep'} rep${record.reps === 1 ? '' : 's'} at ${
     record.weight ?? record.value
   } ${record.unit}`;
+}
+
+function formatCount(value: number, singular: string, plural: string): string {
+  return `${value} ${value === 1 ? singular : plural}`;
 }
 
 function buildPath(points: ExerciseHistoryPoint[], width: number, height: number): string {
@@ -252,6 +292,16 @@ export default function ExerciseHistorySheet({
     () => (loadedExerciseId === exerciseId ? history : []),
     [exerciseId, history, loadedExerciseId],
   );
+  const issueReactionContexts = useMemo(() => {
+    const seen = new Set(issueEvents.map((event) => event.id));
+    const summaryEvents = issueSummary
+      .map((item) => ({
+        ...item.latestEvent,
+        issue_name: item.issueName,
+      }))
+      .filter((event) => !seen.has(event.id));
+    return [...issueEvents, ...summaryEvents].map(toProgressionIssueReaction);
+  }, [issueEvents, issueSummary]);
 
   const saveReaction = async (input: {
     reactionType: IssueReactionType;
@@ -310,11 +360,13 @@ export default function ExerciseHistorySheet({
       progressionRule,
       recentSets: displayHistory[0]?.sets ?? [],
       previousSessionSets: displayHistory[1]?.sets ?? [],
+      recentIssueReactions: issueReactionContexts,
     });
   }, [
     category,
     defaultUnit,
     displayHistory,
+    issueReactionContexts,
     progressionExercise,
     progressionRule,
     targetReps,
@@ -355,6 +407,98 @@ export default function ExerciseHistorySheet({
     return values.length > 0 ? Math.max(...values) : null;
   }, [displayHistory]);
   const recentPrs = prs.slice(0, 4);
+  const toleranceSummary = useMemo(() => {
+    if (issueEvents.length === 0 && issueSummary.length === 0 && issueLinks.length === 0) {
+      return null;
+    }
+
+    const recentSessionIds = new Set(recentSessions.map((session) => session.sessionId));
+    const eventSessionsInSample = new Set<string>(
+      issueEvents.flatMap((event) =>
+        event.session_id !== null && recentSessionIds.has(event.session_id)
+          ? [event.session_id]
+          : [],
+      ),
+    );
+    const aggravatedCount =
+      issueSummary.length > 0
+        ? issueSummary.reduce((sum, item) => sum + item.aggravatedCount, 0)
+        : issueEvents.filter((event) => event.reaction_type === 'aggravated').length;
+    const helpedCount =
+      issueSummary.length > 0
+        ? issueSummary.reduce((sum, item) => sum + item.helpedCount, 0)
+        : issueEvents.filter((event) => event.reaction_type === 'helped').length;
+    const latestEvent =
+      issueEvents[0] ??
+      issueSummary
+        .map((item) => ({
+          ...item.latestEvent,
+          issue_name: item.issueName,
+        }))
+        .sort((a, b) => b.created_at - a.created_at)[0] ??
+      null;
+    const eventCount =
+      issueEvents.length > 0
+        ? issueEvents.length
+        : issueSummary.reduce((sum, item) => sum + item.aggravatedCount + item.helpedCount, 0);
+    const hasSessionIssueEvents = issueEvents.some((event) => event.session_id !== null);
+
+    const lines: string[] = [];
+    if (hasSessionIssueEvents && recentSessions.length > 0) {
+      lines.push(
+        `Issue notes co-occurred with ${eventSessionsInSample.size} of last ${formatCount(
+          recentSessions.length,
+          'session',
+          'sessions',
+        )}.`,
+      );
+    } else if (eventCount > 0) {
+      lines.push(`${formatCount(eventCount, 'issue record', 'issue records')} noted.`);
+    } else {
+      lines.push(
+        `${formatCount(issueLinks.length, 'active issue link', 'active issue links')} marked.`,
+      );
+    }
+
+    if (latestEvent) {
+      lines.push(
+        `Latest: ${formatReactionDetail(latestEvent)} · ${formatDate(latestEvent.created_at)}`,
+      );
+    }
+    if (aggravatedCount > 0) {
+      lines.push(`Marked aggravated ${formatCount(aggravatedCount, 'time', 'times')}.`);
+    }
+    if (helpedCount > 0) {
+      lines.push(
+        `${aggravatedCount > 0 ? 'Also marked' : 'Marked'} helped ${formatCount(
+          helpedCount,
+          'time',
+          'times',
+        )}.`,
+      );
+    }
+    if (eventCount === 0 && issueLinks.length > 0) {
+      lines.push(
+        ...issueLinks
+          .slice(0, 2)
+          .map(
+            (link) =>
+              `${link.issue_name} marked ${
+                link.link_type === 'helpful' ? 'helpful' : 'aggravating'
+              }.`,
+          ),
+      );
+    }
+
+    const sample =
+      hasSessionIssueEvents && recentSessions.length > 0
+        ? `Sample: ${formatCount(recentSessions.length, 'recent session', 'recent sessions')}`
+        : eventCount > 0
+          ? `Sample: ${formatCount(eventCount, 'issue record', 'issue records')}`
+          : `Sample: ${formatCount(issueLinks.length, 'active issue link', 'active issue links')}`;
+
+    return { lines, sample };
+  }, [issueEvents, issueLinks, issueSummary, recentSessions]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -442,6 +586,21 @@ export default function ExerciseHistorySheet({
             </View>
           ) : (
             <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+              {toleranceSummary && (
+                <View style={styles.toleranceBlock} testID="exercise-history-tolerance-summary">
+                  <View style={styles.sectionHeaderRow}>
+                    <Text style={styles.sectionTitle}>Tolerance</Text>
+                    <Text style={styles.sectionMeta}>Worth noticing</Text>
+                  </View>
+                  {toleranceSummary.lines.map((line) => (
+                    <Text key={line} style={styles.toleranceLine}>
+                      {line}
+                    </Text>
+                  ))}
+                  <Text style={styles.toleranceSample}>{toleranceSummary.sample}</Text>
+                </View>
+              )}
+
               {displayHistory.length === 0 ? (
                 <View style={styles.empty}>
                   <Text style={styles.emptyText}>No completed sessions yet.</Text>
@@ -617,7 +776,7 @@ export default function ExerciseHistorySheet({
                             {sessionIssueEvents.slice(0, 2).map((event) => (
                               <View key={event.id} style={styles.sessionIssueRow}>
                                 <Text style={styles.sessionIssueText}>
-                                  {formatIssueEvent(event)}
+                                  {formatIssueEvent(event, session)}
                                 </Text>
                                 {event.note ? (
                                   <Text style={styles.sessionIssueNote} numberOfLines={2}>
@@ -880,6 +1039,21 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   issueHistoryLatest: { color: T.muted, fontFamily: 'Courier New', fontSize: 11 },
+  toleranceBlock: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 12,
+    gap: 6,
+  },
+  toleranceLine: { color: T.textDim, fontFamily: 'Courier New', fontSize: 12 },
+  toleranceSample: {
+    color: T.muted,
+    fontFamily: 'Courier New',
+    fontSize: 11,
+    marginTop: 2,
+  },
   empty: {
     borderWidth: 1,
     borderStyle: 'dashed',

@@ -1,7 +1,4 @@
-import {
-  importPreset,
-  PresetExerciseResolutionError,
-} from '@/programs/importPreset';
+import { importPreset, PresetExerciseResolutionError } from '@/programs/importPreset';
 import { ALL_PRESETS, LINEAR_5X5, REDDIT_PPL } from '@/programs/presets';
 import type { ProgramPreset } from '@/programs/types';
 import { SEED_EXERCISES } from '@/db/seed/exercises';
@@ -73,9 +70,11 @@ function createMockDb(presetExerciseNames: string[], opts: MockOptions = {}) {
           id: params[0] as string,
           name: params[1] as string,
           notes: (params[2] as string | null) ?? null,
+          program_preset_id: params[3] as string | null,
+          is_active_programme: 0,
           archived_at: null,
           created_at: params[4] as number,
-          updated_at: params[4] as number,
+          updated_at: params[5] as number,
         });
       } else if (/^INSERT INTO template_items/.test(sql)) {
         template_items.push({
@@ -152,15 +151,11 @@ describe('importPreset', () => {
     expect(result.templates).toHaveLength(LINEAR_5X5.workouts.length);
     expect(db._templates).toHaveLength(LINEAR_5X5.workouts.length);
 
-    const expectedItemCount = LINEAR_5X5.workouts.reduce(
-      (n, w) => n + w.exercises.length,
-      0,
-    );
+    const expectedItemCount = LINEAR_5X5.workouts.reduce((n, w) => n + w.exercises.length, 0);
     expect(db._template_items).toHaveLength(expectedItemCount);
 
-    expect(result.templates.map((t) => t.name)).toEqual(
-      LINEAR_5X5.workouts.map((w) => w.name),
-    );
+    expect(result.templates.map((t) => t.name)).toEqual(LINEAR_5X5.workouts.map((w) => w.name));
+    expect(db._templates.every((t) => t.program_preset_id === 'linear-5x5')).toBe(true);
   });
 
   it('creates one template per workout for the PPL preset', async () => {
@@ -171,10 +166,7 @@ describe('importPreset', () => {
     expect(result.templates).toHaveLength(REDDIT_PPL.workouts.length);
     expect(db._templates).toHaveLength(REDDIT_PPL.workouts.length);
 
-    const expectedItemCount = REDDIT_PPL.workouts.reduce(
-      (n, w) => n + w.exercises.length,
-      0,
-    );
+    const expectedItemCount = REDDIT_PPL.workouts.reduce((n, w) => n + w.exercises.length, 0);
     expect(db._template_items).toHaveLength(expectedItemCount);
   });
 

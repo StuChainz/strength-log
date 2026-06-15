@@ -380,6 +380,37 @@ CREATE INDEX IF NOT EXISTS idx_issue_checkins_issue_created
   ON issue_checkins (issue_id, created_at DESC);
 `;
 
+const MIGRATION_019 = `
+ALTER TABLE templates
+  ADD COLUMN program_preset_id TEXT;
+
+ALTER TABLE templates
+  ADD COLUMN is_active_programme INTEGER NOT NULL DEFAULT 0
+  CHECK (is_active_programme IN (0, 1));
+
+CREATE INDEX IF NOT EXISTS idx_templates_program_preset
+  ON templates (program_preset_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_programme
+  ON templates(is_active_programme)
+  WHERE is_active_programme = 1;
+`;
+
+const MIGRATION_020 = `
+ALTER TABLE exercise_issue_events
+  ADD COLUMN set_id TEXT REFERENCES workout_sets(id);
+
+ALTER TABLE exercise_issue_events
+  ADD COLUMN client_event_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_exercise_issue_events_set
+  ON exercise_issue_events (set_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_exercise_issue_events_client_event
+  ON exercise_issue_events (client_event_id)
+  WHERE client_event_id IS NOT NULL;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { name: '001_init', sql: MIGRATION_001 },
   { name: '002_app_settings', sql: MIGRATION_002 },
@@ -399,4 +430,6 @@ export const MIGRATIONS: Migration[] = [
   { name: '016_template_item_note', sql: MIGRATION_016 },
   { name: '017_issue_routines', sql: MIGRATION_017 },
   { name: '018_issue_checkins', sql: MIGRATION_018 },
+  { name: '019_active_programme', sql: MIGRATION_019 },
+  { name: '020_issue_event_set_context', sql: MIGRATION_020 },
 ];

@@ -85,6 +85,8 @@ export interface RecordExerciseIssueEventInput {
   issueId: string;
   exerciseId: string;
   sessionId?: string | null;
+  setId?: string | null;
+  clientEventId?: string | null;
   reactionType: IssueReactionType;
   severity?: number | null;
   note?: string | null;
@@ -485,11 +487,22 @@ export async function recordExerciseIssueEvent(
   input: RecordExerciseIssueEventInput,
 ): Promise<ExerciseIssueEvent> {
   validateReactionType(input.reactionType);
+  const clientEventId = cleanText(input.clientEventId);
+  if (clientEventId) {
+    const existing = await db.getFirstAsync<ExerciseIssueEvent>(
+      'SELECT * FROM exercise_issue_events WHERE client_event_id = ?',
+      [clientEventId],
+    );
+    if (existing) return existing;
+  }
+
   const event: ExerciseIssueEvent = {
     id: newId(),
     issue_id: input.issueId,
     exercise_id: input.exerciseId,
     session_id: input.sessionId ?? null,
+    set_id: input.setId ?? null,
+    client_event_id: clientEventId,
     reaction_type: input.reactionType,
     severity: validateSeverity(input.severity),
     note: cleanText(input.note),
@@ -497,20 +510,31 @@ export async function recordExerciseIssueEvent(
   };
 
   await db.runAsync(
-    `INSERT INTO exercise_issue_events
-       (id, issue_id, exercise_id, session_id, reaction_type, severity, note, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `${clientEventId ? 'INSERT OR IGNORE' : 'INSERT'} INTO exercise_issue_events
+       (id, issue_id, exercise_id, session_id, set_id, client_event_id,
+        reaction_type, severity, note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       event.id,
       event.issue_id,
       event.exercise_id,
       event.session_id,
+      event.set_id,
+      event.client_event_id,
       event.reaction_type,
       event.severity,
       event.note,
       event.created_at,
     ],
   );
+
+  if (clientEventId) {
+    const saved = await db.getFirstAsync<ExerciseIssueEvent>(
+      'SELECT * FROM exercise_issue_events WHERE client_event_id = ?',
+      [clientEventId],
+    );
+    if (saved) return saved;
+  }
 
   return event;
 }
@@ -682,13 +706,15 @@ export async function getExerciseIssueSummary(
     issue_name: string;
     exercise_id: string;
     session_id: string | null;
+    set_id: string | null;
+    client_event_id: string | null;
     reaction_type: IssueReactionType;
     severity: number | null;
     note: string | null;
     created_at: number;
   }>(
     `SELECT e.id, e.issue_id, i.name AS issue_name, e.exercise_id, e.session_id,
-            e.reaction_type, e.severity, e.note, e.created_at
+            e.set_id, e.client_event_id, e.reaction_type, e.severity, e.note, e.created_at
        FROM exercise_issue_events e
        JOIN issues i ON i.id = e.issue_id
       WHERE e.exercise_id = ?
@@ -712,6 +738,8 @@ export async function getExerciseIssueSummary(
           issue_id: row.issue_id,
           exercise_id: row.exercise_id,
           session_id: row.session_id,
+          set_id: row.set_id,
+          client_event_id: row.client_event_id,
           reaction_type: row.reaction_type,
           severity: row.severity,
           note: row.note,

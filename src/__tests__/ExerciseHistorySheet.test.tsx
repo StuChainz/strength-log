@@ -135,6 +135,8 @@ describe('ExerciseHistorySheet Issue history', () => {
           issue_id: 'issue-1',
           exercise_id: 'bench',
           session_id: 'session-1',
+          set_id: null,
+          client_event_id: null,
           reaction_type: 'aggravated',
           severity: 3,
           note: 'Tingling after set 2',
@@ -148,9 +150,9 @@ describe('ExerciseHistorySheet Issue history', () => {
     deleteExerciseIssueEventMock.mockResolvedValue(undefined);
   });
 
-  it('shows compact Issue reaction summary when records exist', async () => {
+  it('shows compact tolerance summary when issue records exist', async () => {
     getActiveIssueExerciseLinksForExerciseMock.mockResolvedValueOnce([]);
-    const { getByText } = render(
+    const { getByTestId, getByText } = render(
       <ExerciseHistorySheet
         visible
         exerciseId="bench"
@@ -167,11 +169,58 @@ describe('ExerciseHistorySheet Issue history', () => {
     );
 
     await waitFor(() => expect(getByText('Issue history')).toBeTruthy());
+    expect(getByTestId('exercise-history-tolerance-summary')).toBeTruthy();
+    expect(getByText('4 issue records noted.')).toBeTruthy();
+    expect(getByText(/Latest: Aggravated 3\/5 · /)).toBeTruthy();
+    expect(getByText('Marked aggravated 3 times.')).toBeTruthy();
+    expect(getByText('Also marked helped 1 time.')).toBeTruthy();
+    expect(getByText('Sample: 4 issue records')).toBeTruthy();
     expect(getByText('Shoulder Pain')).toBeTruthy();
     expect(getByText('Aggravated 3 times')).toBeTruthy();
     expect(getByText('Helped 1 time')).toBeTruthy();
     expect(getByText('Last note: Tingling after set 2')).toBeTruthy();
     expect(getByText('Latest Aggravated · 3/5')).toBeTruthy();
+  });
+
+  it('shows the recent session sample size for tolerance notes', async () => {
+    getActiveIssueExerciseLinksForExerciseMock.mockResolvedValueOnce([]);
+    getExerciseHistoryMock.mockResolvedValueOnce([
+      historySession('session-1', 1_900_000_000_000),
+      historySession('session-2', 1_899_900_000_000),
+    ]);
+    getExerciseIssueEventsForExerciseMock.mockResolvedValueOnce([
+      {
+        id: 'event-2',
+        issue_id: 'issue-1',
+        issue_name: 'Shoulder Pain',
+        exercise_id: 'bench',
+        session_id: 'session-2',
+        set_id: null,
+        client_event_id: null,
+        reaction_type: 'helped',
+        severity: 2,
+        note: null,
+        created_at: 1_899_900_000_000,
+      },
+      {
+        id: 'event-1',
+        issue_id: 'issue-1',
+        issue_name: 'Shoulder Pain',
+        exercise_id: 'bench',
+        session_id: 'session-1',
+        set_id: null,
+        client_event_id: null,
+        reaction_type: 'aggravated',
+        severity: 3,
+        note: null,
+        created_at: 1_900_000_000_000,
+      },
+    ]);
+
+    const { getByText } = render(<ExerciseHistorySheet {...baseProps} />);
+
+    await waitFor(() => expect(getByText('Sample: 2 recent sessions')).toBeTruthy());
+    expect(getByText('Issue notes co-occurred with 2 of last 2 sessions.')).toBeTruthy();
   });
 
   it('shows only the last 5 recent sessions', async () => {
@@ -236,6 +285,8 @@ describe('ExerciseHistorySheet Issue history', () => {
         issue_name: 'Shoulder Pain',
         exercise_id: 'bench',
         session_id: 'session-1',
+        set_id: null,
+        client_event_id: null,
         reaction_type: 'aggravated',
         severity: 4,
         note: 'Pinch after top set',
@@ -245,8 +296,105 @@ describe('ExerciseHistorySheet Issue history', () => {
 
     const { getByText } = render(<ExerciseHistorySheet {...baseProps} />);
 
-    await waitFor(() => expect(getByText('Shoulder Pain: Aggravated · 4/5')).toBeTruthy());
+    await waitFor(() => expect(getByText('Shoulder Pain: Aggravated 4/5')).toBeTruthy());
     expect(getByText('Pinch after top set')).toBeTruthy();
+  });
+
+  it('shows set-level issue context on matching recent sessions', async () => {
+    getExerciseHistoryMock.mockResolvedValue([
+      {
+        ...historySession('session-1', 1_900_000_000_000),
+        sets: [
+          {
+            id: 'set-1',
+            weight: 90,
+            reps: 5,
+            rpe: null,
+            unit: 'kg' as const,
+            set_type: 'working' as const,
+            logged_at: 1_900_000_000_000,
+            position: 0,
+          },
+          {
+            id: 'set-2',
+            weight: 100,
+            reps: 5,
+            rpe: null,
+            unit: 'kg' as const,
+            set_type: 'working' as const,
+            logged_at: 1_900_000_010_000,
+            position: 1,
+          },
+        ],
+      },
+    ]);
+    getExerciseIssueEventsForExerciseMock.mockResolvedValue([
+      {
+        id: 'event-session-1',
+        issue_id: 'issue-1',
+        issue_name: 'Shoulder Pain',
+        exercise_id: 'bench',
+        session_id: 'session-1',
+        set_id: 'set-2',
+        client_event_id: null,
+        reaction_type: 'aggravated',
+        severity: 3,
+        note: null,
+        created_at: 1_900_000_010_000,
+      },
+    ]);
+
+    const { getByText } = render(<ExerciseHistorySheet {...baseProps} />);
+
+    await waitFor(() =>
+      expect(getByText('Set 2: Shoulder Pain · Aggravated 3/5')).toBeTruthy(),
+    );
+  });
+
+  it('does not show tolerance summary when there is no issue data', async () => {
+    getActiveIssueExerciseLinksForExerciseMock.mockResolvedValueOnce([]);
+    getExerciseIssueSummaryMock.mockResolvedValueOnce([]);
+    getExerciseIssueEventsForExerciseMock.mockResolvedValueOnce([]);
+    getExerciseHistoryMock.mockResolvedValueOnce([historySession('session-1', 1_900_000_000_000)]);
+
+    const { getByTestId, queryByTestId } = render(<ExerciseHistorySheet {...baseProps} />);
+
+    await waitFor(() => expect(getByTestId('exercise-history-session-session-1')).toBeTruthy());
+    expect(queryByTestId('exercise-history-tolerance-summary')).toBeNull();
+  });
+
+  it('shows issue-suppressed suggestion reason in the suggestion card', async () => {
+    getExerciseHistoryMock.mockResolvedValueOnce([historySession('session-1', 1_900_000_000_000)]);
+    getExerciseIssueEventsForExerciseMock.mockResolvedValueOnce([
+      {
+        id: 'event-session-1',
+        issue_id: 'issue-1',
+        issue_name: 'Shoulder',
+        exercise_id: 'bench',
+        session_id: 'session-1',
+        set_id: null,
+        client_event_id: null,
+        reaction_type: 'aggravated',
+        severity: 4,
+        note: null,
+        created_at: 1_900_000_000_000,
+      },
+    ]);
+
+    const { getByText } = render(
+      <ExerciseHistorySheet
+        {...baseProps}
+        targetReps={5}
+        targetWeight={100}
+        progressionRule={{ rule: 'linear' }}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        getByText('High issue aggravation noted recently: consider an easier set.'),
+      ).toBeTruthy(),
+    );
   });
 
   it('shows manual Issue links separately from reaction history', async () => {
@@ -324,6 +472,8 @@ describe('ExerciseHistorySheet Issue history', () => {
             issue_id: 'issue-1',
             exercise_id: 'bench',
             session_id: 'session-1',
+            set_id: null,
+            client_event_id: null,
             reaction_type: 'aggravated',
             severity: 3,
             note: 'Delete me',

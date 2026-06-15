@@ -182,6 +182,8 @@ export interface Template {
   id: string;
   name: string;
   notes: string | null;
+  program_preset_id?: string | null;
+  is_active_programme?: 0 | 1;
   archived_at: number | null;
   created_at: number;
   updated_at: number;
@@ -274,6 +276,8 @@ export interface ExerciseIssueEvent {
   issue_id: string;
   exercise_id: string;
   session_id: string | null;
+  set_id: string | null;
+  client_event_id: string | null;
   reaction_type: IssueReactionType;
   severity: number | null;
   note: string | null;

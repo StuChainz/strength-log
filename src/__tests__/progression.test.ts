@@ -231,6 +231,171 @@ describe('getProgressionSuggestion', () => {
     expect(next).not.toHaveProperty('apply');
   });
 
+  describe('issue reaction gate', () => {
+    const hitTargetSets = [baseSet, baseSet, baseSet];
+
+    it.each([1, 2, null] as const)(
+      'suppresses weight increase and repeats target for aggravated severity %s',
+      (severity) => {
+        const next = suggestion({
+          progressionRule: { rule: 'linear' },
+          recentSets: hitTargetSets,
+          recentIssueReactions: [
+            {
+              issueName: 'Shoulder',
+              reactionType: 'aggravated',
+              severity,
+              createdAt: 2_000,
+              sessionId: 'session-1',
+              setId: null,
+            },
+          ],
+        });
+
+        expect(next).toEqual(
+          expect.objectContaining({
+            weight: 80,
+            reps: 5,
+            reason: 'Issue noted recently: repeat target.',
+            suppressedByIssue: true,
+            requiresUserAction: false,
+          }),
+        );
+      },
+    );
+
+    it('suppresses progression and requires user action for aggravated severity 3', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'linear' },
+        recentSets: hitTargetSets,
+        recentIssueReactions: [
+          {
+            issueName: 'Shoulder',
+            reactionType: 'aggravated',
+            severity: 3,
+            createdAt: 2_000,
+            sessionId: 'session-1',
+            setId: null,
+          },
+        ],
+      });
+
+      expect(next).toEqual(
+        expect.objectContaining({
+          weight: 80,
+          reps: 5,
+          reason: 'Issue marked aggravated recently: repeat target.',
+          suppressedByIssue: true,
+          requiresUserAction: true,
+        }),
+      );
+    });
+
+    it.each([4, 5] as const)(
+      'uses cautious easier-set wording and requires user action for aggravated severity %s',
+      (severity) => {
+        const next = suggestion({
+          progressionRule: { rule: 'linear' },
+          recentSets: hitTargetSets,
+          recentIssueReactions: [
+            {
+              issueName: 'Shoulder',
+              reactionType: 'aggravated',
+              severity,
+              createdAt: 2_000,
+              sessionId: 'session-1',
+              setId: null,
+            },
+          ],
+        });
+
+        expect(next).toEqual(
+          expect.objectContaining({
+            weight: 80,
+            reps: 5,
+            reason: 'High issue aggravation noted recently: consider an easier set.',
+            suppressedByIssue: true,
+            requiresUserAction: true,
+          }),
+        );
+      },
+    );
+
+    it('uses the most recent aggravated reaction for the current exercise', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'linear' },
+        recentSets: hitTargetSets,
+        recentIssueReactions: [
+          {
+            issueName: 'Older issue',
+            reactionType: 'aggravated',
+            severity: 4,
+            createdAt: 1_000,
+            sessionId: 'session-1',
+            setId: null,
+          },
+          {
+            issueName: 'Newer issue',
+            reactionType: 'aggravated',
+            severity: 2,
+            createdAt: 2_000,
+            sessionId: 'session-2',
+            setId: null,
+          },
+        ],
+      });
+
+      expect(next.reason).toBe('Issue noted recently: repeat target.');
+      expect(next.issueContext).toEqual({
+        issueName: 'Newer issue',
+        reactionType: 'aggravated',
+        severity: 2,
+      });
+    });
+
+    it('does not suppress normal progression for helped reactions', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'linear' },
+        recentSets: hitTargetSets,
+        recentIssueReactions: [
+          {
+            issueName: 'Shoulder',
+            reactionType: 'helped',
+            severity: 5,
+            createdAt: 2_000,
+            sessionId: 'session-1',
+            setId: null,
+          },
+        ],
+      });
+
+      expect(next).toEqual(
+        expect.objectContaining({
+          weight: 82.5,
+          reps: 5,
+          reason: 'Linear: target hit',
+        }),
+      );
+      expect(next.suppressedByIssue).toBeUndefined();
+    });
+
+    it('preserves existing progression behavior without issue context', () => {
+      const next = suggestion({
+        progressionRule: { rule: 'linear' },
+        recentSets: hitTargetSets,
+      });
+
+      expect(next).toEqual(
+        expect.objectContaining({
+          weight: 82.5,
+          reps: 5,
+          reason: 'Linear: target hit',
+          requiresUserAction: false,
+        }),
+      );
+    });
+  });
+
   describe('linear deload', () => {
     it('suggests deload after the configured failure threshold of missed sessions', () => {
       const missed = { ...baseSet, reps: 3 };
