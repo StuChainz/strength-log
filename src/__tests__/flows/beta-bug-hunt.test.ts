@@ -717,7 +717,7 @@ describe('beta bug-hunt repository flows', () => {
     });
   });
 
-  it('keeps progression suggestions opt-in and ignores stale history until current evidence exists', () => {
+  it('keeps progression suggestions opt-in and uses previous-session evidence for first sets', () => {
     const suggestion = getProgressionSuggestion({
       exercise: {
         category: 'barbell',
@@ -735,7 +735,7 @@ describe('beta bug-hunt repository flows', () => {
     expect(suggestion).toEqual(
       expect.objectContaining({
         source: 'template_rule',
-        reason: 'Repeat target',
+        reason: 'Linear: high effort',
         weight: 100,
         reps: 5,
       }),

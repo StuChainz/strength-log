@@ -396,6 +396,135 @@ describe('LiveWorkout screen core flow', () => {
     expect(getByText('NEXT SET')).toBeTruthy();
   });
 
+  it('seeds and logs the first set from a useful suggestion', async () => {
+    getLiveWorkoutSuggestionMock.mockReturnValue({
+      label: 'Planned target',
+      reason: 'Planned target',
+      weight: 40,
+      reps: 8,
+      rpe: null,
+      unit: 'kg',
+      source: 'template_rule',
+      rule: 'double',
+    });
+    const store = activeStore({ sets: [] });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId, getByText } = render(<LiveWorkout />);
+
+    await waitFor(() => expect(getByText('Log set · 40 × 8')).toBeTruthy());
+    fireEvent.press(getByTestId('log-set-btn'));
+
+    await waitFor(() =>
+      expect(store.logSet).toHaveBeenCalledWith({
+        exerciseId: 'bench',
+        weight: 40,
+        reps: 8,
+        rpe: null,
+        unit: 'kg',
+        setType: 'working',
+      }),
+    );
+  });
+
+  it('seeds from the latest current-session set even when a different suggestion exists', async () => {
+    getLiveWorkoutSuggestionMock.mockReturnValue({
+      label: 'Planned target',
+      reason: 'Planned target',
+      weight: 40,
+      reps: 8,
+      rpe: null,
+      unit: 'kg',
+      source: 'template_rule',
+      rule: 'double',
+    });
+    const store = activeStore({
+      sets: [
+        {
+          id: 'older-set',
+          session_id: 'session-1',
+          exercise_id: 'bench',
+          position: 0,
+          weight: 80,
+          reps: 5,
+          rpe: null,
+          unit: 'kg',
+          is_warmup: 0,
+          set_type: 'working',
+          logged_at: 1_000,
+          source: 'tap',
+          client_set_id: 'client-older-set',
+          deleted_at: null,
+        },
+        {
+          id: 'latest-set',
+          session_id: 'session-1',
+          exercise_id: 'bench',
+          position: 1,
+          weight: 85,
+          reps: 3,
+          rpe: null,
+          unit: 'kg',
+          is_warmup: 0,
+          set_type: 'working',
+          logged_at: 2_000,
+          source: 'tap',
+          client_set_id: 'client-latest-set',
+          deleted_at: null,
+        },
+      ],
+    });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId, getByText } = render(<LiveWorkout />);
+
+    await waitFor(() => expect(getByText('Log set · 85 × 3')).toBeTruthy());
+    fireEvent.press(getByTestId('log-set-btn'));
+
+    await waitFor(() =>
+      expect(store.logSet).toHaveBeenCalledWith(
+        expect.objectContaining({
+          weight: 85,
+          reps: 3,
+        }),
+      ),
+    );
+  });
+
+  it('does not overwrite user edits when a suggestion arrives later', async () => {
+    const store = activeStore({ sets: [] });
+    useSessionStoreMock.mockReturnValue(store);
+
+    const { getByTestId, rerender } = render(<LiveWorkout />);
+
+    fireEvent.changeText(getByTestId('weight-input'), '32.5');
+    fireEvent.changeText(getByTestId('reps-input'), '7');
+    getLiveWorkoutSuggestionMock.mockReturnValue({
+      label: 'Planned target',
+      reason: 'Planned target',
+      weight: 40,
+      reps: 8,
+      rpe: null,
+      unit: 'kg',
+      source: 'template_rule',
+      rule: 'double',
+    });
+    useSessionStoreMock.mockReturnValue(activeStore({ sets: [], logSet: store.logSet }));
+    rerender(<LiveWorkout />);
+    fireEvent.press(getByTestId('log-set-btn'));
+
+    await waitFor(() =>
+      expect(store.logSet).toHaveBeenCalledWith({
+        exerciseId: 'bench',
+        weight: 32.5,
+        reps: 7,
+        rpe: null,
+        unit: 'kg',
+        setType: 'working',
+      }),
+    );
+  });
+
   it('builds live suggestions from current-session sets', () => {
     const store = activeStore();
     useSessionStoreMock.mockReturnValue(store);

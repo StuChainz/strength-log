@@ -136,6 +136,17 @@ function lastWorkingSet(sets: ProgressionSet[]): ProgressionSet | null {
   return filtered[filtered.length - 1] ?? null;
 }
 
+function lastUsableWorkingSet(sets: ProgressionSet[]): ProgressionSet | null {
+  const filtered = sets.filter(
+    (set) => isNonWarmupSet(set) && (set.weight !== null || set.reps !== null),
+  );
+  return filtered[filtered.length - 1] ?? null;
+}
+
+function firstSetBaseSets(input: ProgressionInput): ProgressionSet[] {
+  return input.recentSets.length > 0 ? input.recentSets : (input.previousSessionSets ?? []);
+}
+
 function hasEnoughSets(sets: ProgressionSet[], targetSets: number | null): boolean {
   return targetSets === null ? sets.length > 0 : sets.length >= targetSets;
 }
@@ -194,14 +205,26 @@ function targetWeightOrLast(
   target: ProgressionTemplateTarget,
   sets: ProgressionSet[],
 ): number | null {
-  return target.targetWeight ?? lastWorkingSet(sets)?.weight ?? null;
+  return (
+    target.targetWeight ??
+    [...sets]
+      .reverse()
+      .find((set) => isNonWarmupSet(set) && set.weight !== null)?.weight ??
+    null
+  );
 }
 
 function targetRepsOrLast(
   target: ProgressionTemplateTarget,
   sets: ProgressionSet[],
 ): number | null {
-  return target.targetReps ?? lastWorkingSet(sets)?.reps ?? null;
+  return (
+    target.targetReps ??
+    [...sets]
+      .reverse()
+      .find((set) => isNonWarmupSet(set) && set.reps !== null)?.reps ??
+    null
+  );
 }
 
 function allSetsHitTarget(
@@ -277,12 +300,10 @@ function issueSuppressionSuggestion(input: ProgressionInput): ProgressionSuggest
   const reason =
     severity >= 4
       ? 'Recent high issue note: consider an easier set.'
-      : severity >= 3
-        ? 'Recent issue note: repeat target.'
-        : 'Recent issue note: use the same target.';
+      : 'Recent issue note: repeat target.';
   const suggestion = repeatTargetSuggestion(
     input.templateTarget,
-    input.recentSets,
+    firstSetBaseSets(input),
     input.progressionRule.rule,
     reason,
     highSeverity ? 'Consider an easier set' : 'Repeat target',
@@ -378,12 +399,13 @@ function amrapThresholdSuggestion(input: ProgressionInput): ProgressionSuggestio
 }
 
 function linearSuggestion(input: ProgressionInput): ProgressionSuggestion {
-  const { templateTarget, recentSets } = input;
-  const lastSetRpe = lastWorkingSet(recentSets)?.rpe ?? null;
-  const currentWeight = targetWeightOrLast(templateTarget, recentSets);
-  const currentReps = targetRepsOrLast(templateTarget, recentSets);
+  const { templateTarget } = input;
+  const baseSets = firstSetBaseSets(input);
+  const lastSetRpe = lastWorkingSet(baseSets)?.rpe ?? null;
+  const currentWeight = targetWeightOrLast(templateTarget, baseSets);
+  const currentReps = targetRepsOrLast(templateTarget, baseSets);
 
-  if (allSetsHitTarget(recentSets, templateTarget) && !(lastSetRpe !== null && lastSetRpe > 8.5)) {
+  if (allSetsHitTarget(baseSets, templateTarget) && !(lastSetRpe !== null && lastSetRpe > 8.5)) {
     const increment = incrementFor(input);
     return {
       label: `Linear: target hit`,
@@ -403,18 +425,19 @@ function linearSuggestion(input: ProgressionInput): ProgressionSuggestion {
   if (deload) return deload;
 
   const reason = lastSetRpe !== null && lastSetRpe > 8.5 ? 'Linear: high effort' : 'Repeat target';
-  return repeatTargetSuggestion(templateTarget, recentSets, 'linear', reason, reason);
+  return repeatTargetSuggestion(templateTarget, baseSets, 'linear', reason, reason);
 }
 
 function doubleSuggestion(input: ProgressionInput): ProgressionSuggestion {
   const { templateTarget, progressionRule, recentSets } = input;
+  const baseSets = firstSetBaseSets(input);
   const repMin = progressionRule.repRangeMin ?? templateTarget.targetReps ?? 1;
   const repMax = progressionRule.repRangeMax ?? Math.max(repMin, templateTarget.targetReps ?? repMin);
-  const targetSets = workingSets(recentSets, templateTarget.targetSets);
-  const currentWeight = targetWeightOrLast(templateTarget, recentSets);
+  const targetSets = workingSets(baseSets, templateTarget.targetSets);
+  const currentWeight = targetWeightOrLast(templateTarget, baseSets);
   const highRpe = (maxRpe(targetSets) ?? 0) > 9;
 
-  if (!hasEnoughSets(targetSets, templateTarget.targetSets)) {
+  if (recentSets.length === 0 || !hasEnoughSets(targetSets, templateTarget.targetSets)) {
     return {
       label: 'Double: build reps',
       reason: 'Double: build reps',
@@ -476,13 +499,14 @@ function doubleSuggestion(input: ProgressionInput): ProgressionSuggestion {
 
 function rpeGatedSuggestion(input: ProgressionInput): ProgressionSuggestion {
   const { templateTarget, progressionRule, recentSets, previousSessionSets = [] } = input;
+  const baseSets = firstSetBaseSets(input);
   const cap = progressionRule.rpeCap ?? 8.5;
-  const currentWeight = targetWeightOrLast(templateTarget, recentSets);
-  const currentReps = targetRepsOrLast(templateTarget, recentSets);
-  const hitTarget = allSetsHitTarget(recentSets, templateTarget);
+  const currentWeight = targetWeightOrLast(templateTarget, baseSets);
+  const currentReps = targetRepsOrLast(templateTarget, baseSets);
+  const hitTarget = allSetsHitTarget(baseSets, templateTarget);
   const missedRecent = anySetMissedReps(recentSets, templateTarget);
   const missedPrevious = anySetMissedReps(previousSessionSets, templateTarget);
-  const effort = maxRpe(workingSets(recentSets, templateTarget.targetSets));
+  const effort = maxRpe(workingSets(baseSets, templateTarget.targetSets));
 
   if (missedRecent && missedPrevious && currentWeight !== null) {
     return {
@@ -498,7 +522,7 @@ function rpeGatedSuggestion(input: ProgressionInput): ProgressionSuggestion {
   }
 
   if (effort !== null && effort > cap) {
-    return repeatTargetSuggestion(templateTarget, recentSets, 'rpe_gated', 'RPE high: repeat target', 'RPE high: repeat target');
+    return repeatTargetSuggestion(templateTarget, baseSets, 'rpe_gated', 'RPE high: repeat target', 'RPE high: repeat target');
   }
 
   if (hitTarget && effort !== null && effort <= 7 && currentWeight !== null) {
@@ -516,10 +540,10 @@ function rpeGatedSuggestion(input: ProgressionInput): ProgressionSuggestion {
   }
 
   if (hitTarget && effort !== null && effort <= cap) {
-    return repeatTargetSuggestion(templateTarget, recentSets, 'rpe_gated', 'RPE moderate: repeat target', 'RPE moderate: repeat target');
+    return repeatTargetSuggestion(templateTarget, baseSets, 'rpe_gated', 'RPE moderate: repeat target', 'RPE moderate: repeat target');
   }
 
-  return repeatTargetSuggestion(templateTarget, recentSets, 'rpe_gated', 'Repeat target');
+  return repeatTargetSuggestion(templateTarget, baseSets, 'rpe_gated', 'Repeat target');
 }
 
 function missedTarget(set: ProgressionSet | null | undefined, targetReps: number | null): boolean {
@@ -531,8 +555,9 @@ function hitTarget(set: ProgressionSet, targetReps: number | null): boolean {
 }
 
 function fallbackSuggestion(input: ProgressionInput): ProgressionSuggestion {
-  const { templateTarget, recentSets, previousSessionSets = [], exercise } = input;
-  const lastSet = lastWorkingSet(recentSets);
+  const { templateTarget, previousSessionSets = [], exercise } = input;
+  const baseSets = firstSetBaseSets(input);
+  const lastSet = lastUsableWorkingSet(baseSets);
 
   if (!lastSet) {
     return {
@@ -656,12 +681,13 @@ function plannedNextSetSuggestion(input: ProgressionInput): ProgressionSuggestio
     templateTarget.targetWeight !== null || templateTarget.targetReps !== null || isAmrap;
 
   if (!hasPlannedValue) return null;
+  const baseSets = firstSetBaseSets(input);
 
   return withDefaults(
     {
       label: isAmrap ? 'AMRAP' : 'Planned target',
       reason: isAmrap ? 'Planned AMRAP set' : 'Planned target',
-      weight: templateTarget.targetWeight,
+      weight: targetWeightOrLast(templateTarget, baseSets),
       reps: isAmrap ? null : templateTarget.targetReps,
       rpe: null,
       unit: templateTarget.unit,

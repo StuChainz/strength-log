@@ -306,6 +306,11 @@ export default function LiveWorkout() {
   const completedRestTimerKeyRef = useRef<string | null>(null);
   const notificationResumeSessionIdRef = useRef<string | null>(null);
   const justLoggedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loggerSeedRef = useRef<{
+    exerciseId: string | null;
+    manuallyEdited: boolean;
+    appliedKey: string | null;
+  }>({ exerciseId: null, manuallyEdited: false, appliedKey: null });
 
   const activeExerciseIndex = exercises.findIndex((e) => e.id === activeExerciseId);
   const activeExercise = activeExerciseIndex >= 0 ? exercises[activeExerciseIndex] : null;
@@ -441,6 +446,9 @@ export default function LiveWorkout() {
     suggestion.suppressedByIssue === true && suggestion.issueContext?.issueName
       ? (suggestion.issueContext.issueId ?? null)
       : null;
+  const markLoggerEdited = useCallback(() => {
+    loggerSeedRef.current.manuallyEdited = true;
+  }, []);
 
   useEffect(() => {
     if (!session || exerciseIdsKey.length === 0) {
@@ -589,25 +597,54 @@ export default function LiveWorkout() {
     return () => clearInterval(id);
   }, [restTimer]);
 
-  // Seed stepper defaults when exercise changes
+  // Seed stepper defaults for the active exercise without clobbering user edits.
   useEffect(() => {
     if (!activeExercise) return;
-    const lastSet = [...sets]
-      .filter((s) => s.exercise_id === activeExercise.id && s.deleted_at === null)
-      .sort((a, b) => b.logged_at - a.logged_at)[0];
-
-    if (lastSet) {
-      setWeight(lastSet.weight ?? DEFAULT_WEIGHT);
-      setReps(lastSet.reps ?? DEFAULT_REPS);
-    } else if (activeExercise.targetWeight !== null) {
-      setWeight(activeExercise.targetWeight);
-      setReps(activeExercise.targetReps ?? DEFAULT_REPS);
-    } else {
-      setWeight(DEFAULT_WEIGHT);
-      setReps(DEFAULT_REPS);
+    const exerciseChanged = loggerSeedRef.current.exerciseId !== activeExercise.id;
+    if (exerciseChanged) {
+      loggerSeedRef.current = {
+        exerciseId: activeExercise.id,
+        manuallyEdited: false,
+        appliedKey: null,
+      };
     }
+
+    const lastSet = [...activeSets].sort((a, b) => b.logged_at - a.logged_at)[0] ?? null;
+    let nextWeight = DEFAULT_WEIGHT;
+    let nextReps = DEFAULT_REPS;
+    let source = 'default';
+    let sourceId = '';
+    if (lastSet) {
+      nextWeight = lastSet.weight ?? DEFAULT_WEIGHT;
+      nextReps = lastSet.reps ?? DEFAULT_REPS;
+      source = 'current-set';
+      sourceId = lastSet.id;
+    } else if (suggestion.weight !== null && suggestion.reps !== null) {
+      nextWeight = suggestion.weight;
+      nextReps = suggestion.reps;
+      source = 'suggestion';
+      sourceId = `${suggestion.weight}:${suggestion.reps}:${suggestion.reason}`;
+    } else if (activeExercise.targetWeight !== null || activeExercise.targetReps !== null) {
+      nextWeight = activeExercise.targetWeight ?? DEFAULT_WEIGHT;
+      nextReps = activeExercise.targetReps ?? DEFAULT_REPS;
+      source = 'template';
+    } else {
+      source = 'default';
+    }
+
+    const seedKey = `${activeExercise.id}:${source}:${sourceId}:${nextWeight}:${nextReps}`;
+    if (loggerSeedRef.current.appliedKey === seedKey) return;
+    if (loggerSeedRef.current.manuallyEdited && !lastSet) return;
+
+    setWeight(nextWeight);
+    setReps(nextReps);
     setRpe(null);
-  }, [activeExerciseId]); // eslint-disable-line react-hooks/exhaustive-deps
+    loggerSeedRef.current = {
+      exerciseId: activeExercise.id,
+      manuallyEdited: false,
+      appliedKey: seedKey,
+    };
+  }, [activeExercise, activeSets, suggestion.reason, suggestion.reps, suggestion.weight]);
 
   useEffect(() => {
     if (!isWeightInputFocused) setWeightInput(formatWeightInput(weight));
@@ -1457,6 +1494,7 @@ export default function LiveWorkout() {
                   style={styles.progressionStat}
                   disabled={!suggestionHasValue}
                   onPress={() => {
+                    markLoggerEdited();
                     if (suggestion.weight !== null) setWeight(suggestion.weight);
                     if (suggestion.reps !== null) setReps(suggestion.reps);
                     setRpe(null);
@@ -1790,7 +1828,10 @@ export default function LiveWorkout() {
                 <TouchableOpacity
                   key={option.value}
                   style={[styles.setTypeBtn, setType === option.value && styles.setTypeBtnActive]}
-                  onPress={() => setSetType(option.value)}
+                  onPress={() => {
+                    markLoggerEdited();
+                    setSetType(option.value);
+                  }}
                   testID={`set-type-option-${option.value}`}
                 >
                   <Text
@@ -1812,10 +1853,14 @@ export default function LiveWorkout() {
                 <View style={styles.stepper}>
                   <TouchableOpacity
                     style={[styles.stepperBtn, styles.stepperBtnLeft]}
-                    onPress={() => setWeight((w) => Math.max(0, parseFloat((w - 2.5).toFixed(2))))}
-                    onLongPress={() =>
-                      setWeight((w) => Math.max(0, parseFloat((w - 10).toFixed(2))))
-                    }
+                    onPress={() => {
+                      markLoggerEdited();
+                      setWeight((w) => Math.max(0, parseFloat((w - 2.5).toFixed(2))));
+                    }}
+                    onLongPress={() => {
+                      markLoggerEdited();
+                      setWeight((w) => Math.max(0, parseFloat((w - 10).toFixed(2))));
+                    }}
                     delayLongPress={400}
                   >
                     <Text style={styles.stepperBtnText}>−</Text>
@@ -1825,6 +1870,7 @@ export default function LiveWorkout() {
                       style={styles.stepperValueInput}
                       value={weightInput}
                       onChangeText={(next) => {
+                        markLoggerEdited();
                         setWeightInput(next);
                         const parsed = parseNonNegativeNumber(next);
                         if (parsed !== null) setWeight(parseFloat(parsed.toFixed(2)));
@@ -1844,8 +1890,14 @@ export default function LiveWorkout() {
                   </View>
                   <TouchableOpacity
                     style={[styles.stepperBtn, styles.stepperBtnRight]}
-                    onPress={() => setWeight((w) => parseFloat((w + 2.5).toFixed(2)))}
-                    onLongPress={() => setWeight((w) => parseFloat((w + 10).toFixed(2)))}
+                    onPress={() => {
+                      markLoggerEdited();
+                      setWeight((w) => parseFloat((w + 2.5).toFixed(2)));
+                    }}
+                    onLongPress={() => {
+                      markLoggerEdited();
+                      setWeight((w) => parseFloat((w + 10).toFixed(2)));
+                    }}
                     delayLongPress={400}
                   >
                     <Text style={styles.stepperBtnText}>+</Text>
@@ -1858,8 +1910,14 @@ export default function LiveWorkout() {
                 <View style={styles.stepper}>
                   <TouchableOpacity
                     style={[styles.stepperBtn, styles.stepperBtnLeft]}
-                    onPress={() => setReps((r) => Math.max(1, r - 1))}
-                    onLongPress={() => setReps((r) => Math.max(1, r - 5))}
+                    onPress={() => {
+                      markLoggerEdited();
+                      setReps((r) => Math.max(1, r - 1));
+                    }}
+                    onLongPress={() => {
+                      markLoggerEdited();
+                      setReps((r) => Math.max(1, r - 5));
+                    }}
                     delayLongPress={400}
                   >
                     <Text style={styles.stepperBtnText}>−</Text>
@@ -1869,6 +1927,7 @@ export default function LiveWorkout() {
                       style={styles.stepperValueInput}
                       value={repsInput}
                       onChangeText={(next) => {
+                        markLoggerEdited();
                         setRepsInput(next);
                         const parsed = parsePositiveInteger(next);
                         if (parsed !== null) setReps(parsed);
@@ -1888,8 +1947,14 @@ export default function LiveWorkout() {
                   </View>
                   <TouchableOpacity
                     style={[styles.stepperBtn, styles.stepperBtnRight]}
-                    onPress={() => setReps((r) => r + 1)}
-                    onLongPress={() => setReps((r) => r + 5)}
+                    onPress={() => {
+                      markLoggerEdited();
+                      setReps((r) => r + 1);
+                    }}
+                    onLongPress={() => {
+                      markLoggerEdited();
+                      setReps((r) => r + 5);
+                    }}
                     delayLongPress={400}
                   >
                     <Text style={styles.stepperBtnText}>+</Text>
@@ -1905,6 +1970,7 @@ export default function LiveWorkout() {
                   <TouchableOpacity
                     style={styles.rpeToggleChip}
                     onPress={() => {
+                      markLoggerEdited();
                       setRpe(null);
                       setRpeExpanded(false);
                     }}
@@ -1915,7 +1981,10 @@ export default function LiveWorkout() {
                     <TouchableOpacity
                       key={r}
                       style={[styles.rpeChip, rpe === r && styles.rpeChipActive]}
-                      onPress={() => setRpe(rpe === r ? null : r)}
+                      onPress={() => {
+                        markLoggerEdited();
+                        setRpe(rpe === r ? null : r);
+                      }}
                       testID={`rpe-option-${r}`}
                     >
                       <Text style={[styles.rpeChipText, rpe === r && styles.rpeChipTextActive]}>
@@ -1927,7 +1996,10 @@ export default function LiveWorkout() {
               ) : (
                 <TouchableOpacity
                   style={styles.addRpeBtn}
-                  onPress={() => setRpeExpanded(true)}
+                  onPress={() => {
+                    markLoggerEdited();
+                    setRpeExpanded(true);
+                  }}
                   testID="rpe-toggle"
                 >
                   <Ionicons name="add" size={16} color={T.muted} />
@@ -1983,6 +2055,7 @@ export default function LiveWorkout() {
           defaultUnit={activeExercise?.defaultUnit ?? 'kg'}
           onClose={() => setHistoryVisible(false)}
           onApplySuggestion={(next) => {
+            markLoggerEdited();
             if (next.weight !== null) setWeight(next.weight);
             if (next.reps !== null) setReps(next.reps);
             setRpe(null);

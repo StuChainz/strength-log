@@ -105,6 +105,28 @@ describe('getProgressionSuggestion', () => {
     );
   });
 
+  it('double progression uses previous-session weight for the first set when current sets are empty', () => {
+    const next = suggestion({
+      templateTarget: {
+        targetSets: 3,
+        targetReps: null,
+        targetWeight: null,
+        unit: 'kg',
+      },
+      progressionRule: { rule: 'double', repRangeMin: 8, repRangeMax: 12 },
+      recentSets: [],
+      previousSessionSets: [
+        { ...baseSet, weight: 40, reps: 8 },
+        { ...baseSet, weight: 40, reps: 8 },
+        { ...baseSet, weight: 40, reps: 8 },
+      ],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({ weight: 40, reps: 8, reason: 'Double: build reps' }),
+    );
+  });
+
   it('double progression adds weight and resets reps after all sets hit rep range max', () => {
     const next = suggestion({
       templateTarget: { ...baseTarget, targetReps: null, targetWeight: 20 },
@@ -220,6 +242,29 @@ describe('getProgressionSuggestion', () => {
     );
   });
 
+  it('none rule uses a previous-session set for the first set when no template target exists', () => {
+    const next = suggestion({
+      templateTarget: {
+        targetSets: null,
+        targetReps: null,
+        targetWeight: null,
+        unit: 'kg',
+      },
+      progressionRule: { rule: 'none' },
+      recentSets: [],
+      previousSessionSets: [{ ...baseSet, weight: 37.5, reps: 5, rpe: null }],
+    });
+
+    expect(next).toEqual(
+      expect.objectContaining({
+        weight: 37.5,
+        reps: 5,
+        source: 'fallback',
+        rule: 'none',
+      }),
+    );
+  });
+
   it('suggestions never auto-apply in domain logic', () => {
     const set = { ...baseSet };
     const next = suggestion({
@@ -257,7 +302,7 @@ describe('getProgressionSuggestion', () => {
           expect.objectContaining({
             weight: 80,
             reps: 5,
-            reason: 'Recent issue note: use the same target.',
+            reason: 'Recent issue note: repeat target.',
             suppressedByIssue: true,
             requiresUserAction: false,
           }),
@@ -350,7 +395,7 @@ describe('getProgressionSuggestion', () => {
         ],
       });
 
-      expect(next.reason).toBe('Recent issue note: use the same target.');
+      expect(next.reason).toBe('Recent issue note: repeat target.');
       expect(next.issueContext).toEqual({
         issueId: 'issue-newer',
         issueName: 'Newer issue',
