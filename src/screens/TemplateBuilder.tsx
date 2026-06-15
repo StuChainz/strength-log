@@ -285,12 +285,12 @@ export default function TemplateBuilder() {
   // ── Archive ───────────────────────────────────────────────────────────────
   const handleArchive = () => {
     Alert.alert(
-      'Archive Template',
-      'This template will be hidden from the list. Completed workouts using it are unaffected.',
+      'Remove template?',
+      'This hides the template from your list. Completed workouts stay in your history.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Archive',
+          text: 'Remove',
           style: 'destructive',
           onPress: async () => {
             if (!templateId) return;

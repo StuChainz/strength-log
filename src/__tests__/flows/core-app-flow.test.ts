@@ -10,9 +10,11 @@ import {
 import {
   archiveTemplate,
   createTemplate,
+  getActiveProgramPresetId,
   getAllTemplates,
   getTemplateById,
   getTemplateItemsWithExercise,
+  setActiveProgramForTemplates,
   updateTemplate,
 } from '@/db/repositories/templates.repo';
 import {
@@ -506,12 +508,16 @@ describe('core app flow repository acceptance', () => {
       expect.objectContaining({ exercise_id: squat.id, position: 1, target_weight: 100 }),
     ]);
 
+    await setActiveProgramForTemplates(db as never, 'linear-5x5', [template.id]);
+    await expect(getActiveProgramPresetId(db as never)).resolves.toBe('linear-5x5');
+
     await archiveTemplate(db as never, template.id);
 
     expect(await getAllTemplates(db as never)).toEqual([]);
     expect(await getTemplateById(db as never, template.id)).toEqual(
-      expect.objectContaining({ archived_at: expect.any(Number) }),
+      expect.objectContaining({ archived_at: expect.any(Number), is_active_programme: 0 }),
     );
+    await expect(getActiveProgramPresetId(db as never)).resolves.toBeNull();
   });
 
   it('keeps template rest_seconds nullable, persistent, and positive', async () => {

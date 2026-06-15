@@ -372,9 +372,12 @@ export async function updateTemplate(
 
 export async function archiveTemplate(db: SQLiteDatabase, id: string): Promise<void> {
   const now = Date.now();
-  await db.runAsync(`UPDATE templates SET archived_at = ?, updated_at = ? WHERE id = ?`, [
-    now,
-    now,
-    id,
-  ]);
+  await db.runAsync(
+    `UPDATE templates
+        SET archived_at = ?,
+            is_active_programme = 0,
+            updated_at = ?
+      WHERE id = ?`,
+    [now, now, id],
+  );
 }

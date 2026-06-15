@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb } from '@/db/client';
 import {
+  archiveTemplate,
   getActiveProgramPresetId,
   getNormalTemplatesWithCount,
   setActiveProgramForTemplates,
@@ -105,7 +106,7 @@ export default function TemplateList() {
         getNormalTemplatesWithCount(db),
         getActiveProgramPresetId(db),
       ]);
-      setTemplates(data);
+      setTemplates(data.filter((template) => template.archived_at === null));
       setActiveProgramPresetId(activeProgramId);
       setNow(Date.now());
     } finally {
@@ -138,6 +139,26 @@ export default function TemplateList() {
     );
     setActiveProgramPresetId(section.id);
     await loadTemplates();
+  };
+
+  const handleArchiveTemplate = (template: TemplateSummary) => {
+    Alert.alert(
+      'Remove template?',
+      'This hides the template from your list. Completed workouts stay in your history.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            const db = await openDb();
+            await archiveTemplate(db, template.id);
+            setTemplates((current) => current.filter((item) => item.id !== template.id));
+            await loadTemplates();
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -300,6 +321,7 @@ export default function TemplateList() {
                             onStart={() =>
                               navigation.navigate('LiveWorkout', { templateId: template.id })
                             }
+                            onArchive={() => handleArchiveTemplate(template)}
                           />
                         ))}
                       </View>
@@ -325,6 +347,7 @@ export default function TemplateList() {
                         onStart={() =>
                           navigation.navigate('LiveWorkout', { templateId: template.id })
                         }
+                        onArchive={() => handleArchiveTemplate(template)}
                       />
                     ))}
                   </View>
@@ -343,15 +366,19 @@ function TemplateRow({
   formatLastUsed,
   onEdit,
   onStart,
+  onArchive,
 }: {
   template: TemplateSummary;
   formatLastUsed: (ts: number) => string;
   onEdit: () => void;
   onStart: () => void;
+  onArchive: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
     <TouchableOpacity
-      style={styles.templateRow}
+      style={[styles.templateRow, menuOpen && styles.templateRowMenuOpen]}
       onPress={onEdit}
       testID={`template-row-${template.id}`}
       activeOpacity={0.7}
@@ -375,6 +402,31 @@ function TemplateRow({
       >
         <Ionicons name="play" size={18} color={T.accentInk} />
       </TouchableOpacity>
+      <View style={styles.templateMenuWrap}>
+        <TouchableOpacity
+          style={styles.rowIconBtn}
+          onPress={() => setMenuOpen((open) => !open)}
+          accessibilityLabel={`Template actions for ${template.name}`}
+          testID={`template-actions-${template.id}`}
+        >
+          <Ionicons name="ellipsis-horizontal" size={18} color={T.textDim} />
+        </TouchableOpacity>
+        {menuOpen && (
+          <View style={styles.templateMenu} testID={`template-actions-menu-${template.id}`}>
+            <TouchableOpacity
+              style={styles.templateMenuItem}
+              onPress={() => {
+                setMenuOpen(false);
+                onArchive();
+              }}
+              testID={`archive-template-${template.id}`}
+            >
+              <Ionicons name="archive-outline" size={16} color={T.danger} />
+              <Text style={styles.templateMenuItemText}>Remove from list</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -529,6 +581,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
   },
+  templateRowMenuOpen: { zIndex: 30, elevation: 30 },
   templateCount: {
     width: 44,
     height: 44,
@@ -570,6 +623,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
+  templateMenuWrap: { position: 'relative', flexShrink: 0 },
+  rowIconBtn: {
+    width: 36,
+    height: 44,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  templateMenu: {
+    position: 'absolute',
+    right: 0,
+    top: 48,
+    zIndex: 20,
+    elevation: 20,
+    minWidth: 176,
+    backgroundColor: T.surface2,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    paddingVertical: 6,
+  },
+  templateMenuItem: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+  },
+  templateMenuItemText: { color: T.text, fontSize: 13, fontWeight: '700' },
 
   emptyState: { paddingVertical: 40, alignItems: 'center' },
   emptyTitle: { color: T.text, fontSize: 17, fontWeight: '600', marginBottom: 8 },

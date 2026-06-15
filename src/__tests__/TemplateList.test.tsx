@@ -1,7 +1,9 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import TemplateList, { getTemplateSections } from '@/screens/TemplateList';
 import {
+  archiveTemplate,
   getActiveProgramPresetId,
   getNormalTemplatesWithCount,
   setActiveProgramForTemplates,
@@ -24,6 +26,7 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('@/db/client', () => ({ openDb: jest.fn().mockResolvedValue({ __db: true }) }));
 jest.mock('@/db/repositories/templates.repo', () => ({
+  archiveTemplate: jest.fn().mockResolvedValue(undefined),
   getActiveProgramPresetId: jest.fn(),
   getNormalTemplatesWithCount: jest.fn(),
   setActiveProgramForTemplates: jest.fn().mockResolvedValue(undefined),
@@ -70,6 +73,7 @@ describe('TemplateList', () => {
     });
     (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue(mockTemplates);
     (getActiveProgramPresetId as jest.Mock).mockResolvedValue(null);
+    (archiveTemplate as jest.Mock).mockResolvedValue(undefined);
     (setActiveProgramForTemplates as jest.Mock).mockResolvedValue(undefined);
   });
 
@@ -81,6 +85,27 @@ describe('TemplateList', () => {
     });
     expect(getByText('Push A')).toBeTruthy();
     expect(getByText('Pull B')).toBeTruthy();
+  });
+
+  it('does not render archived templates in the normal list', async () => {
+    (getNormalTemplatesWithCount as jest.Mock).mockResolvedValue([
+      ...mockTemplates,
+      {
+        id: 'archived-template',
+        name: 'Old Test Copy',
+        notes: null,
+        archived_at: 1234,
+        created_at: 1000,
+        updated_at: 1000,
+        item_count: 2,
+        working_set_count: 6,
+      },
+    ]);
+
+    const { getByTestId, queryByText } = render(<TemplateList />);
+
+    await waitFor(() => expect(getByTestId('template-row-tmpl-1')).toBeTruthy());
+    expect(queryByText('Old Test Copy')).toBeNull();
   });
 
   it('shows correct exercise count labels', async () => {
@@ -115,6 +140,55 @@ describe('TemplateList', () => {
     fireEvent.press(getByTestId('start-template-tmpl-1'));
 
     expect(mockNavigate).toHaveBeenCalledWith('LiveWorkout', { templateId: 'tmpl-1' });
+  });
+
+  it('shows confirmation before removing a template from the list', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const { getByTestId } = render(<TemplateList />);
+    await waitFor(() => expect(getByTestId('template-actions-tmpl-1')).toBeTruthy());
+
+    fireEvent.press(getByTestId('template-actions-tmpl-1'));
+    fireEvent.press(getByTestId('archive-template-tmpl-1'));
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Remove template?',
+      'This hides the template from your list. Completed workouts stay in your history.',
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'Cancel' }),
+        expect.objectContaining({ text: 'Remove' }),
+      ]),
+    );
+    expect(archiveTemplate).not.toHaveBeenCalled();
+
+    alertSpy.mockRestore();
+  });
+
+  it('hides a template after confirming remove from list', async () => {
+    let visibleTemplates = [...mockTemplates];
+    (getNormalTemplatesWithCount as jest.Mock).mockImplementation(() =>
+      Promise.resolve(visibleTemplates),
+    );
+    (archiveTemplate as jest.Mock).mockImplementation(async (_db, templateId: string) => {
+      visibleTemplates = visibleTemplates.filter((template) => template.id !== templateId);
+    });
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
+    const { getByTestId, queryByTestId } = render(<TemplateList />);
+    await waitFor(() => expect(getByTestId('template-row-tmpl-1')).toBeTruthy());
+
+    fireEvent.press(getByTestId('template-actions-tmpl-1'));
+    fireEvent.press(getByTestId('archive-template-tmpl-1'));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    const buttons = alertSpy.mock.calls.at(-1)?.[2];
+    const removeBtn = buttons?.find((button) => button.text === 'Remove');
+    removeBtn?.onPress?.();
+
+    await waitFor(() => expect(archiveTemplate).toHaveBeenCalled());
+    await waitFor(() => expect(queryByTestId('template-row-tmpl-1')).toBeNull());
+    expect(archiveTemplate).toHaveBeenCalledWith(expect.objectContaining({ __db: true }), 'tmpl-1');
+
+    alertSpy.mockRestore();
   });
 
   it('navigates to TemplateBuilder (new) when "+ New" is pressed', async () => {
